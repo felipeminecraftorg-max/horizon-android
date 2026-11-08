@@ -33,6 +33,9 @@ pub struct Refs {
     pub interfaces: BTreeSet<String>,
     /// Classes a class here extends.
     pub extended: BTreeSet<String>,
+    /// The types of its lambdas and method references: interfaces, unless the API says else
+    /// (a string concatenation's `invokedynamic` gives `String`, never stood in for).
+    pub functional: BTreeSet<String>,
     /// Classes the jars declare.
     pub declared: BTreeSet<String>,
     /// What each declared class extends and implements.
@@ -57,6 +60,8 @@ enum Constant {
     Member(u8, u16, u16),
     /// reference kind, reference index.
     Handle(u8, u16),
+    /// An `invokedynamic` call site's name and type.
+    Dynamic(u16),
     Other,
 }
 
@@ -190,9 +195,13 @@ impl Refs {
                     r.take(2)?;
                     Constant::Other
                 }
-                17 | 18 => {
+                17 => {
                     r.take(4)?;
                     Constant::Other
+                }
+                18 => {
+                    r.take(2)?;
+                    Constant::Dynamic(r.u2()?)
                 }
                 other => return Err(format!("unknown constant tag {other}")),
             };
@@ -220,6 +229,16 @@ impl Refs {
                     }
                 }
                 _ => {}
+            }
+        }
+        // A lambda's or method reference's type is a functional interface.
+        for c in &pool {
+            if let Constant::Dynamic(nat) = c
+                && let Some(Constant::NameAndType(_, d)) = pool.get(usize::from(*nat))
+                && let Some((_, ret)) = utf8(*d).split_once(')')
+                && let Some(class) = ret.strip_prefix('L').and_then(|r| r.strip_suffix(';'))
+            {
+                self.functional.insert(class.to_owned());
             }
         }
         // How each member constant is reached.
@@ -438,6 +457,36 @@ fn signature(descriptor: &str) -> (u16, &str) {
     (slots, ret)
 }
 
+/// A method a stand-in must not declare: one of `Object`'s final methods (and, for an
+/// interface, any public method of `Object`), or one `Enum` makes final.
+fn inherited_final(name: &str, descriptor: &str, interface: bool, is_enum: bool) -> bool {
+    let object_final = matches!(
+        (name, descriptor),
+        ("getClass", "()Ljava/lang/Class;")
+            | ("notify", "()V")
+            | ("notifyAll", "()V")
+            | ("wait", "()V" | "(J)V" | "(JI)V")
+    );
+    let object_public = matches!(
+        (name, descriptor),
+        ("equals", "(Ljava/lang/Object;)Z")
+            | ("hashCode", "()I")
+            | ("toString", "()Ljava/lang/String;")
+    );
+    let enum_final = matches!(
+        (name, descriptor),
+        ("equals", "(Ljava/lang/Object;)Z")
+            | ("hashCode", "()I")
+            | ("name", "()Ljava/lang/String;")
+            | ("ordinal", "()I")
+            | ("compareTo", "(Ljava/lang/Enum;)I")
+            | ("getDeclaringClass", "()Ljava/lang/Class;")
+            | ("clone", "()Ljava/lang/Object;")
+            | ("finalize", "()V")
+    );
+    object_final || (interface && object_public) || (is_enum && enum_final)
+}
+
 /// One stand-in class being written.
 struct Stub<'a> {
     name: &'a str,
@@ -518,7 +567,9 @@ impl Stub<'_> {
         self.methods.extend_from_slice(&attribute.to_be_bytes());
         self.methods
             .extend_from_slice(&(12 + code.len() as u32).to_be_bytes());
-        self.methods.extend_from_slice(&8u16.to_be_bytes());
+        // Room for the arguments a forwarding constructor pushes, and the few a body needs.
+        let stack = locals.saturating_add(2).max(8);
+        self.methods.extend_from_slice(&stack.to_be_bytes());
         self.methods.extend_from_slice(&locals.to_be_bytes());
         self.methods
             .extend_from_slice(&(code.len() as u32).to_be_bytes());
@@ -630,10 +681,24 @@ pub struct Provided<'a> {
 pub struct Stubs {
     /// Class files by internal name.
     pub classes: BTreeMap<String, Vec<u8>>,
+    /// What each of Horizon's classes the mod names lacks: for [`patch`].
+    pub patches: BTreeMap<String, Patch>,
+    /// The classes a stand-in body can make with `new` (for [`patch`]).
+    pub makeable: BTreeSet<String>,
     /// Members a mod names on a class Horizon holds that it lacks (`owner.name descriptor`),
     /// and the game's supertypes Horizon's class lacks (`owner is a supertype`): the API
     /// slice's own gaps, which no stand-in can fill.
     pub unmet: BTreeSet<String>,
+}
+
+/// Members and interfaces to add to one of Horizon's own classes, so that the mod's code
+/// finds every member it names there (answering defaults until Horizon writes them).
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct Patch {
+    pub interfaces: BTreeSet<String>,
+    /// (name, descriptor) and how.
+    pub methods: BTreeMap<(String, String), Reach>,
+    pub fields: BTreeMap<(String, String), Reach>,
 }
 
 /// One member a stand-in declares.
@@ -729,7 +794,10 @@ pub fn stubs(refs: &Refs, provided: &Provided, api: &crate::api::Api) -> Stubs {
     }
     let interface = |c: &str| match api.classes.get(c) {
         Some(info) => info.is_interface(),
-        None => refs.interfaces.contains(c) && !refs.extended.contains(c),
+        None => {
+            (refs.interfaces.contains(c) || refs.functional.contains(c))
+                && !refs.extended.contains(c)
+        }
     };
     // A class a stand-in can make with `new`: a stand-in class, or one of Horizon's with a
     // public constructor taking nothing.
@@ -745,6 +813,7 @@ pub fn stubs(refs: &Refs, provided: &Provided, api: &crate::api::Api) -> Stubs {
     let mut methods: BTreeMap<String, BTreeMap<(String, String), Member>> = BTreeMap::new();
     let mut fields: BTreeMap<String, BTreeMap<(String, String), Member>> = BTreeMap::new();
     let mut unmet = BTreeSet::new();
+    let mut patches: BTreeMap<String, Patch> = BTreeMap::new();
     let mut place = |table: &mut BTreeMap<String, BTreeMap<(String, String), Member>>,
                      owner: &str,
                      name: &str,
@@ -761,6 +830,20 @@ pub fn stubs(refs: &Refs, provided: &Provided, api: &crate::api::Api) -> Stubs {
                     Reach::Instance
                 },
             ),
+            // Unknown to the API: a member named on one of the mod's own classes goes to the
+            // first ancestor that isn't.
+            None if refs.declared.contains(owner) => {
+                let mut at = owner;
+                let mut steps = 0;
+                while let Some((parent, _)) = refs.parents.get(at) {
+                    if parent.is_empty() || steps > 64 {
+                        break;
+                    }
+                    at = parent.as_str();
+                    steps += 1;
+                }
+                (at, reach)
+            }
             None => (owner, reach),
         };
         if write.contains(at) {
@@ -771,6 +854,13 @@ pub fn stubs(refs: &Refs, provided: &Provided, api: &crate::api::Api) -> Stubs {
         } else if known(at).is_some() && !(provided.member)(at, name, descriptor) {
             let kind = if field { "field " } else { "" };
             unmet.insert(format!("{kind}{at}.{name} {descriptor}"));
+            let patch = patches.entry(at.to_owned()).or_default();
+            let key = (name.to_owned(), descriptor.to_owned());
+            if field {
+                patch.fields.insert(key, reach);
+            } else {
+                patch.methods.insert(key, reach);
+            }
         }
     };
     // A member named on one of the mod's classes resolves through its ancestors: the first
@@ -982,14 +1072,7 @@ pub fn stubs(refs: &Refs, provided: &Provided, api: &crate::api::Api) -> Stubs {
         // Methods.
         let mut has_values = false;
         for ((method, descriptor), m) in own_methods {
-            if method.starts_with('<') {
-                continue;
-            }
-            if is_enum
-                && matches!(
-                    (method.as_str(), descriptor.as_str()),
-                    ("ordinal", "()I") | ("name", "()Ljava/lang/String;")
-                )
+            if method.starts_with('<') || inherited_final(method, descriptor, is_interface, is_enum)
             {
                 continue;
             }
@@ -1121,6 +1204,14 @@ pub fn stubs(refs: &Refs, provided: &Provided, api: &crate::api::Api) -> Stubs {
             }
             if !held.contains(up) {
                 unmet.insert(format!("{c} is a {up}"));
+                let interface = api.classes.get(up).is_some_and(|i| i.is_interface());
+                if interface && (write.contains(up) || known(up).is_some_and(|k| k.interface)) {
+                    patches
+                        .entry(c.clone())
+                        .or_default()
+                        .interfaces
+                        .insert(up.to_owned());
+                }
             }
             if let Some(i) = api.classes.get(up) {
                 queue.push(i.parent.as_str());
@@ -1128,10 +1219,267 @@ pub fn stubs(refs: &Refs, provided: &Provided, api: &crate::api::Api) -> Stubs {
             }
         }
     }
+    let makeable = write
+        .iter()
+        .filter(|c| !interface(c))
+        .cloned()
+        .chain(
+            refs.classes
+                .iter()
+                .filter(|c| known(c).is_some_and(|k| k.plain && !k.interface))
+                .cloned(),
+        )
+        .collect();
     Stubs {
         classes: out,
+        patches,
+        makeable,
         unmet,
     }
+}
+
+/// One of Horizon's class files with `patch`'s interfaces and members added: each member
+/// answers the default a stand-in would, and a static field holding an object gets a fresh
+/// one (the class's own static initialiser, renamed, runs after).
+pub fn patch(bytes: &[u8], patch: &Patch, makeable: &BTreeSet<String>) -> Result<Vec<u8>, String> {
+    let mut r = Reader { bytes, at: 0 };
+    if r.u4()? != 0xCAFE_BABE {
+        return Err("not a class file".into());
+    }
+    r.take(4)?;
+    let count = r.u2()?;
+    let pool_start = r.at;
+    let mut utf8: HashMap<u16, String> = HashMap::new();
+    let mut classes: HashMap<u16, u16> = HashMap::new();
+    let mut i = 1;
+    while i < count {
+        let tag = r.u1()?;
+        match tag {
+            1 => {
+                let n = usize::from(r.u2()?);
+                let s = String::from_utf8_lossy(r.take(n)?).into_owned();
+                utf8.insert(i, s);
+            }
+            7 => {
+                let k = r.u2()?;
+                classes.insert(i, k);
+            }
+            8 | 16 | 19 | 20 => {
+                r.take(2)?;
+            }
+            15 => {
+                r.take(3)?;
+            }
+            3 | 4 | 9..=12 | 17 | 18 => {
+                r.take(4)?;
+            }
+            5 | 6 => {
+                r.take(8)?;
+                i += 1;
+            }
+            other => return Err(format!("unknown constant tag {other}")),
+        }
+        i += 1;
+    }
+    let pool_end = r.at;
+    let access = r.u2()?;
+    let this = r.u2()?;
+    let parent = r.u2()?;
+    let name = classes
+        .get(&this)
+        .and_then(|n| utf8.get(n))
+        .cloned()
+        .unwrap_or_default();
+    let interface_count = r.u2()?;
+    let interfaces_at = r.at;
+    let mut own_interfaces = BTreeSet::new();
+    for _ in 0..interface_count {
+        let k = r.u2()?;
+        if let Some(n) = classes.get(&k).and_then(|n| utf8.get(n)) {
+            own_interfaces.insert(n.clone());
+        }
+    }
+    let interfaces_end = r.at;
+    let skip_member = |r: &mut Reader| -> Result<(u16, u16, u16), String> {
+        let (a, n, d) = (r.u2()?, r.u2()?, r.u2()?);
+        for _ in 0..r.u2()? {
+            r.take(2)?;
+            let len = r.u4()? as usize;
+            r.take(len)?;
+        }
+        Ok((a, n, d))
+    };
+    let field_count = r.u2()?;
+    let fields_at = r.at;
+    let mut own_fields = BTreeSet::new();
+    for _ in 0..field_count {
+        let (_, n, d) = skip_member(&mut r)?;
+        own_fields.insert((
+            utf8.get(&n).cloned().unwrap_or_default(),
+            utf8.get(&d).cloned().unwrap_or_default(),
+        ));
+    }
+    let fields_end = r.at;
+    let method_count = r.u2()?;
+    let methods_at = r.at;
+    let mut own_methods = BTreeSet::new();
+    // The static initialiser's name index, to rename it.
+    let mut clinit_name_at = None;
+    for _ in 0..method_count {
+        let start = r.at;
+        let (_, n, d) = skip_member(&mut r)?;
+        let (method, descriptor) = (
+            utf8.get(&n).cloned().unwrap_or_default(),
+            utf8.get(&d).cloned().unwrap_or_default(),
+        );
+        if method == "<clinit>" {
+            clinit_name_at = Some(start + 2);
+        }
+        own_methods.insert((method, descriptor));
+    }
+    let methods_end = r.at;
+    let is_interface = access & INTERFACE != 0;
+    let is_enum = access & ENUM != 0;
+    let mut stub = Stub {
+        name: &name,
+        pool: Pool {
+            count: count - 1,
+            ..Pool::default()
+        },
+        methods: Vec::new(),
+        method_count: 0,
+    };
+    let is_makeable = |c: &str| makeable.contains(c);
+    // Interfaces.
+    let mut new_interfaces = Vec::new();
+    for i in &patch.interfaces {
+        if !own_interfaces.contains(i) {
+            new_interfaces.push(stub.pool.class(i));
+        }
+    }
+    // Fields.
+    let mut field_bytes = Vec::new();
+    let mut new_fields = 0u16;
+    let mut clinit = Vec::new();
+    for ((field, descriptor), reach) in &patch.fields {
+        if own_fields.contains(&(field.clone(), descriptor.clone())) {
+            continue;
+        }
+        let mut a = PUBLIC;
+        if *reach == Reach::Static || is_interface {
+            a |= STATIC;
+        }
+        if is_interface {
+            a |= FINAL;
+        }
+        let (n, d) = (stub.pool.utf8(field), stub.pool.utf8(descriptor));
+        field_bytes.extend_from_slice(&a.to_be_bytes());
+        field_bytes.extend_from_slice(&n.to_be_bytes());
+        field_bytes.extend_from_slice(&d.to_be_bytes());
+        field_bytes.extend_from_slice(&0u16.to_be_bytes());
+        new_fields += 1;
+        if a & STATIC != 0
+            && let Some(class) = descriptor
+                .strip_prefix('L')
+                .and_then(|d| d.strip_suffix(';'))
+        {
+            let f = stub.pool.member(9, &name, field, descriptor);
+            if is_makeable(class) {
+                let code = stub.fresh(class);
+                clinit.extend_from_slice(&code);
+            } else if let Some((_, owner, method, d, iface)) =
+                EMPTY.iter().find(|e| e.0 == descriptor)
+            {
+                let m = stub
+                    .pool
+                    .member(if *iface { 11 } else { 10 }, owner, method, d);
+                clinit.push(0xb8);
+                clinit.extend_from_slice(&m.to_be_bytes());
+            } else {
+                continue;
+            }
+            clinit.push(0xb3);
+            clinit.extend_from_slice(&f.to_be_bytes());
+        }
+    }
+    // Methods. A constructor the class lacks starts the object as its parent's taking nothing
+    // does (Horizon's own classes keep one).
+    let parent_name = classes
+        .get(&parent)
+        .and_then(|n| utf8.get(n))
+        .cloned()
+        .unwrap_or_else(|| "java/lang/Object".to_owned());
+    for ((method, descriptor), reach) in &patch.methods {
+        if own_methods.contains(&(method.clone(), descriptor.clone()))
+            || method == "<clinit>"
+            || inherited_final(method, descriptor, is_interface, is_enum)
+        {
+            continue;
+        }
+        if method == "<init>" {
+            if is_interface || is_enum {
+                continue;
+            }
+            let (slots, _) = signature(descriptor);
+            let init = stub.pool.member(10, &parent_name, "<init>", "()V");
+            let mut code = vec![0x2a, 0xb7];
+            code.extend_from_slice(&init.to_be_bytes());
+            code.push(0xb1);
+            stub.method(PUBLIC, "<init>", descriptor, &code, slots + 1);
+            continue;
+        }
+        let (slots, ret) = signature(descriptor);
+        let instance = *reach == Reach::Instance;
+        let code = stub.answer(ret, instance, &is_makeable);
+        let a = if instance { PUBLIC } else { PUBLIC | STATIC };
+        stub.method(a, method, descriptor, &code, slots + u16::from(instance));
+    }
+    // The class's own static initialiser runs after the new fields are filled.
+    let mut renamed = None;
+    if !clinit.is_empty() {
+        if clinit_name_at.is_some() {
+            let renamed_name = stub.pool.utf8("horizon$clinit");
+            renamed = Some(renamed_name);
+            let own = stub.pool.member(
+                if is_interface { 11 } else { 10 },
+                &name,
+                "horizon$clinit",
+                "()V",
+            );
+            clinit.push(0xb8);
+            clinit.extend_from_slice(&own.to_be_bytes());
+        }
+        clinit.push(0xb1);
+        stub.method(STATIC, "<clinit>", "()V", &clinit, 0);
+    }
+    let mut out = bytes[..8].to_vec();
+    out.extend_from_slice(&(stub.pool.count + 1).to_be_bytes());
+    out.extend_from_slice(&bytes[pool_start..pool_end]);
+    out.extend_from_slice(&stub.pool.bytes);
+    out.extend_from_slice(&access.to_be_bytes());
+    out.extend_from_slice(&this.to_be_bytes());
+    out.extend_from_slice(&parent.to_be_bytes());
+    out.extend_from_slice(&(interface_count + new_interfaces.len() as u16).to_be_bytes());
+    out.extend_from_slice(&bytes[interfaces_at..interfaces_end]);
+    for i in &new_interfaces {
+        out.extend_from_slice(&i.to_be_bytes());
+    }
+    out.extend_from_slice(&(field_count + new_fields).to_be_bytes());
+    out.extend_from_slice(&bytes[fields_at..fields_end]);
+    out.extend_from_slice(&field_bytes);
+    out.extend_from_slice(&(method_count + stub.method_count).to_be_bytes());
+    let mut methods = bytes[methods_at..methods_end].to_vec();
+    if let (Some(at), Some(index)) = (clinit_name_at, renamed) {
+        // The old initialiser, now `private static horizon$clinit()V`.
+        let at = at - methods_at;
+        methods[at..at + 2].copy_from_slice(&index.to_be_bytes());
+        let flags = if is_interface { 0x0009 } else { 0x000a };
+        methods[at - 2..at].copy_from_slice(&(flags as u16).to_be_bytes());
+    }
+    out.extend_from_slice(&methods);
+    out.extend_from_slice(&stub.methods);
+    out.extend_from_slice(&bytes[methods_end..]);
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -1335,6 +1683,37 @@ mod tests {
         let mut behaviour = Refs::default();
         behaviour.add_class(&out.classes["g/Behaviour"]).unwrap();
         assert!(behaviour.classes.contains("g/Codec"));
+    }
+
+    #[test]
+    fn horizon_s_own_classes_get_what_the_mod_names_and_keep_their_own_initialiser() {
+        let out = run(&refs(), &Api::default());
+        let mut p = Patch::default();
+        p.interfaces.insert("x/Handler".into());
+        p.methods
+            .insert(("extra".into(), "()I".into()), Reach::Instance);
+        p.fields
+            .insert(("GLASS".into(), "Lx/Server;".into()), Reach::Static);
+        let makeable = BTreeSet::from(["x/Server".to_owned()]);
+        // x/Colors already has a static initialiser (it makes STONE).
+        let patched = patch(&out.classes["x/Colors"], &p, &makeable).unwrap();
+        let mut back = Refs::default();
+        back.add_class(&patched).unwrap();
+        assert!(back.interfaces.contains("x/Handler"));
+        let fields = &back.fields["x/Colors"];
+        assert!(fields.contains_key(&("GLASS".to_owned(), "Lx/Server;".to_owned())));
+        assert!(fields.contains_key(&("STONE".to_owned(), "Lx/Server;".to_owned())));
+        assert_eq!(
+            back.methods["x/Colors"].get(&("horizon$clinit".to_owned(), "()V".to_owned())),
+            Some(&Reach::Static)
+        );
+        // Patching again adds nothing twice.
+        let again = patch(&patched, &p, &makeable).unwrap();
+        let (_, a) = crate::api::read(&patched).unwrap();
+        let (_, b) = crate::api::read(&again).unwrap();
+        assert_eq!(a.methods.len(), b.methods.len());
+        assert_eq!(a.fields.len(), b.fields.len());
+        assert_eq!(a.interfaces, b.interfaces);
     }
 
     #[test]

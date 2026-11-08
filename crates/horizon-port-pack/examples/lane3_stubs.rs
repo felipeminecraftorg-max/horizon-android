@@ -4,7 +4,9 @@
 //! beside the mod (the CI check in `.github/workflows/android-converter-tests.yml`).
 //!
 //! `cargo run -p horizon-port-pack --example lane3_stubs -- <client.jar> <client.txt>
-//! <slice classes dir> <out dir> <mod.jar> [loader jars...]`
+//! <slice classes dir> <out dir> <mod.jar> [loader jars...] [lib:<library jar>...]`: the
+//! loader's jars are only mapped (their classes get stand-ins), the game's libraries run as
+//! they are (DataFixerUpper, Brigadier, Guava, fastutil...).
 use horizon_port_pack::api::{Api, ApiClass, read};
 use horizon_port_pack::stubs::{Known, Provided, Refs, stubs};
 use std::{collections::HashMap, fs, io::Read, path::Path};
@@ -58,17 +60,29 @@ fn main() -> Result<(), String> {
     let proguard = fs::read_to_string(mappings).map_err(|e| e.to_string())?;
     let game = api.add_official(Path::new(client), &proguard)?;
     let mut loader = 0;
+    let mut libraries = Vec::new();
     for l in loaders {
-        loader += api.add_jar(Path::new(l), None)?;
+        match l.strip_prefix("lib:") {
+            Some(lib) => {
+                api.add_jar(Path::new(lib), None)?;
+                libraries.push(lib.to_owned());
+            }
+            None => loader += api.add_jar(Path::new(l), None)?,
+        }
     }
     let mut refs = Refs::default();
     let read_classes = classes_of(Path::new(jar), &mut refs, 0)?;
     let mut files = Vec::new();
     walk(Path::new(slice), &mut files);
-    let held: HashMap<String, ApiClass> = files
+    let mut held: HashMap<String, ApiClass> = files
         .iter()
         .filter_map(|p| read(&fs::read(p).ok()?).ok())
         .collect();
+    for lib in &libraries {
+        let mut only = Api::default();
+        only.add_jar(Path::new(lib), None)?;
+        held.extend(only.classes);
+    }
     let class = |c: &str| {
         held.get(c).map(|k| Known {
             interface: k.is_interface(),

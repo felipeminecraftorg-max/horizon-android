@@ -94,6 +94,28 @@ jobs:
           get(version['downloads']['client']['url'], '.local/l3/client.jar')
           get(version['downloads']['client_mappings']['url'], '.local/l3/client.txt')
           get('https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.172/neoforge-21.1.172-universal.jar', '.local/l3/neoforge.jar')
+          # The loader's other parts (FML, the event bus), newest of their lines.
+          import re
+          def newest(group, artifact, prefix):
+              meta = get(f'https://maven.neoforged.net/releases/{group}/{artifact}/maven-metadata.xml').decode()
+              versions = [v for v in re.findall(r'<version>([^<]+)</version>', meta) if v.startswith(prefix)]
+              return versions[-1]
+          fml = newest('net/neoforged/fancymodloader', 'loader', '4.0.')
+          get(f'https://maven.neoforged.net/releases/net/neoforged/fancymodloader/loader/{fml}/loader-{fml}.jar', '.local/l3/fml.jar')
+          bus = newest('net/neoforged', 'bus', '8.')
+          get(f'https://maven.neoforged.net/releases/net/neoforged/bus/{bus}/bus-{bus}.jar', '.local/l3/bus.jar')
+          print('fml', fml, 'bus', bus)
+          # The game's libraries a mod calls as they are.
+          os.makedirs('.local/l3/libs', exist_ok=True)
+          wanted = ['com.mojang:brigadier', 'com.mojang:datafixerupper', 'com.google.guava:guava', 'com.google.guava:failureaccess',
+                    'it.unimi.dsi:fastutil', 'com.google.code.gson:gson', 'org.joml:joml', 'org.apache.commons:commons-lang3',
+                    'commons-io:commons-io', 'org.slf4j:slf4j-api', 'org.apache.logging.log4j:log4j-api', 'com.mojang:logging']
+          for lib in version['libraries']:
+              name = ':'.join(lib['name'].split(':')[:2])
+              art = lib.get('downloads', {}).get('artifact')
+              if name in wanted and art:
+                  get(art['url'], '.local/l3/libs/' + art['path'].split('/')[-1])
+          print(sorted(os.listdir('.local/l3/libs')))
           for slug in ['farmers-delight', 'waystones', 'supplementaries']:
               q = f'https://api.modrinth.com/v2/project/{slug}/version?loaders=%5B%22neoforge%22%5D&game_versions=%5B%221.21.1%22%5D'
               try:
@@ -161,12 +183,14 @@ jobs:
             name=$(basename "$jar" .jar)
             echo "::group::$name"
             rm -rf .local/l3/stubs-$name
+            libs=$(ls .local/l3/libs/*.jar)
             cargo run -q -p horizon-port-pack --example lane3_stubs -- \
-              .local/l3/client.jar .local/l3/client.txt .local/l3/slice .local/l3/stubs-$name "$jar" .local/l3/neoforge.jar
+              .local/l3/client.jar .local/l3/client.txt .local/l3/slice .local/l3/stubs-$name "$jar" \
+              .local/l3/neoforge.jar .local/l3/fml.jar .local/l3/bus.jar $(for l in $libs; do echo "lib:$l"; done)
             echo "Verified:"
-            "$JAVA_HOME_21_X64/bin/java" -cp .local/l3/check LoadAll "$jar" .local/l3/stubs-$name .local/l3/slice || true
+            "$JAVA_HOME_21_X64/bin/java" -cp .local/l3/check LoadAll "$jar" .local/l3/stubs-$name .local/l3/slice $libs || true
             echo "Unverified:"
             "$JAVA_HOME_21_X64/bin/java" -XX:+UnlockDiagnosticVMOptions -XX:-BytecodeVerificationRemote \
-              -cp .local/l3/check LoadAll "$jar" .local/l3/stubs-$name .local/l3/slice || true
+              -cp .local/l3/check LoadAll "$jar" .local/l3/stubs-$name .local/l3/slice $libs || true
             echo "::endgroup::"
           done
