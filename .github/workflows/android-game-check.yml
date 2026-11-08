@@ -1,0 +1,64 @@
+name: Android game check
+run-name: Game check · ${{ github.sha }}
+
+# The game's crates type-checked on the host, and the tests of the modules the Android work
+# changes most: a compile error shows here in minutes, before the APK build reaches it. The
+# Android-only modules (cfg(target_os = "android")) are the APK build's to check.
+on:
+  push:
+    branches: [android]
+    paths:
+      - 'crates/horizon-client/**'
+      - 'crates/horizon-client-render/**'
+      - 'crates/horizon-client-core/**'
+      - 'crates/horizon-world/**'
+      - 'crates/horizon-protocol/**'
+      - 'Cargo.lock'
+      - '.github/workflows/android-game-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: android-game-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_TARGET_DIR: ${{ github.workspace }}/.local/check-target
+      HORIZON_TELEMETRY_URL: 'off'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .local/check-target
+          key: game-check-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
+          restore-keys: |
+            game-check-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+      - name: Install the system libraries
+        run: sudo apt-get update -q && sudo apt-get install -yq libasound2-dev libudev-dev
+      - name: Type-check the game
+        run: |
+          rustup show
+          cargo check -p horizon-client --lib --bins
+      - name: Test the data dimensions and the world's packs
+        run: |
+          cargo test -p horizon-client-render --lib data_dimensions
+          cargo test -p horizon-client-render --lib datapack
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: always()
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .local/check-target
+          key: game-check-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
