@@ -55,6 +55,24 @@ class ReleaseAuditTests(unittest.TestCase):
             path.write_bytes(archive(files))
             with self.assertRaises(ValueError):
                 audit.inspect_payload(path, public=True)
+    def test_lane3_slice_holds_only_horizon_s_own_classes(self):
+        build_spec = importlib.util.spec_from_file_location('android_build', Path(__file__).resolve().parents[1] / 'tools/android_build.py')
+        build = importlib.util.module_from_spec(build_spec)
+        build_spec.loader.exec_module(build)
+        with tempfile.TemporaryDirectory() as folder, patch.dict(sys.modules, {'android_build': build}):
+            path = Path(folder) / 'public.apk'
+            own = {'net/minecraft/world/level/Level.class': b'own', 'net/minecraft/core/Direction$Axis.class': b'own'}
+            files = {'AndroidManifest.xml': b'test', 'assets/engine-data.zip': archive({'facts.json': b'{}'}),
+                     'assets/lane3-api.jar': archive(own)}
+            path.write_bytes(archive(files))
+            self.assertEqual(audit.inspect_payload(path, public=True)['findings'], [])
+            # A class none of lane 3's sources make (a game or mod class) is reported.
+            files['assets/lane3-api.jar'] = archive({**own, 'net/minecraft/world/level/block/Blocks.class': b'game'})
+            path.write_bytes(archive(files))
+            found = audit.inspect_payload(path, public=True)['findings']
+            self.assertEqual([(f['kind'], f['path'].split('!/')[1]) for f in found],
+                             [('unexpected_code', 'net/minecraft/world/level/block/Blocks.class')])
+
     def inspect(self, engine=None, extra=None):
         files = {'AndroidManifest.xml': b'test manifest',
                  'assets/engine-data.zip': archive(engine or {'blocks.json': b'{}'}),

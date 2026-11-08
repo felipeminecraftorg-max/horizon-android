@@ -32,7 +32,10 @@ LANE3 = lane3_sources()
 
 
 def lane3_source(path):
-    return path in LANE3
+    # Lane 3's API slice was in packaging/android/java/ before it moved to lane3-api/: the
+    # same files in history.
+    moved = path.replace("packaging/android/java/", "packaging/android/lane3-api/", 1)
+    return path in LANE3 or (moved != path and moved in LANE3)
 
 
 def prohibited(path):

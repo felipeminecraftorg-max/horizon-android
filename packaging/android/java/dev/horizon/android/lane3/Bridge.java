@@ -142,6 +142,46 @@ public final class Bridge {
         }
     }
 
+    private static final Class<?>[] TWO = {String.class, String.class};
+    private static final Class<?>[] PLACED = {String.class, int.class, int.class, int.class, String.class};
+
+    /** The acting player went from the level {@code from} to {@code to}. */
+    public static void changedDimension(String from, String to) {
+        try {
+            call("changedDimension", TWO, from, to);
+        } catch (Throwable t) {
+            // As above.
+        }
+    }
+
+    /** The block state {@code state} was put at x, y, z in place of {@code old}. */
+    public static void placed(String state, int x, int y, int z, String old) {
+        try {
+            call("placed", PLACED, state, x, y, z, old);
+        } catch (Throwable t) {
+            // As above.
+        }
+    }
+
+    /** A tick scheduled for the block state {@code state} at x, y, z is due. */
+    public static void ticked(String state, int x, int y, int z) {
+        try {
+            call("ticked", BLOCK_AT, state, x, y, z);
+        } catch (Throwable t) {
+            // As above.
+        }
+    }
+
+    /** The mods' blocks with their own placement or tick: lines {@code place\tid}, {@code tick\tid}. */
+    public static String hooks() {
+        try {
+            Object r = call("hooks", NONE);
+            return r == null ? "" : r.toString();
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
     public static void serverTick(boolean end) {
         try {
             call("serverTick", BOOL, end);

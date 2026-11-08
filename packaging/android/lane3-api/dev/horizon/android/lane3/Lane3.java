@@ -272,19 +272,67 @@ public final class Lane3 {
     public static void entityInside(String block, int x, int y, int z) {
         if (loader == null) return;
         guard("inside " + block, () -> {
-            try {
-                Neo.entityInside(block, x, y, z);
-            } catch (RuntimeException | Error e) {
-                throw e;
-            } catch (Throwable t) {
-                throw new RuntimeException(t);
-            }
+            Neo.entityInside(block, x, y, z);
         });
+    }
+
+    /** The acting player went from the level {@code from} to {@code to} (NeoForge's event). */
+    public static void changedDimension(String from, String to) {
+        if (loader == null || Neo.MOD_BUSES.isEmpty()) return;
+        guard("changed dimension", () -> Neo.GAME.post(new net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerChangedDimensionEvent(
+                ServerPlayer.ACTING, Neo.level(from), Neo.level(to))));
+    }
+
+    /** A mod's block state {@code state} was put at x, y, z: its {@code onPlace} runs. */
+    public static void placed(String state, int x, int y, int z, String old) {
+        if (loader == null) return;
+        guard("placed " + state, () -> {
+            Neo.placed(state, x, y, z, old);
+        });
+    }
+
+    /** A tick a mod's block scheduled is due: its {@code tick} runs. */
+    public static void ticked(String state, int x, int y, int z) {
+        if (loader == null) return;
+        guard("tick " + state, () -> {
+            Neo.ticked(state, x, y, z);
+        });
+    }
+
+    /** The mods' blocks with their own {@code onPlace} or {@code tick}, for the game to call. */
+    public static String hooks() {
+        if (loader == null) return "";
+        String[] out = {""};
+        guard("blocks", () -> out[0] = Neo.hooks());
+        return out[0];
+    }
+
+    /** The thread {@link #joinServerGroup} last tried (a world's server thread is new). */
+    private static Thread triedGroup;
+
+    /**
+     * Puts the game's server thread in NeoForge's server thread group, which mods check before
+     * they queue work for the server ({@code Thread.currentThread().getThreadGroup() ==
+     * SidedThreadGroups.SERVER}): the thread was attached in another. Tried once.
+     */
+    private static void joinServerGroup() {
+        Thread thread = Thread.currentThread();
+        ThreadGroup server = net.neoforged.fml.util.thread.SidedThreadGroups.SERVER;
+        if (triedGroup == thread || thread.getThreadGroup() == server) return;
+        triedGroup = thread;
+        try {
+            java.lang.reflect.Field group = Thread.class.getDeclaredField("group");
+            group.setAccessible(true);
+            group.set(thread, server);
+        } catch (Throwable t) {
+            failed("server thread group", t);
+        }
     }
 
     /** The server's tick starts ({@code end} false) or ends. */
     public static void serverTick(boolean end) {
         if (loader == null) return;
+        joinServerGroup();
         MinecraftServer server = MinecraftServer.CURRENT;
         // NeoForge's mods hear it on the game's bus.
         if (!Neo.MOD_BUSES.isEmpty()) {

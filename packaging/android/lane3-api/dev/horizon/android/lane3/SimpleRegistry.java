@@ -14,13 +14,25 @@ import net.minecraft.resources.ResourceLocation;
  */
 public final class SimpleRegistry<T> implements DefaultedRegistry<T> {
     private final String defaultId;
+    /** The registry's own key ({@code minecraft:block}), for the entries mods register. */
+    private final net.minecraft.resources.ResourceKey<? extends net.minecraft.core.Registry<T>> registry;
     private final Function<String, T> make;
     private final Map<ResourceLocation, T> values = new LinkedHashMap<>();
     private final Map<Object, ResourceLocation> keys = new java.util.IdentityHashMap<>();
 
-    public SimpleRegistry(String defaultId, Function<String, T> make) {
+    public SimpleRegistry(
+            net.minecraft.resources.ResourceKey<? extends net.minecraft.core.Registry<T>> registry,
+            String defaultId,
+            Function<String, T> make) {
+        this.registry = registry;
         this.defaultId = defaultId;
         this.make = make;
+    }
+
+    /** A mod's entry, made: kept as the one value for its id, without counting it again. */
+    synchronized void hold(ResourceLocation id, T value) {
+        values.put(id, value);
+        keys.put(value, id);
     }
 
     public synchronized void put(ResourceLocation id, T value) {
@@ -43,6 +55,13 @@ public final class SimpleRegistry<T> implements DefaultedRegistry<T> {
         if (id == null) id = getDefaultKey();
         T value = values.get(id);
         if (value == null) {
+            // A mod's own entry: the object it made (lane 3 makes it now if nothing asked yet).
+            net.minecraft.resources.ResourceKey<T> key = net.minecraft.resources.ResourceKey.create(registry, id);
+            if (Neo.has(key)) {
+                @SuppressWarnings("unchecked")
+                T made = (T) Neo.value(key);
+                return made;
+            }
             value = make.apply(id.toString());
             values.put(id, value);
             keys.put(value, id);

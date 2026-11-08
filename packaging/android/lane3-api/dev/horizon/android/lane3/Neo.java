@@ -143,8 +143,7 @@ public final class Neo {
     static final Map<String, Integer> REGISTRIES = new LinkedHashMap<>();
 
     static void clear() {
-        PLAIN.clear();
-        INSIDE.clear();
+        OWN.clear();
         DEFINED.clear();
         MADE.clear();
         REGISTRIES.clear();
@@ -165,6 +164,7 @@ public final class Neo {
     }
 
     /** The value of a mod's registry entry, made now if it was not yet. */
+    @SuppressWarnings("unchecked")
     public static Object value(ResourceKey<?> key) {
         Object made = MADE.get(key);
         if (made != null) return made;
@@ -172,16 +172,31 @@ public final class Neo {
         if (make == null) throw new IllegalStateException("not registered: " + key);
         made = make.get();
         MADE.put(key, made);
-        if (made instanceof net.minecraft.world.level.block.Block b) b.horizonId(key.location().toString());
+        if (made instanceof net.minecraft.world.level.block.Block b) {
+            b.horizonId(key.location().toString());
+            if (key.isFor(net.minecraft.core.registries.Registries.BLOCK)) {
+                ((SimpleRegistry<net.minecraft.world.level.block.Block>) net.minecraft.core.registries.BuiltInRegistries.BLOCK)
+                        .hold(key.location(), b);
+            }
+        }
+        if (made instanceof net.minecraft.world.item.Item i && key.isFor(net.minecraft.core.registries.Registries.ITEM)) {
+            ((SimpleRegistry<net.minecraft.world.item.Item>) net.minecraft.core.registries.BuiltInRegistries.ITEM)
+                    .hold(key.location(), i);
+        }
         return made;
     }
 
-    /** Whether some mod registered {@code id} in the registry named {@code registry}. */
+    /** Whether some mod registered {@code id} in the registry named {@code registry}: its key. */
+    @SuppressWarnings({"unchecked", "rawtypes"})
     public static ResourceKey<?> key(String registry, String id) {
-        for (ResourceKey<?> k : DEFINED.keySet()) {
-            if (k.registry().toString().equals(registry) && k.location().toString().equals(id)) return k;
+        ResourceKey<?> k;
+        try {
+            k = ResourceKey.create((ResourceKey) ResourceKey.createRegistryKey(net.minecraft.resources.ResourceLocation.parse(registry)),
+                    net.minecraft.resources.ResourceLocation.parse(id));
+        } catch (RuntimeException e) {
+            return null;
         }
-        return null;
+        return DEFINED.containsKey(k) ? k : null;
     }
 
     /** Constructs a mod's {@code @Mod} class with its event bus (and its container, if it asks). */
@@ -222,49 +237,148 @@ public final class Neo {
         bus.register(type);
     }
 
-    /** The blocks whose {@code entityInside} is not a mod's own, by id: not asked again. */
-    private static final java.util.Set<String> PLAIN = new java.util.HashSet<>();
-    /** A block's own {@code entityInside}, by its class. */
-    private static final Map<Class<?>, Method> INSIDE = new HashMap<>();
+    /** Whether a block class has its own method by a name (asked once a class and name). */
+    private static final Map<Class<?>, Map<String, Boolean>> OWN = new HashMap<>();
 
     /** Whether a mod registered the block {@code id}. */
     public static boolean ownsBlock(String id) {
         return key("minecraft:block", id) != null;
     }
 
-    /** An entity (the acting player) is inside the mod block {@code id} at x, y, z. */
-    static void entityInside(String id, int x, int y, int z) throws Throwable {
-        if (PLAIN.contains(id)) return;
-        ResourceKey<?> key = key("minecraft:block", id);
-        if (key == null) {
-            PLAIN.add(id);
-            return;
-        }
-        Object block = value(key);
-        Method m = INSIDE.get(block.getClass());
-        if (m == null) {
-            for (Class<?> c = block.getClass(); c != null && c != net.minecraft.world.level.block.Block.class; c = c.getSuperclass()) {
+    /**
+     * Whether the mod block {@code block} declares its own {@code name} (a class whose methods
+     * can't be listed, as one naming a class nobody has, counts as having it: the call then
+     * reaches the game's empty one).
+     */
+    private static synchronized boolean own(Object block, String name) {
+        Map<String, Boolean> names = OWN.computeIfAbsent(block.getClass(), c -> new HashMap<>());
+        Boolean known = names.get(name);
+        if (known != null) return known;
+        boolean found = false;
+        for (Class<?> c = block.getClass(); c != null && c != net.minecraft.world.level.block.Block.class && !found; c = c.getSuperclass()) {
+            try {
                 for (Method d : c.getDeclaredMethods()) {
-                    if (d.getName().equals("entityInside") && d.getParameterCount() == 4) {
-                        m = d;
+                    if (d.getName().equals(name) && !d.isBridge()) {
+                        found = true;
                         break;
                     }
                 }
-                if (m != null) break;
+            } catch (Throwable t) {
+                found = true;
             }
-            if (m == null) {
-                PLAIN.add(id);
-                return;
+        }
+        names.put(name, found);
+        return found;
+    }
+
+    /** The mod's block of the state {@code state} ({@code places:x[a=b]}), or null. */
+    private static net.minecraft.world.level.block.Block block(String state) {
+        int bracket = state.indexOf('[');
+        ResourceKey<?> key = key("minecraft:block", bracket < 0 ? state : state.substring(0, bracket));
+        if (key == null) return null;
+        return value(key) instanceof net.minecraft.world.level.block.Block b ? b : null;
+    }
+
+    /** An entity (the acting player) is inside the mod block {@code id} at x, y, z. */
+    static void entityInside(String id, int x, int y, int z) {
+        net.minecraft.world.level.block.Block block = block(id);
+        if (block == null || !own(block, "entityInside")) return;
+        net.minecraft.world.level.block.state.BlockBehaviour.horizonInside(block, net.minecraft.world.level.block.state.BlockState.of(id),
+                net.minecraft.server.level.ServerLevel.CURRENT, new net.minecraft.core.BlockPos(x, y, z), net.minecraft.server.level.ServerPlayer.ACTING);
+    }
+
+    /** {@code Block.onPlace}: the mod's block state {@code state} replaced {@code old} at x, y, z. */
+    static void placed(String state, int x, int y, int z, String old) {
+        net.minecraft.world.level.block.Block block = block(state);
+        if (block == null) return;
+        net.minecraft.world.level.block.state.BlockBehaviour.horizonPlace(block, net.minecraft.world.level.block.state.BlockState.of(state),
+                net.minecraft.server.level.ServerLevel.CURRENT, new net.minecraft.core.BlockPos(x, y, z),
+                net.minecraft.world.level.block.state.BlockState.of(old));
+    }
+
+    /** {@code Block.tick}: a tick the mod's block scheduled at x, y, z is due. */
+    static void ticked(String state, int x, int y, int z) {
+        net.minecraft.world.level.block.Block block = block(state);
+        if (block == null) return;
+        net.minecraft.server.level.ServerLevel level = net.minecraft.server.level.ServerLevel.CURRENT;
+        net.minecraft.world.level.block.state.BlockBehaviour.horizonTick(block, net.minecraft.world.level.block.state.BlockState.of(state), level,
+                new net.minecraft.core.BlockPos(x, y, z), level.random);
+    }
+
+    /**
+     * The mods' blocks (each made now, as registering them makes them in the game) with their own
+     * {@code onPlace} or {@code tick}: {@code place\tid} and {@code tick\tid} lines.
+     */
+    static String hooks() {
+        StringBuilder out = new StringBuilder();
+        for (ResourceKey<?> key : new java.util.ArrayList<>(DEFINED.keySet())) {
+            if (!key.isFor(net.minecraft.core.registries.Registries.BLOCK)) continue;
+            Object block;
+            try {
+                block = value(key);
+            } catch (Throwable t) {
+                Lane3.failed("block " + key.location(), t);
+                continue;
             }
-            m.setAccessible(true);
-            INSIDE.put(block.getClass(), m);
+            String id = key.location().toString();
+            if (own(block, "onPlace")) out.append("place\t").append(id).append('\n');
+            if (own(block, "tick")) out.append("tick\t").append(id).append('\n');
         }
-        try {
-            m.invoke(block, net.minecraft.world.level.block.state.BlockState.of(id), net.minecraft.server.level.ServerLevel.CURRENT,
-                    new net.minecraft.core.BlockPos(x, y, z), net.minecraft.server.level.ServerPlayer.ACTING);
-        } catch (java.lang.reflect.InvocationTargetException e) {
-            throw e.getCause();
-        }
+        return out.toString();
+    }
+
+    /** The biome {@code id}'s holder. */
+    @SuppressWarnings("unchecked")
+    public static net.minecraft.core.Holder<net.minecraft.world.level.biome.Biome> biome(String id) {
+        return named((ResourceKey<net.minecraft.world.level.biome.Biome>) (ResourceKey<?>) ResourceKey.create(
+                net.minecraft.core.registries.Registries.BIOME, net.minecraft.resources.ResourceLocation.parse(id)));
+    }
+
+    /** A level's key by its id: one key per id, as the game's. */
+    @SuppressWarnings("unchecked")
+    public static ResourceKey<net.minecraft.world.level.Level> level(String id) {
+        return (ResourceKey<net.minecraft.world.level.Level>) (ResourceKey<?>) ResourceKey.create(
+                net.minecraft.core.registries.Registries.DIMENSION, net.minecraft.resources.ResourceLocation.parse(id));
+    }
+
+    /** The acting player: x, y, z, yaw, pitch and its level's id (Native.player). */
+    public static String[] player() {
+        String p = Native.player();
+        return p == null || p.isEmpty() ? new String[0] : p.split(" ");
+    }
+
+    /** A registry entry's id ({@code minecraft:blindness}), or "" for one with none. */
+    public static String id(net.minecraft.core.Holder<?> holder) {
+        if (holder == null) return "";
+        return holder.unwrapKey().map(k -> k.location().toString()).orElse("");
+    }
+
+    private static final Map<ResourceKey<?>, net.minecraft.core.Holder<?>> NAMED = new HashMap<>();
+
+    /** The game's own entry {@code key} (its value is Horizon's, not the mod's). */
+    @SuppressWarnings("unchecked")
+    public static synchronized <T> net.minecraft.core.Holder<T> named(ResourceKey<T> key) {
+        return (net.minecraft.core.Holder<T>) NAMED.computeIfAbsent(key, k -> new net.minecraft.core.Holder<T>() {
+            public T value() {
+                return null;
+            }
+
+            public boolean isBound() {
+                return true;
+            }
+
+            public boolean is(net.minecraft.resources.ResourceLocation id) {
+                return key.location().equals(id);
+            }
+
+            public boolean is(ResourceKey<T> other) {
+                return key.equals(other);
+            }
+
+            public java.util.Optional<ResourceKey<T>> unwrapKey() {
+                return java.util.Optional.of(key);
+            }
+        });
     }
 
     /** What the mods registered, for the report: {@code registry xN, ...}. */

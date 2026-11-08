@@ -15,12 +15,21 @@ public final class ResourceKey<T> implements Comparable<ResourceKey<?>> {
         this.location = location;
     }
 
+    /** One key a registry and id, as the game keeps them: a mod may compare keys with {@code ==}. */
+    private static final java.util.Map<ResourceKey<?>, ResourceKey<?>> KEYS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    @SuppressWarnings("unchecked")
+    private static <T> ResourceKey<T> intern(ResourceLocation registry, ResourceLocation location) {
+        ResourceKey<T> made = new ResourceKey<>(registry, location);
+        return (ResourceKey<T>) KEYS.computeIfAbsent(made, k -> k);
+    }
+
     public static <T> ResourceKey<T> create(ResourceKey<? extends Registry<T>> registry, ResourceLocation location) {
-        return new ResourceKey<>(registry.location, location);
+        return intern(registry.location, location);
     }
 
     public static <T> ResourceKey<Registry<T>> createRegistryKey(ResourceLocation location) {
-        return new ResourceKey<>(ResourceLocation.withDefaultNamespace("root"), location);
+        return intern(ResourceLocation.withDefaultNamespace("root"), location);
     }
 
     public ResourceLocation location() {

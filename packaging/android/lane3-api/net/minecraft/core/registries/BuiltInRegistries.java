@@ -9,6 +9,6 @@ import net.minecraft.world.level.block.Block;
 public final class BuiltInRegistries {
     private BuiltInRegistries() {}
 
-    public static final DefaultedRegistry<Block> BLOCK = new SimpleRegistry<>("minecraft:air", Block::new);
-    public static final DefaultedRegistry<Item> ITEM = new SimpleRegistry<>("minecraft:air", Item::new);
+    public static final DefaultedRegistry<Block> BLOCK = new SimpleRegistry<Block>(Registries.BLOCK, "minecraft:air", Block::new);
+    public static final DefaultedRegistry<Item> ITEM = new SimpleRegistry<Item>(Registries.ITEM, "minecraft:air", Item::new);
 }

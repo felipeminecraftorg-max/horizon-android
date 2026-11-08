@@ -261,6 +261,54 @@ pub(super) fn native_sound_physics(game: &mut Game<'_>, listener: [f64; 3], unde
     }
 }
 
+/// An entity is inside a mod's block (`Block.entityInside`): a player's reaches lane 3.
+pub(super) fn native_block_inside(entity: i32, kind: &str, block: &str, position: [i32; 3]) {
+    let _ = (&entity, &kind, &block, &position);
+    #[cfg(target_os = "android")]
+    {
+        lane3::inside(entity, kind, block, position);
+    }
+}
+
+/// A block took a new state in a server level: a lane 3 mod's block's `onPlace` runs later
+/// in the tick, in that level.
+pub(super) fn native_block_placed(
+    block: &str,
+    new: BlockStateId,
+    old: BlockStateId,
+    position: [i32; 3],
+) {
+    let _ = (&block, &new, &old, &position);
+    #[cfg(target_os = "android")]
+    {
+        lane3::placed(block, new, old, position);
+    }
+}
+
+/// A block's scheduled tick is due: a lane 3 mod's block takes its `tick` (later in the
+/// tick, in that level) in place of the game's.
+pub(super) fn native_block_ticked(
+    block: &str,
+    state: BlockStateId,
+    position: [i32; 3],
+    handled: &mut bool,
+) {
+    let _ = (&block, &state, &position, &handled);
+    #[cfg(target_os = "android")]
+    {
+        lane3::ticked(block, state, position, handled);
+    }
+}
+
+/// A server level finished its tick: what lane 3's blocks were owed there runs.
+pub(super) fn native_level_tick_post(game: &mut Game<'_>) {
+    let _ = &game;
+    #[cfg(target_os = "android")]
+    {
+        lane3::level_tick_post(&mut *game);
+    }
+}
+
 pub(super) fn native_server_tick(game: &mut Game<'_>, end: bool) {
     let _ = (&game, &end);
     #[cfg(target_os = "android")]

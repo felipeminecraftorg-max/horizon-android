@@ -26,4 +26,19 @@ public final class Native {
     public static native long time();
 
     public static native void log(String line);
+
+    /** Runs a command as the acting player, at the mods' permission, quietly: whether it ran. */
+    public static native boolean command(String command);
+
+    /** The acting player: "x y z yaw pitch level", or null outside a game. */
+    public static native String player();
+
+    /** Whether the acting player has the effect {@code id} ({@code minecraft:blindness}). */
+    public static native boolean hasEffect(String id);
+
+    /** A tick for the block at x, y, z in {@code delay} ticks, in the level in place. */
+    public static native void scheduleTick(int x, int y, int z, int delay);
+
+    /** The biome at x, y, z ({@code minecraft:plains}), or "" outside a game. */
+    public static native String biome(int x, int y, int z);
 }

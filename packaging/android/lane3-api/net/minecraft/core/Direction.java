@@ -46,4 +46,47 @@ public enum Direction {
     public String getName() {
         return name().toLowerCase(java.util.Locale.ROOT);
     }
+
+    public Axis getAxis() {
+        return x != 0 ? Axis.X : y != 0 ? Axis.Y : Axis.Z;
+    }
+
+    /** A quarter turn clockwise seen from above (the vertical ones stay). */
+    public Direction getClockWise() {
+        return switch (this) {
+            case NORTH -> EAST;
+            case EAST -> SOUTH;
+            case SOUTH -> WEST;
+            case WEST -> NORTH;
+            default -> this;
+        };
+    }
+
+    public Direction getCounterClockWise() {
+        return switch (this) {
+            case NORTH -> WEST;
+            case WEST -> SOUTH;
+            case SOUTH -> EAST;
+            case EAST -> NORTH;
+            default -> this;
+        };
+    }
+
+    public enum Axis {
+        X,
+        Y,
+        Z;
+
+        public boolean isVertical() {
+            return this == Y;
+        }
+
+        public boolean isHorizontal() {
+            return this != Y;
+        }
+
+        public String getName() {
+            return name().toLowerCase(java.util.Locale.ROOT);
+        }
+    }
 }

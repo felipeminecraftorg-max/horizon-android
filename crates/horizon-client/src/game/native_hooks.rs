@@ -343,6 +343,14 @@ impl GameLevel<'_> {
         new: BlockStateId,
     ) {
         let _ = (dimension, pos, old, new);
+        if new != old {
+            super::android_bundled::native_block_placed(
+                &self.facts.get(new).name,
+                new,
+                old,
+                [pos.x, pos.y, pos.z],
+            );
+        }
     }
 
     /// An authoritative server is about to deliver `neighborChanged`.
@@ -477,6 +485,14 @@ impl GameLevel<'_> {
         handled: &mut bool,
     ) {
         let _ = (ticks, dimension, pos, state, handled);
+        if !*handled {
+            super::android_bundled::native_block_ticked(
+                &self.facts.get(state).name,
+                state,
+                [pos.x, pos.y, pos.z],
+                handled,
+            );
+        }
     }
 
     /// An authoritative server is about to compute the state the block
@@ -1227,6 +1243,7 @@ impl Game<'_> {
     /// After a successful authoritative server level tick pass.
     pub(super) fn native_level_tick_post(&mut self, dimension: &str) {
         let _ = dimension;
+        super::android_bundled::native_level_tick_post(self);
     }
     /// The HUD (not drawn under F1), after the minimap: place a box with
     /// `corners.place` (boxes stack away from their edge) and draw it with
@@ -2549,13 +2566,22 @@ pub(super) fn block_contact(
             c.state,
             [c.position.x, c.position.y, c.position.z],
         ),
-        Event::Inside(c) => Game::native_block_entity_inside(
-            dimension,
-            c.entity,
-            c.kind,
-            c.state,
-            [c.position.x, c.position.y, c.position.z],
-        ),
+        Event::Inside(c) => {
+            // Lane 3's NeoForge mods hear it at the tick's end (android_bundled).
+            super::android_bundled::native_block_inside(
+                c.entity,
+                c.kind,
+                c.block,
+                [c.position.x, c.position.y, c.position.z],
+            );
+            Game::native_block_entity_inside(
+                dimension,
+                c.entity,
+                c.kind,
+                c.state,
+                [c.position.x, c.position.y, c.position.z],
+            )
+        }
         Event::FallOn(c, distance) => Game::native_block_fall_on(
             dimension,
             c.entity,

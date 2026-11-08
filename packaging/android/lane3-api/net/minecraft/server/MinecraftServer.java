@@ -10,6 +10,14 @@ public class MinecraftServer {
         return (int) Native.time();
     }
 
+    public net.minecraft.commands.Commands getCommands() {
+        return net.minecraft.commands.Commands.CURRENT;
+    }
+
+    public net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager getStructureManager() {
+        return net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplateManager.CURRENT;
+    }
+
     public boolean isDedicatedServer() {
         return false;
     }

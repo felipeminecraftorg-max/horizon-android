@@ -24,4 +24,13 @@ public class ModContainer {
     public IEventBus getEventBus() {
         return bus;
     }
+
+    /** A settings file: lane 3 answers its defaults. */
+    public void registerConfig(net.neoforged.fml.config.ModConfig.Type type, net.neoforged.fml.config.IConfigSpec spec) {}
+
+    public void registerConfig(net.neoforged.fml.config.ModConfig.Type type, net.neoforged.fml.config.IConfigSpec spec, String file) {}
+
+    public <T> void registerExtensionPoint(Class<? extends T> point, T extension) {}
+
+    public <T> void registerExtensionPoint(Class<? extends T> point, java.util.function.Supplier<? extends T> extension) {}
 }

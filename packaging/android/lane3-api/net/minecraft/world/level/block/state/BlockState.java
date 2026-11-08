@@ -4,7 +4,7 @@ package net.minecraft.world.level.block.state;
 import net.minecraft.world.level.block.Block;
 
 /** A block state as Horizon writes it: {@code minecraft:wheat[age=7]}. */
-public class BlockState {
+public class BlockState extends StateHolder<net.minecraft.world.level.block.Block, BlockState> {
     private final String state;
 
     private BlockState(String state) {

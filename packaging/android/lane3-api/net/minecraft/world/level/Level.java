@@ -6,8 +6,41 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
 
 /** The level the server thread is ticking, through Horizon. */
-public abstract class Level {
+public abstract class Level implements LevelAccessor {
+    /** The vanilla levels' keys: a mod compares them with {@code ==}, as ResourceKeys are one per id. */
+    public static final net.minecraft.resources.ResourceKey<Level> OVERWORLD = key("minecraft:overworld");
+    public static final net.minecraft.resources.ResourceKey<Level> NETHER = key("minecraft:the_nether");
+    public static final net.minecraft.resources.ResourceKey<Level> END = key("minecraft:the_end");
+
+    @SuppressWarnings("unchecked")
+    private static net.minecraft.resources.ResourceKey<Level> key(String id) {
+        return (net.minecraft.resources.ResourceKey<Level>) (net.minecraft.resources.ResourceKey<?>) net.minecraft.resources.ResourceKey.create(
+                net.minecraft.core.registries.Registries.DIMENSION, net.minecraft.resources.ResourceLocation.parse(id));
+    }
+
+    /** The level the acting player is in. */
+    public net.minecraft.resources.ResourceKey<Level> dimension() {
+        String[] p = dev.horizon.android.lane3.Neo.player();
+        return key(p.length > 5 ? p[5] : "minecraft:overworld");
+    }
+
+    public java.util.List<net.minecraft.world.entity.player.Player> players() {
+        return java.util.Collections.singletonList(net.minecraft.server.level.ServerPlayer.ACTING);
+    }
+
+    @Override
+    public net.minecraft.server.MinecraftServer getServer() {
+        return net.minecraft.server.MinecraftServer.CURRENT;
+    }
+
     public final boolean isClientSide = false;
+
+    public final net.minecraft.util.RandomSource random = net.minecraft.util.RandomSource.create();
+
+    @Override
+    public net.minecraft.util.RandomSource getRandom() {
+        return random;
+    }
 
     public BlockState getBlockState(BlockPos pos) {
         return BlockState.of(Native.block(pos.getX(), pos.getY(), pos.getZ()));

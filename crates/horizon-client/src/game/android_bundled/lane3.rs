@@ -10,9 +10,42 @@ use jni::{
     objects::{JClass, JString},
     sys::{jboolean, jint, jlong, jstring},
 };
-use std::{cell::Cell, panic::AssertUnwindSafe};
+use std::{
+    cell::Cell,
+    collections::{HashMap, HashSet},
+    panic::AssertUnwindSafe,
+};
+
+/// What a lane 3 mod's block is owed in a level: its `onPlace` or its scheduled `tick`, run
+/// after the change (the game's level is busy while it happens), in that level.
+enum Owed {
+    Placed {
+        state: BlockStateId,
+        old: BlockStateId,
+        at: [i32; 3],
+    },
+    Ticked {
+        state: BlockStateId,
+        at: [i32; 3],
+    },
+}
+
+/// At most this many owed calls wait at once (a block placing blocks without end stops there).
+const OWED_MAX: usize = 4096;
 
 thread_local! {
+    /// The mods' blocks with their own `onPlace`, and with their own `tick`.
+    static HOOKS: std::cell::RefCell<(HashSet<String>, HashSet<String>)> =
+        std::cell::RefCell::new((HashSet::new(), HashSet::new()));
+    /// What the mods' blocks are owed, with the level it is owed in.
+    static OWED: std::cell::RefCell<Vec<(&'static str, Owed)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+    /// Each player's level at the end of the last tick, by entity id.
+    static LEVELS: std::cell::RefCell<HashMap<i32, String>> =
+        std::cell::RefCell::new(HashMap::new());
+    /// The players inside mods' blocks this tick: (entity id, block, position), each once.
+    static INSIDE: std::cell::RefCell<Vec<(i32, String, [i32; 3])>> =
+        const { std::cell::RefCell::new(Vec::new()) };
     /// The game an event is running for, while the Java code runs.
     static CURRENT: Cell<*mut ()> = const { Cell::new(std::ptr::null_mut()) };
     /// Whether this server thread started its lane 3 mods, and how many it has.
@@ -102,13 +135,200 @@ fn start(game: &mut Game<'_>) {
     log::info!("lane 3: {} mods\n{text}", dex.len());
     let _ = std::fs::write(dir.join("last-start.txt"), text);
     STARTED.with(|s| s.set(Some(dex.len())));
+    let hooks = with_current(game, crate::lane3::hooks);
+    HOOKS.with(|h| {
+        let mut h = h.borrow_mut();
+        *h = (HashSet::new(), HashSet::new());
+        for line in hooks.lines() {
+            match line.split_once('\t') {
+                Some(("place", id)) => {
+                    h.0.insert(id.to_owned());
+                }
+                Some(("tick", id)) => {
+                    h.1.insert(id.to_owned());
+                }
+                _ => {}
+            }
+        }
+    });
 }
 
-/// The server tick starts or ends: the first one starts the mods.
+/// A block took the state `new` (it was `old`): a mod's block with its own `onPlace` is owed it.
+pub(super) fn placed(block: &str, new: BlockStateId, old: BlockStateId, at: [i32; 3]) {
+    if !active() || !HOOKS.with(|h| h.borrow().0.contains(block)) {
+        return;
+    }
+    owe(Owed::Placed {
+        state: new,
+        old,
+        at,
+    });
+}
+
+/// A scheduled tick of `block` is due: a mod's block with its own `tick` takes it.
+pub(super) fn ticked(block: &str, state: BlockStateId, at: [i32; 3], handled: &mut bool) {
+    if !active() || !HOOKS.with(|h| h.borrow().1.contains(block)) {
+        return;
+    }
+    if owe(Owed::Ticked { state, at }) {
+        *handled = true;
+    }
+}
+
+/// Keeps `owed` for the level acting now (the server thread's): whether it was kept.
+fn owe(owed: Owed) -> bool {
+    let Some(level) = horizon_client::block_contact::level() else {
+        return false;
+    };
+    OWED.with(|o| {
+        let mut o = o.borrow_mut();
+        if o.len() >= OWED_MAX {
+            return false;
+        }
+        o.push((level, owed));
+        true
+    })
+}
+
+/// Runs what the mods' blocks are owed in the level in place (what that runs may owe more,
+/// run in turn, a few rounds at most).
+fn pay(game: &mut Game<'_>) {
+    let here = game.dim.id();
+    // What runs acts in this level, so what it places is owed here in turn.
+    horizon_client::block_contact::in_level(Some(here), || pay_in(game, here));
+}
+
+fn pay_in(game: &mut Game<'_>, here: &'static str) {
+    for _ in 0..8 {
+        let due: Vec<Owed> = OWED.with(|o| {
+            let mut o = o.borrow_mut();
+            let (due, rest): (Vec<_>, Vec<_>) = o.drain(..).partition(|(l, _)| *l == here);
+            *o = rest;
+            due.into_iter().map(|(_, owed)| owed).collect()
+        });
+        if due.is_empty() {
+            return;
+        }
+        for owed in due {
+            match owed {
+                Owed::Placed { state, old, at } => {
+                    let (state, old) = (state_text(game, state), state_text(game, old));
+                    with_current(game, || crate::lane3::placed(&state, at, &old));
+                }
+                Owed::Ticked { state, at } => {
+                    let state = state_text(game, state);
+                    with_current(game, || crate::lane3::ticked(&state, at));
+                }
+            }
+        }
+    }
+}
+
+/// A level finished its tick on the server: what the mods' blocks are owed there runs.
+pub(super) fn level_tick_post(game: &mut Game<'_>) {
+    if active() {
+        pay(game);
+    }
+}
+
+/// A player is inside a mod's block: kept for the tick's end, once a block.
+pub(super) fn inside(entity: i32, kind: &str, block: &str, position: [i32; 3]) {
+    if !active() || kind != "minecraft:player" {
+        return;
+    }
+    INSIDE.with(|i| {
+        let mut i = i.borrow_mut();
+        if i.len() < 64
+            && !i
+                .iter()
+                .any(|(e, b, p)| *e == entity && b == block && *p == position)
+        {
+            i.push((entity, block.to_owned(), position));
+        }
+    });
+}
+
+/// The server tick starts or ends: the first one starts the mods. At its end the mods' blocks
+/// the players were inside run their `entityInside`, and the players who changed level hear
+/// it, each player acting for itself in its own level.
 pub(super) fn server_tick(game: &mut Game<'_>, end: bool) {
     start(game);
-    if active() {
-        with_current(game, || crate::lane3::server_tick(end));
+    if !active() {
+        return;
+    }
+    // The mods' server tick acts as the first player (single player's own), in its level: a
+    // mod's queued work names no level of its own.
+    let first = game
+        .lan
+        .as_ref()
+        .and_then(|h| h.hub.guests.first().map(|g| g.entity_id));
+    match first {
+        Some(entity) => as_player(game, entity, |g| {
+            with_current(g, || crate::lane3::server_tick(end));
+        }),
+        None => with_current(game, || crate::lane3::server_tick(end)),
+    }
+    if !end {
+        return;
+    }
+    pay(game);
+    let touched = INSIDE.with(|i| std::mem::take(&mut *i.borrow_mut()));
+    for (entity, block, position) in touched {
+        as_player(game, entity, |g| {
+            with_current(g, || crate::lane3::entity_inside(&block, position));
+        });
+    }
+    for (entity, from, to) in level_changes(game) {
+        as_player(game, entity, |g| {
+            with_current(g, || crate::lane3::changed_dimension(&from, &to));
+        });
+    }
+}
+
+/// The players whose level changed since the last tick's end: (entity id, from, to).
+fn level_changes(game: &Game<'_>) -> Vec<(i32, String, String)> {
+    let Some(host) = game.lan.as_ref() else {
+        return Vec::new();
+    };
+    LEVELS.with(|l| {
+        let mut l = l.borrow_mut();
+        let mut out = Vec::new();
+        let mut now = HashMap::new();
+        for g in &host.hub.guests {
+            if let Some(before) = l.get(&g.entity_id)
+                && *before != g.dimension
+            {
+                out.push((g.entity_id, before.clone(), g.dimension.clone()));
+            }
+            now.insert(g.entity_id, g.dimension.clone());
+        }
+        *l = now;
+        out
+    })
+}
+
+/// Runs `f` as the player `entity` (a server's guest), in its level: then what the mods'
+/// blocks were owed there runs too.
+fn as_player(game: &mut Game<'_>, entity: i32, f: impl FnOnce(&mut Game<'_>)) {
+    let Some((conn, level)) = game.lan.as_ref().and_then(|h| {
+        h.hub
+            .guests
+            .iter()
+            .find(|g| g.entity_id == entity)
+            .map(|g| (g.conn, g.dimension.clone()))
+    }) else {
+        return;
+    };
+    let back = game.enter_command_level(crate::game::Dim::from_id(&level));
+    if let Some(mut host) = game.lan.take() {
+        game.as_guest(&mut host, conn, |g| {
+            f(g);
+            pay(g);
+        });
+        game.lan = Some(host);
+    }
+    if let Some(back) = back {
+        game.enter_command_level(back);
     }
 }
 
@@ -123,6 +343,8 @@ pub(super) fn server_stopping() {
         }
     }
     STARTED.with(|s| s.set(None));
+    OWED.with(|o| o.borrow_mut().clear());
+    LEVELS.with(|l| l.borrow_mut().clear());
 }
 
 /// `Direction.get3DDataValue` of a face vector.
@@ -304,6 +526,101 @@ pub extern "system" fn Java_dev_horizon_android_lane3_Native_log<'l>(
 ) {
     let text = rust_string(&mut env, &line);
     log::info!("lane 3 {text}");
+}
+
+/// A mod runs a command as the acting player (`Commands.performPrefixedCommand` with the
+/// player's source at the mods' permission, 4, its output suppressed): whether it ran.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_horizon_android_lane3_Native_command<'l>(
+    mut env: JNIEnv<'l>,
+    _class: JClass<'l>,
+    command: JString<'l>,
+) -> jboolean {
+    let text = rust_string(&mut env, &command);
+    let line = text.trim().trim_start_matches('/').to_owned();
+    if line.is_empty() {
+        return 0;
+    }
+    let ran = current(|g| {
+        let level = g.ui.registries.permission;
+        g.ui.registries.permission = 4;
+        let ok = g.run_command_quietly(&line);
+        g.ui.registries.permission = level;
+        ok
+    });
+    u8::from(ran == Some(true))
+}
+
+/// The acting player, as `x y z yaw pitch dimension`, or nothing outside an event.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_horizon_android_lane3_Native_player<'l>(
+    mut env: JNIEnv<'l>,
+    _class: JClass<'l>,
+) -> jstring {
+    let text = current(|g| {
+        let (x, y, z) = g.player.as_ref().map_or((0.0, 0.0, 0.0), |p| {
+            (p.position.x, p.position.y, p.position.z)
+        });
+        format!("{x} {y} {z} {} {} {}", g.yaw, g.pitch, g.dim.id())
+    })
+    .unwrap_or_default();
+    java_string(&mut env, &text)
+}
+
+/// Whether the acting player has an effect (`minecraft:blindness`, a mod's `ns:path`).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_horizon_android_lane3_Native_hasEffect<'l>(
+    mut env: JNIEnv<'l>,
+    _class: JClass<'l>,
+    effect: JString<'l>,
+) -> jboolean {
+    let id = rust_string(&mut env, &effect);
+    let short = id.strip_prefix("minecraft:").unwrap_or(&id).to_owned();
+    u8::from(current(|g| g.potions.effects.get(&short).is_some()) == Some(true))
+}
+
+/// A mod's block asks for a tick at x, y, z in `delay` ticks (`Level.scheduleTick`).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_horizon_android_lane3_Native_scheduleTick<'l>(
+    _env: JNIEnv<'l>,
+    _class: JClass<'l>,
+    x: jint,
+    y: jint,
+    z: jint,
+    delay: jint,
+) {
+    let _ = current(|g| {
+        let at = horizon_core::position::BlockPos::new(x, y, z);
+        g.with_level(|b, level, ticks| b.schedule_tick(level, ticks, at, delay.max(0)));
+    });
+}
+
+/// The biome at x, y, z in the level in place (`minecraft:plains`).
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_horizon_android_lane3_Native_biome<'l>(
+    mut env: JNIEnv<'l>,
+    _class: JClass<'l>,
+    x: jint,
+    y: jint,
+    z: jint,
+) -> jstring {
+    let text = current(|g| {
+        let at = horizon_core::geometry::Vec3::new(
+            f64::from(x) + 0.5,
+            f64::from(y) + 0.5,
+            f64::from(z) + 0.5,
+        );
+        g.biome_name_at(at).map(|name| {
+            if name.contains(':') {
+                name
+            } else {
+                format!("minecraft:{name}")
+            }
+        })
+    })
+    .flatten()
+    .unwrap_or_default();
+    java_string(&mut env, &text)
 }
 
 #[cfg(test)]

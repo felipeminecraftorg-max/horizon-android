@@ -219,6 +219,85 @@ pub fn before_break(pos: [i32; 3], state: &str) -> bool {
     .unwrap_or(true)
 }
 
+/// The acting player is inside a mod's block `block` at `pos`: its `entityInside` runs.
+pub fn entity_inside(block: &str, pos: [i32; 3]) {
+    let _ = call(|env, class| {
+        let b = JObject::from(env.new_string(block)?);
+        env.call_static_method(
+            class,
+            "entityInside",
+            "(Ljava/lang/String;III)V",
+            &[
+                JValue::Object(&b),
+                JValue::Int(pos[0]),
+                JValue::Int(pos[1]),
+                JValue::Int(pos[2]),
+            ],
+        )?;
+        Ok(())
+    });
+}
+
+/// The mods' blocks with their own `onPlace` (`place\t<id>` lines) and `tick` (`tick\t<id>`).
+pub fn hooks() -> String {
+    strings("hooks", &[]).unwrap_or_default()
+}
+
+/// A mod's block state `state` was put at `pos` in place of `old`: its `onPlace` runs.
+pub fn placed(state: &str, pos: [i32; 3], old: &str) {
+    let _ = call(|env, class| {
+        let s = JObject::from(env.new_string(state)?);
+        let o = JObject::from(env.new_string(old)?);
+        env.call_static_method(
+            class,
+            "placed",
+            "(Ljava/lang/String;IIILjava/lang/String;)V",
+            &[
+                JValue::Object(&s),
+                JValue::Int(pos[0]),
+                JValue::Int(pos[1]),
+                JValue::Int(pos[2]),
+                JValue::Object(&o),
+            ],
+        )?;
+        Ok(())
+    });
+}
+
+/// A tick a mod's block state `state` at `pos` scheduled is due: its `tick` runs.
+pub fn ticked(state: &str, pos: [i32; 3]) {
+    let _ = call(|env, class| {
+        let s = JObject::from(env.new_string(state)?);
+        env.call_static_method(
+            class,
+            "ticked",
+            "(Ljava/lang/String;III)V",
+            &[
+                JValue::Object(&s),
+                JValue::Int(pos[0]),
+                JValue::Int(pos[1]),
+                JValue::Int(pos[2]),
+            ],
+        )?;
+        Ok(())
+    });
+}
+
+/// The acting player went from the level `from` to `to`.
+pub fn changed_dimension(from: &str, to: &str) {
+    let _ = call(|env, class| {
+        let f = JObject::from(env.new_string(from)?);
+        let t = JObject::from(env.new_string(to)?);
+        env.call_static_method(
+            class,
+            "changedDimension",
+            "(Ljava/lang/String;Ljava/lang/String;)V",
+            &[JValue::Object(&f), JValue::Object(&t)],
+        )?;
+        Ok(())
+    });
+}
+
 pub fn after_break(pos: [i32; 3], state: &str) {
     let _ = call(|env, class| {
         let s = JObject::from(env.new_string(state)?);

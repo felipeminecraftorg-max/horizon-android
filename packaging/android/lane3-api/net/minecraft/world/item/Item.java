@@ -12,6 +12,11 @@ public class Item {
         return id;
     }
 
+    /** The item {@code id} names, as the registry holds it (one object per id). */
+    public static Item byId(String id) {
+        return net.minecraft.core.registries.BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.parse(id));
+    }
+
     public String getDescriptionId() {
         int colon = id.indexOf(':');
         return "item." + id.substring(0, colon) + "." + id.substring(colon + 1);

@@ -7,6 +7,15 @@ import net.minecraft.world.level.block.state.BlockState;
 /** A block by its id: what it does is Horizon's (lane 1 carried a mod's own). */
 public class Block extends net.minecraft.world.level.block.state.BlockBehaviour {
     String id;
+    /** Its states: the block's own state (lane 3 keeps a mod block's states Horizon's). */
+    protected final net.minecraft.world.level.block.state.StateDefinition<Block, BlockState> stateDefinition =
+            new net.minecraft.world.level.block.state.StateDefinition<>(BlockState.of("minecraft:air"));
+
+    protected final void registerDefaultState(BlockState state) {}
+
+    public net.minecraft.world.level.block.state.StateDefinition<Block, BlockState> getStateDefinition() {
+        return stateDefinition;
+    }
 
     public Block(String id) {
         super(null);

@@ -16,6 +16,26 @@ public abstract class BlockBehaviour {
     /** An entity is inside the block's space. */
     protected void entityInside(BlockState state, Level level, BlockPos pos, Entity entity) {}
 
+    /** The block was put in the world in place of {@code old}. */
+    protected void onPlace(BlockState state, Level level, BlockPos pos, BlockState old, boolean movedByPiston) {}
+
+    /** A tick the block scheduled is due. */
+    protected void tick(BlockState state, net.minecraft.server.level.ServerLevel level, BlockPos pos, net.minecraft.util.RandomSource random) {}
+
+    /** Lane 3 calls a block's own {@code onPlace} through this (it is protected). */
+    public static void horizonPlace(BlockBehaviour block, BlockState state, Level level, BlockPos pos, BlockState old) {
+        block.onPlace(state, level, pos, old, false);
+    }
+
+    public static void horizonTick(BlockBehaviour block, BlockState state, net.minecraft.server.level.ServerLevel level, BlockPos pos,
+            net.minecraft.util.RandomSource random) {
+        block.tick(state, level, pos, random);
+    }
+
+    public static void horizonInside(BlockBehaviour block, BlockState state, Level level, BlockPos pos, Entity entity) {
+        block.entityInside(state, level, pos, entity);
+    }
+
     /** How a block is made: lane 3 keeps what it needs of it. */
     public static class Properties {
         public static Properties of() {

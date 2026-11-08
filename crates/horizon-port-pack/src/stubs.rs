@@ -696,20 +696,21 @@ pub fn stand_ins(
         held.get(c)
             .is_some_and(|k| k.methods.contains_key(&("<init>".to_owned(), d.to_owned())))
     };
+    // Up the superclasses and the interfaces: an interface's default method is the class's too.
     let member = |c: &str, n: &str, d: &str| {
-        let mut at = Some(c.to_owned());
-        let mut steps = 0;
-        while let Some(name) = at.take() {
-            let Some(k) = held.get(&name) else { break };
+        let mut queue = vec![c.to_owned()];
+        let mut seen = BTreeSet::new();
+        while let Some(name) = queue.pop() {
+            if !seen.insert(name.clone()) || seen.len() > 256 {
+                continue;
+            }
+            let Some(k) = held.get(&name) else { continue };
             if k.methods.contains_key(&(n.to_owned(), d.to_owned()))
                 || k.fields.iter().any(|f| f.0 == n && f.1 == d)
             {
                 return true;
             }
-            steps += 1;
-            if steps < 64 {
-                at = Some(k.parent.clone());
-            }
+            queue.extend(std::iter::once(&k.parent).chain(&k.interfaces).cloned());
         }
         false
     };
@@ -1202,6 +1203,17 @@ pub fn stubs(refs: &Refs, provided: &Provided, api: &crate::api::Api) -> Stubs {
                 clinit.extend_from_slice(&i.to_be_bytes());
                 clinit.push(0xb7);
                 clinit.extend_from_slice(&init.to_be_bytes());
+            } else if let Some(id) = vanilla_constant(name, field)
+                .filter(|_| (provided.member)(class, "byId", &by_id(descriptor)))
+            {
+                // `Blocks.BEDROCK`: the game's own block, the one its registry answers, so
+                // `state.getBlock() == Blocks.BEDROCK` holds.
+                let s = stub.pool.string(&id);
+                let m = stub.pool.member(10, class, "byId", &by_id(descriptor));
+                clinit.push(0x13);
+                clinit.extend_from_slice(&s.to_be_bytes());
+                clinit.push(0xb8);
+                clinit.extend_from_slice(&m.to_be_bytes());
             } else if makeable(class) && !(is_enum && class == name) {
                 let code = stub.fresh(class);
                 clinit.extend_from_slice(&code);
@@ -1298,6 +1310,21 @@ pub fn stubs(refs: &Refs, provided: &Provided, api: &crate::api::Api) -> Stubs {
         makeable,
         unmet,
     }
+}
+
+/// The id a vanilla constant names: `Blocks.BEDROCK` is `minecraft:bedrock`, `Items.STICK`
+/// `minecraft:stick`. Only the two classes of constants whose names are their ids.
+fn vanilla_constant(class: &str, field: &str) -> Option<String> {
+    matches!(
+        class,
+        "net/minecraft/world/level/block/Blocks" | "net/minecraft/world/item/Items"
+    )
+    .then(|| format!("minecraft:{}", field.to_ascii_lowercase()))
+}
+
+/// `byId(String)` answering a value of the type `descriptor` names.
+fn by_id(descriptor: &str) -> String {
+    format!("(Ljava/lang/String;){descriptor}")
 }
 
 /// One of Horizon's class files with `patch`'s interfaces and members added: each member
@@ -1745,6 +1772,55 @@ mod tests {
         let mut behaviour = Refs::default();
         behaviour.add_class(&out.classes["g/Behaviour"]).unwrap();
         assert!(behaviour.classes.contains("g/Codec"));
+    }
+
+    #[test]
+    fn vanilla_s_block_constants_are_the_game_s_own_blocks() {
+        const BLOCK: &str = "net/minecraft/world/level/block/Block";
+        const BLOCKS: &str = "net/minecraft/world/level/block/Blocks";
+        let mut refs = Refs::default();
+        refs.declared.insert("my/Mod".into());
+        refs.classes
+            .extend(["my/Mod", BLOCKS, BLOCK].map(String::from));
+        for field in ["BEDROCK", "OAK_LOG"] {
+            refs.fields
+                .entry(BLOCKS.to_owned())
+                .or_default()
+                .insert((field.to_owned(), format!("L{BLOCK};")), Reach::Static);
+        }
+        let class = |c: &str| {
+            (c == BLOCK).then_some(Known {
+                interface: false,
+                plain: false,
+            })
+        };
+        let constructor = |_: &str, _: &str| false;
+        let member = |c: &str, n: &str, d: &str| {
+            c == BLOCK
+                && n == "byId"
+                && d == "(Ljava/lang/String;)Lnet/minecraft/world/level/block/Block;"
+        };
+        let ancestors = |_: &str| BTreeSet::new();
+        let out = stubs(
+            &refs,
+            &Provided {
+                class: &class,
+                constructor: &constructor,
+                member: &member,
+                ancestors: &ancestors,
+            },
+            &Api::default(),
+        );
+        let bytes = &out.classes[BLOCKS];
+        let mut back = Refs::default();
+        back.add_class(bytes).unwrap();
+        // The initialiser asks the game's registry for each block by its id.
+        assert!(back.methods[BLOCK].contains_key(&(
+            "byId".to_owned(),
+            "(Ljava/lang/String;)Lnet/minecraft/world/level/block/Block;".to_owned()
+        )));
+        let has = |text: &str| bytes.windows(text.len()).any(|w| w == text.as_bytes());
+        assert!(has("minecraft:bedrock") && has("minecraft:oak_log"));
     }
 
     #[test]

@@ -17,6 +17,20 @@ ASSETS = {'assets/engine-data.zip', 'assets/bedrock-controls.zip'}
 # AndroidX build-time optimization profiles, not player/account profiles.
 BUILD_ASSETS = {'assets/dexopt/baseline.prof', 'assets/dexopt/baseline.profm'}
 LICENSE_ASSETS = {'assets/LICENSE.txt', 'assets/THIRD_PARTY_NOTICES.md'}
+# Lane 3's Java API slice, compiled from Horizon's own sources (tools/android_lane3_sources.txt).
+CODE_ASSETS = {'assets/lane3-api.jar'}
+LANE3_SOURCES = Path(__file__).resolve().parent / 'android_lane3_sources.txt'
+LANE3_API = 'packaging/android/lane3-api/'
+
+
+def lane3_classes():
+    """The class names (outer, `net/minecraft/world/level/Level`) lane 3's own sources make."""
+    names = set()
+    for line in LANE3_SOURCES.read_text(encoding='utf-8').splitlines():
+        line = line.strip()
+        if line.startswith(LANE3_API) and line.endswith('.java'):
+            names.add(line[len(LANE3_API):-len('.java')])
+    return names
 PRIVATE_PARTS = {'accounts', 'accounts.json', 'session.json', 'session-file.json',
                  'control.json', 'servers.dat', 'level.dat', 'options.txt',
                  'android-launch.json', 'android-launcher.json', 'saves', 'profiles',
@@ -58,9 +72,19 @@ def inspect_payload(path, public=False):
                 raise ValueError('APK exceeds audit decompression limits')
             if any(part.lower() in PRIVATE_PARTS for part in parts) or PurePosixPath(name).suffix.lower() in PRIVATE_SUFFIXES:
                 findings.append({'path': full, 'kind': 'private_file'})
-            if depth == 0 and name.startswith('assets/') and name not in ASSETS | BUILD_ASSETS | LICENSE_ASSETS:
+            if depth == 0 and name.startswith('assets/') and name not in ASSETS | BUILD_ASSETS | LICENSE_ASSETS | CODE_ASSETS:
                 findings.append({'path': full, 'kind': 'unexpected_asset'})
             data = archive.read(entry)
+            if depth == 0 and name in CODE_ASSETS:
+                # Only classes of Horizon's own lane 3 sources: never a game or mod class.
+                own = lane3_classes()
+                with zipfile.ZipFile(io.BytesIO(data)) as jar:
+                    for item in jar.namelist():
+                        if item.endswith('/') or item.startswith('META-INF/'):
+                            continue
+                        outer = item[:-len('.class')].split('$', 1)[0] if item.endswith('.class') else None
+                        if outer not in own:
+                            findings.append({'path': full + '!/' + item, 'kind': 'unexpected_code'})
             for kind, pattern in PATTERNS.items():
                 if pattern.search(data):
                     findings.append({'path': full, 'kind': kind})

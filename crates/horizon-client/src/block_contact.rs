@@ -53,6 +53,11 @@ pub fn in_level<R>(dimension: Option<&'static str>, f: impl FnOnce() -> R) -> R 
     f()
 }
 
+/// The dimension the authority on this thread is acting in, if any ([`in_level`]).
+pub fn level() -> Option<&'static str> {
+    LEVEL.get()
+}
+
 pub fn emit(event: Event<'_>) {
     dispatch(event, &mut 0.0);
 }
