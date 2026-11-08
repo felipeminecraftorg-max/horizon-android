@@ -30,7 +30,10 @@ impl Kind {
     pub fn accepts(self, name: &str) -> bool {
         let lower = name.to_ascii_lowercase();
         match self {
-            Self::Mods => lower.ends_with(".hmod"),
+            // A Java mod's jar or a modpack is converted on import (android/mod_convert.rs).
+            Self::Mods => {
+                lower.ends_with(".hmod") || lower.ends_with(".jar") || lower.ends_with(".mrpack")
+            }
             Self::Packs => lower.ends_with(".zip"),
             Self::Shaders => lower.ends_with(".zip") || lower.ends_with(".hshader"),
         }

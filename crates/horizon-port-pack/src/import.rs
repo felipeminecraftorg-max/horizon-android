@@ -364,6 +364,61 @@ fn count_files(dir: &Path) -> usize {
         .sum()
 }
 
+/// No file a pack ships in its overrides is this large; a bigger one is skipped.
+const MAX_OVERRIDE: u64 = 512 << 20;
+
+/// The files a pack file ships itself in one folder of its overrides (`mods`, `shaderpacks`,
+/// `datapacks`): jars and packs that aren't downloads, copied into `to/`. Only the files right
+/// in that folder with plain names; a later root's file (`client-overrides`) replaces an
+/// earlier one's of the same name. An instance folder has none: its files are on disk.
+pub fn extract_overrides(source: &Path, folder: &str, to: &Path) -> Result<Vec<PathBuf>, String> {
+    if source.is_dir() {
+        return Ok(Vec::new());
+    }
+    let file = fs::File::open(source).map_err(|e| format!("{}: {e}", source.display()))?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("{}: {e}", source.display()))?;
+    let roots: Vec<String> = if zip.by_name("modrinth.index.json").is_ok() {
+        vec!["overrides".into(), "client-overrides".into()]
+    } else if let Some(manifest) = read_json(&mut zip, "manifest.json")? {
+        vec![
+            manifest["overrides"]
+                .as_str()
+                .unwrap_or("overrides")
+                .to_owned(),
+        ]
+    } else {
+        return Ok(Vec::new());
+    };
+    let names = names(&zip)?;
+    let mut out: Vec<PathBuf> = Vec::new();
+    for root in &roots {
+        let prefix = format!("{root}/{folder}/");
+        for name in &names {
+            let Some(rest) = name.strip_prefix(&prefix) else {
+                continue;
+            };
+            if rest.is_empty() || rest.starts_with('.') || rest.contains(['/', '\\', ':', '\0']) {
+                continue;
+            }
+            let mut entry = zip.by_name(name).map_err(|e| format!("{name}: {e}"))?;
+            if entry.size() > MAX_OVERRIDE {
+                continue;
+            }
+            fs::create_dir_all(to).map_err(|e| format!("{}: {e}", to.display()))?;
+            let dest = to.join(rest);
+            let mut copy =
+                fs::File::create(&dest).map_err(|e| format!("{}: {e}", dest.display()))?;
+            std::io::copy(&mut (&mut entry).take(MAX_OVERRIDE), &mut copy)
+                .map_err(|e| format!("{name}: {e}"))?;
+            if !out.contains(&dest) {
+                out.push(dest);
+            }
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
 pub fn sha1_hex(bytes: &[u8]) -> String {
     use sha1::Digest;
     sha1::Sha1::digest(bytes)
@@ -479,6 +534,41 @@ mod tests {
         assert_eq!(pack.files.len(), 1);
         assert_eq!(pack.files[0].path, "mods/mcw-doors-1.1.2.jar");
         assert_eq!(pack.overrides["config"], 1);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_pack_s_own_jars_come_out_of_its_overrides() {
+        use std::io::Write;
+        let dir = std::env::temp_dir().join(format!("horizon-overrides-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("pack.mrpack");
+        let mut zip = zip::ZipWriter::new(fs::File::create(&path).unwrap());
+        let opts = zip::write::SimpleFileOptions::default();
+        for (name, bytes) in [
+            ("modrinth.index.json", r#"{"name": "P", "files": []}"#),
+            ("overrides/mods/own.jar", "server"),
+            ("overrides/mods/nested/deep.jar", "x"),
+            ("overrides/config/own.toml", "x"),
+            ("client-overrides/mods/own.jar", "client"),
+            ("client-overrides/mods/view.jar", "y"),
+        ] {
+            zip.start_file(name, opts).unwrap();
+            zip.write_all(bytes.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap();
+        let out = dir.join("out");
+        let files = extract_overrides(&path, "mods", &out).unwrap();
+        assert_eq!(files, [out.join("own.jar"), out.join("view.jar")]);
+        // The client's copy is the one a player's game has.
+        assert_eq!(fs::read_to_string(out.join("own.jar")).unwrap(), "client");
+        assert!(!out.join("deep.jar").exists() && !out.join("nested").exists());
+        assert!(
+            extract_overrides(&path, "shaderpacks", &out)
+                .unwrap()
+                .is_empty()
+        );
         fs::remove_dir_all(&dir).unwrap();
     }
 }

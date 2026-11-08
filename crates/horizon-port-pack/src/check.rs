@@ -88,11 +88,8 @@ fn plural(n: usize, one: &str, many: &str) -> String {
     format!("{n} {}", if n == 1 { one } else { many })
 }
 
-/// Checks `jar` and carries it over into `out/carry/` (`out/check.json`,
-/// `out/carry-report.json` beside it). The carry is the folder mod an
-/// install copies.
-pub fn check(jar_path: &Path, out: &Path) -> Result<Check, String> {
-    let info = jar::read(jar_path)?;
+/// A jar's file names and what its classes do.
+pub fn code_of(jar_path: &Path) -> Result<(Vec<String>, classes::Code), String> {
     let file = fs::File::open(jar_path).map_err(|e| format!("{}: {e}", jar_path.display()))?;
     let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("{}: {e}", jar_path.display()))?;
     let names: Vec<String> = zip
@@ -111,11 +108,16 @@ pub fn check(jar_path: &Path, out: &Path) -> Result<Check, String> {
         }
     }
     let code = classes::census(bytes.iter().map(Vec::as_slice));
-    let mut check = Check {
+    Ok((names, code))
+}
+
+/// The check of a jar before anything is carried: who it is, and its code.
+fn start(info: &jar::JarInfo, names: &[String], code: classes::Code) -> Check {
+    Check {
         mod_id: info.mod_id.clone(),
         name: info.name.clone(),
         version: info.version.clone(),
-        loader: loader(&names).to_owned(),
+        loader: loader(names).to_owned(),
         license: info.license.clone(),
         verdict: Verdict::No,
         summary: String::new(),
@@ -124,16 +126,23 @@ pub fn check(jar_path: &Path, out: &Path) -> Result<Check, String> {
         depends: info.depends.clone(),
         namespaces: Vec::new(),
         code,
-    };
+    }
+}
+
+/// Checks `jar` and carries it over into `out/carry/` (`out/check.json`,
+/// `out/carry-report.json` beside it). The carry is the folder mod an
+/// install copies.
+pub fn check(jar_path: &Path, out: &Path) -> Result<Check, String> {
+    let info = jar::read(jar_path)?;
+    let (names, code) = code_of(jar_path)?;
+    let mut check = start(&info, &names, code);
     fs::create_dir_all(out).map_err(|e| format!("{}: {e}", out.display()))?;
     let done = |check: Check| -> Result<Check, String> {
         crate::pipeline::write_json(&out.join("check.json"), &check)?;
         Ok(check)
     };
     if old_layout(&names) {
-        check.summary = "Made for Minecraft 1.20 or older: Horizon ports mods made for 1.21 \
-                         and later."
-            .into();
+        check.summary = OLD_LAYOUT.into();
         return done(check);
     }
     let alone = |m: &str| m == info.mod_id || m == "minecraft";
@@ -156,6 +165,33 @@ pub fn check(jar_path: &Path, out: &Path) -> Result<Check, String> {
             return done(check);
         }
     };
+    judge(&mut check, &info, &report);
+    done(check)
+}
+
+const OLD_LAYOUT: &str =
+    "Made for Minecraft 1.20 or older: Horizon ports mods made for 1.21 and later.";
+
+/// The check of a jar a pack's carry-over already carried (`report` is its
+/// `carry-report.json`): the same verdict and lists [`check`] gives one jar
+/// on its own.
+pub fn assess(
+    jar_path: &Path,
+    info: &jar::JarInfo,
+    report: &carry::Report,
+) -> Result<Check, String> {
+    let (names, code) = code_of(jar_path)?;
+    let mut check = start(info, &names, code);
+    if old_layout(&names) {
+        check.summary = OLD_LAYOUT.into();
+    } else {
+        judge(&mut check, info, report);
+    }
+    Ok(check)
+}
+
+/// The verdict, what ports and what doesn't, from the carry's report and the code.
+fn judge(check: &mut Check, info: &jar::JarInfo, report: &carry::Report) {
     check.namespaces = std::iter::once(info.mod_id.clone())
         .chain(report.namespaces.iter().cloned())
         .collect();
@@ -274,7 +310,6 @@ pub fn check(jar_path: &Path, out: &Path) -> Result<Check, String> {
             ),
         )
     };
-    done(check)
 }
 
 #[cfg(test)]
@@ -341,6 +376,34 @@ displayName = "Ruby"
             "{:?}",
             c.skipped
         );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_pack_s_carry_report_read_back_gives_the_same_verdict() {
+        let dir = temp("assess");
+        let blockstate = br#"{"variants": {"": {"model": "ruby:block/ruby_block"}}}"#;
+        let odd = br#"{"variants": {"wobble=1": {"model": "ruby:block/odd"}}}"#;
+        let tile = crate::classes::tests_support::class_file(
+            "ruby/Tile",
+            "net/minecraft/world/level/block/entity/BlockEntity",
+        );
+        let files = [
+            ("META-INF/neoforge.mods.toml", TOML),
+            (
+                "assets/ruby/blockstates/ruby_block.json",
+                blockstate.as_slice(),
+            ),
+            ("assets/ruby/blockstates/odd.json", odd.as_slice()),
+            ("ruby/Tile.class", tile.as_slice()),
+        ];
+        let jar_path = jar(&dir, &files);
+        let checked = check(&jar_path, &dir.join("out")).unwrap();
+        assert_eq!(checked.verdict, Verdict::Partly, "{checked:?}");
+        let report: carry::Report =
+            crate::pipeline::read_json(&dir.join("out/carry-report.json")).unwrap();
+        let info = jar::read(&jar_path).unwrap();
+        assert_eq!(assess(&jar_path, &info, &report).unwrap(), checked);
         fs::remove_dir_all(&dir).unwrap();
     }
 

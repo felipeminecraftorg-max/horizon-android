@@ -1595,7 +1595,7 @@ impl Launcher {
             let search_btn_w = 98.0;
             let field_w = (content_w - search_btn_w - 8.0).max(120.0);
             let search_hint = if page == Page::Mods {
-                "Search mods or paste .hmod HTTPS link..."
+                "Search mods, or paste a Modrinth modpack link..."
             } else {
                 "Search catalog..."
             };
@@ -1615,7 +1615,11 @@ impl Launcher {
                 &mut ui,
                 &mut self.targets,
                 [content_x + field_w + 8.0, search_y, search_btn_w, 36.0],
-                if page == Page::Mods && self.catalog.query.trim().starts_with("https://") {
+                if page == Page::Mods
+                    && crate::mod_convert::modpack_slug(&self.catalog.query).is_some()
+                {
+                    "Convert"
+                } else if page == Page::Mods && self.catalog.query.trim().starts_with("https://") {
                     "Import .hmod"
                 } else {
                     "Search"
@@ -1850,7 +1854,9 @@ impl Launcher {
                 let rich_summary = if crate::catalog::source_only_mod(p) {
                     "Native .hnmod temporarily unsupported on Android; built-in mods are available."
                 } else {
-                    self.catalog.enriched_summaries.get(&p.id)
+                    self.catalog
+                        .enriched_summaries
+                        .get(&p.id)
                         .map_or(p.summary.as_str(), String::as_str)
                 };
                 let summary = ui.fit_text(Face::Regular, 12.5, rich_summary, text_max);
@@ -2350,7 +2356,7 @@ impl Launcher {
                     content_x + 74.0,
                     top + 42.0,
                     (content_w - 92.0).max(80.0),
-                    "Import .hmod/.jar mods, .zip resource packs, or shader packs — or browse files in File Manager.",
+                    "Import .hmod mods, Java .jar mods or .mrpack modpacks (converted), .zip resource packs, or shader packs — or browse files in File Manager.",
                     my3_muted(),
                 );
                 let cta_y = top + card_h - 46.0;

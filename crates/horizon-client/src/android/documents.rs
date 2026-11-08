@@ -415,6 +415,30 @@ fn stage(request: Request, mut input: std::fs::File, name: String) -> Result<()>
         })?;
         output.sync_all()?;
         drop(output);
+        let lower = name.to_ascii_lowercase();
+        if request.kind == Kind::Mods && (lower.ends_with(".jar") || lower.ends_with(".mrpack")) {
+            // A Java mod or a modpack: converted into folder mods, not copied.
+            let say = |line: &str, share: f32| {
+                notice(
+                    format!("{line} ({:.0}%)", share.clamp(0.0, 1.0) * 100.0),
+                    false,
+                )
+            };
+            let line = if lower.ends_with(".jar") {
+                crate::mod_convert::convert_jar(&staged, &name, &request.home, &say)?
+            } else {
+                let resources = crate::mod_convert::resources();
+                crate::mod_convert::convert_pack(
+                    &staged,
+                    &request.home,
+                    resources.as_deref(),
+                    &say,
+                )?
+            };
+            let _ = std::fs::remove_file(&staged);
+            imported(line, request.kind);
+            return Ok(());
+        }
         notice("Checking archive...", false);
         let native_shader = content_files::validate(&staged, request.kind, &name, || {
             CANCEL.load(Ordering::Relaxed)

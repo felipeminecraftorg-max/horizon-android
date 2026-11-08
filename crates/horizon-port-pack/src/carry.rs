@@ -4,7 +4,7 @@
 //! definitions, and each blockstate gets a vanilla template guessed from its
 //! properties until the oracle's facts replace the guess.
 use crate::{jar::JarInfo, oracle::Facts};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -13,7 +13,9 @@ use std::{
     path::Path,
 };
 
-#[derive(Debug, Default, Serialize)]
+/// Written beside the carry as `carry-report.json`, and read back by [`crate::check::assess`].
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Report {
     pub copied: usize,
     /// Namespaces besides the mod id its content owns ([`extra_namespaces`]),

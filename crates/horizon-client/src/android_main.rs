@@ -43,6 +43,8 @@ mod documents;
 mod exit_reports;
 #[path = "android/gallery.rs"]
 mod gallery;
+#[path = "android/mod_convert.rs"]
+mod mod_convert;
 #[path = "android/native_ime.rs"]
 mod native_ime;
 #[path = "android/performance.rs"]

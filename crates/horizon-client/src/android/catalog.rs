@@ -817,6 +817,41 @@ impl Catalog {
                 subtitle,
             });
         }
+        // Folder mods: the converter's (Java mods and modpacks) and any other, on and off as the
+        // game's Options > Mods turns them.
+        let mods_dir = game.join("horizon-mods");
+        if std::fs::symlink_metadata(&mods_dir).is_ok_and(|m| !m.file_type().is_symlink()) {
+            for path in horizon_mods::manifest::find(&mods_dir) {
+                let Some(name) = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .filter(|n| path.is_dir() && !n.starts_with('.'))
+                else {
+                    continue;
+                };
+                let rel = format!("horizon-mods/{name}");
+                if self.local.iter().any(|item| item.file == rel) {
+                    continue;
+                }
+                let manifest = std::fs::read_to_string(path.join(horizon_mods::manifest::MANIFEST))
+                    .ok()
+                    .and_then(|t| horizon_mods::Manifest::parse(&t).ok());
+                let title = match manifest {
+                    Some(m) if m.version.is_empty() => m.name,
+                    Some(m) => format!("{} ({})", m.name, m.version),
+                    None => name.clone(),
+                };
+                self.local.push(LocalItem {
+                    kind: horizon_client::content_files::Kind::Mods,
+                    enabled: on.enabled.contains(&name) && !on.disabled.contains(&name),
+                    subtitle: format!("Converted Java mod (folder)  •  {name}"),
+                    file: rel,
+                    title,
+                    size_bytes: 0,
+                    badge: "MOD",
+                });
+            }
+        }
         // Also scan horizon-native-mods/ for any .hnmod or .hmod files on disk.
         let native_dir = game.join("horizon-native-mods");
         if std::fs::symlink_metadata(&native_dir).is_ok_and(|m| !m.file_type().is_symlink()) {
@@ -1537,6 +1572,18 @@ impl Catalog {
         if !self.page.is_catalog() {
             return;
         }
+        if self.page == Page::Mods
+            && let Some(slug) = crate::mod_convert::modpack_slug(&self.query)
+        {
+            self.searches.cancel_interest();
+            if refresh {
+                self.convert_modpack(home, slug);
+            } else {
+                self.results.clear();
+                self.status = "Press Convert to download this modpack and convert its mods".into();
+            }
+            return;
+        }
         if self.page == Page::Mods && self.query.trim().starts_with("https://") {
             self.searches.cancel_interest();
             if refresh {
@@ -1673,6 +1720,46 @@ impl Catalog {
             })();
             let _ = std::fs::remove_file(stage);
             result
+        });
+    }
+    /// Downloads Modrinth modpack `slug` and converts it (`mod_convert`): its mods into
+    /// `horizon-mods/`, turned on, and the file of what is missing beside them.
+    pub fn convert_modpack(&mut self, home: &Path, slug: String) {
+        if self.busy() {
+            return;
+        }
+        let game = self.config.game_home(home);
+        let resources = home
+            .join(".local/horizon-client")
+            .join(horizon_core::VANILLA_VERSION);
+        self.downloading = Some((browser::SourceId::Modrinth, format!("modpack:{slug}")));
+        self.downloading_title = slug.clone();
+        self.downloading_size_mib = 400.0;
+        self.transfer.reset();
+        self.failed = None;
+        self.paused.store(false, Ordering::Relaxed);
+        self.cancelled.store(false, Ordering::Relaxed);
+        *self.progress.lock().unwrap_or_else(|e| e.into_inner()) = 0.0;
+        let progress = self.progress.clone();
+        let progress_stage = self.progress_stage.clone();
+        let paused = self.paused.clone();
+        let cancelled = self.cancelled.clone();
+        self.job("Converting the modpack...", move || {
+            std::fs::create_dir_all(&game).map_err(|e| e.to_string())?;
+            let report = |stage: &str, p: f32| {
+                while paused.load(Ordering::Relaxed) && !cancelled.load(Ordering::Relaxed) {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                if !stage.is_empty() {
+                    *progress_stage.lock().unwrap_or_else(|e| e.into_inner()) = stage.to_owned();
+                }
+                if p.is_finite() {
+                    *progress.lock().unwrap_or_else(|e| e.into_inner()) = p.clamp(0.0, 1.0);
+                }
+            };
+            let resources = resources.is_dir().then_some(resources.as_path());
+            let line = crate::mod_convert::convert_modrinth_pack(&slug, &game, resources, &report)?;
+            Ok(Reply::Done(line, horizon_client::content_files::Kind::Mods))
         });
     }
     pub fn install(&mut self, home: &Path, index: usize) {
