@@ -901,6 +901,8 @@ pub struct Renderer {
     /// moment (`set_present_mode`), and the world frames drawn so far.
     deferred_present: Option<(bool, crate::graphics::PresentMode)>,
     world_frames: u32,
+    /// The VSync and present mode settings, as last asked for (`set_present_mode`).
+    present_request: (bool, crate::graphics::PresentMode),
     #[cfg(target_os = "android")]
     frame_scale: Option<frame_scale::FrameScale>,
     #[cfg(target_os = "android")]
@@ -3858,6 +3860,7 @@ impl Renderer {
             frame_warp,
             deferred_present: None,
             world_frames: 0,
+            present_request: (true, crate::graphics::PresentMode::Auto),
             #[cfg(target_os = "android")]
             frame_scale: None,
             #[cfg(target_os = "android")]
@@ -4503,6 +4506,7 @@ impl Renderer {
     /// window and in fullscreen alike; Horizon's present-mode setting applies
     /// only with VSync off (`window::chosen_present_mode`).
     pub fn set_present_mode(&mut self, vsync: bool, mode: crate::graphics::PresentMode) {
+        self.present_request = (vsync, mode);
         // Android: Fifo until a world has been shown for a moment, since a Mailbox present
         // can stall a loading screen into an ANR on some drivers
         // (`window::android_present_mode`); `draw_frame` applies the choice then.
@@ -4510,6 +4514,8 @@ impl Renderer {
             self.deferred_present = Some((vsync, mode));
             return;
         }
+        // Frame generation needs VSync's queue (`set_frame_gen`).
+        let vsync = vsync || self.frame_warp.wants_world_target();
         use crate::graphics::PresentMode as P;
         use crate::window::{PresentMode, chosen_present_mode};
         let supported: Vec<PresentMode> = self
@@ -5378,21 +5384,24 @@ impl Renderer {
         self.world_post.taa = taa;
         self.world_post.upscale = if taa { upscale.clamp(1.0, 4.0) } else { 1.0 };
     }
-    /// Adaptive frame generation (`frame_warp`): on or off, and the target frame rate
-    /// (0: the display's refresh rate).
-    pub fn set_adaptive_frame_gen(&mut self, on: bool, target_fps: u32) {
-        self.frame_warp.enabled = on;
-        self.frame_warp.target_fps = target_fps;
+    /// Frame generation (`frame_warp`): its mode, and Target FPS's frame rate (0: the
+    /// display's refresh rate). While it is on, frames are shown through VSync's queue,
+    /// which spaces the made frames out between the real ones; with Mailbox a made frame
+    /// shown right after a real one would replace it unseen.
+    pub fn set_frame_gen(&mut self, mode: crate::graphics::FrameGen, target_fps: u32) {
+        self.frame_warp.set(mode, target_fps);
         self.world_post.keep_target = self.frame_warp.wants_world_target();
+        let (vsync, present) = self.present_request;
+        self.set_present_mode(vsync, present);
     }
     /// Whether this device can make frames (the setting is greyed out otherwise).
-    pub fn adaptive_frame_gen_supported(&self) -> bool {
+    pub fn frame_gen_supported(&self) -> bool {
         self.frame_warp.supported()
     }
     /// Called once at the start of every frame, before the game builds it: whether this
     /// frame is a made one, which then needs only the camera and the HUD. `allowed`: the
     /// game shows a world with nothing over it a made frame would get wrong.
-    pub fn adaptive_frame_gen_next(&mut self, allowed: bool, refresh_hz: Option<u32>) -> bool {
+    pub fn frame_gen_next(&mut self, allowed: bool, refresh_hz: Option<u32>) -> bool {
         let allowed = allowed
             && !self.suspended
             && self.hdr.is_none()
@@ -5409,9 +5418,9 @@ impl Renderer {
         self.frame_warp
             .next_frame(allowed, refresh_hz, [self.config.width, self.config.height])
     }
-    /// Made and real frames shown over the last second, while the setting is on.
-    pub fn adaptive_frame_gen_stats(&self) -> Option<(u32, u32)> {
-        self.frame_warp.stats()
+    /// Frame generation's line for the performance overlay, while it is on.
+    pub fn frame_gen_status(&self) -> Option<String> {
+        self.frame_warp.status()
     }
     pub fn world_render_size(&self) -> [u32; 2] {
         [self.config.width, self.config.height]
@@ -6088,8 +6097,12 @@ impl Renderer {
                 .unwrap_or_else(|| f.texture.clone()),
             (None, _) => self.offscreen.clone().ok_or("no offscreen target")?,
         };
+        // Frame generation copies the frame: on Android it is drawn into a texture that
+        // can be copied, then shown (the swapchain may not allow copies).
         #[cfg(target_os = "android")]
-        let target_texture = if self.hdr.is_none() && scaled_presentation {
+        let target_texture = if self.hdr.is_none()
+            && (scaled_presentation || self.frame_warp.wants_world_target())
+        {
             self.frame_scale
                 .get_or_insert_with(|| {
                     frame_scale::FrameScale::new(

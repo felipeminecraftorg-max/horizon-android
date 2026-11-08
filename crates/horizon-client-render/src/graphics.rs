@@ -349,6 +349,39 @@ impl Graphics {
         lod_distance_capped(self.lod_distance, info)
     }
 }
+/// Frame generation's modes (`Graphics::frame_gen`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FrameGen {
+    #[default]
+    Off,
+    /// Made frames fill in up to the player's target frame rate.
+    Target,
+    /// Made frames fill in the drops below the frame rate the game usually reaches.
+    Adaptive,
+}
+impl FrameGen {
+    pub const ALL: [FrameGen; 3] = [FrameGen::Off, FrameGen::Target, FrameGen::Adaptive];
+    pub fn name(self) -> &'static str {
+        match self {
+            FrameGen::Off => "off",
+            FrameGen::Target => "target",
+            FrameGen::Adaptive => "adaptive",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            FrameGen::Off => "Off",
+            FrameGen::Target => "Target FPS",
+            FrameGen::Adaptive => "Adaptive",
+        }
+    }
+    fn parse(s: &str) -> Self {
+        Self::ALL
+            .into_iter()
+            .find(|m| m.name() == s)
+            .unwrap_or_default()
+    }
+}
 #[derive(Clone, Debug, PartialEq)]
 pub struct Graphics {
     pub preset: Preset,
@@ -413,10 +446,12 @@ pub struct Graphics {
     /// pack uniforms still match. Off by default: vanilla loaders redraw every frame
     /// (or every `shadowInterval`), and a hit with a stale key shows old shadows.
     pub shadow_cache: bool,
-    /// Adaptive frame generation: made frames fill in the frames missing below
-    /// `frame_gen_target`, never more (`gfx::frame_warp`). Off by default.
-    pub frame_gen: bool,
-    /// Adaptive frame generation's target frame rate; 0 is the display's refresh rate.
+    /// Frame generation (`gfx::frame_warp`): off (the default), a target frame rate
+    /// the made frames fill up to, or adaptive, which keeps the player's usual frame
+    /// rate when it drops. Made frames fill in only what is missing, never more.
+    pub frame_gen: FrameGen,
+    /// Frame generation's target frame rate in `FrameGen::Target`; 0 is the display's
+    /// refresh rate.
     pub frame_gen_target: u32,
     /// The graphics API (Windows only; see `GraphicsApi`).
     pub api: GraphicsApi,
@@ -458,7 +493,7 @@ impl Default for Graphics {
             hdr_key: "key.keyboard.unknown".into(),
             battery: false,
             shadow_cache: false,
-            frame_gen: false,
+            frame_gen: FrameGen::Off,
             frame_gen_target: 0,
             api: GraphicsApi::Auto,
             shader_pack: String::new(),
@@ -563,7 +598,9 @@ impl Graphics {
                 "hdrKey" if value.starts_with("key.") => g.hdr_key = value.to_owned(),
                 "batteryMode" => g.battery = flag(g.battery),
                 "shadowCache" => g.shadow_cache = flag(g.shadow_cache),
-                "adaptiveFrameGen" => g.frame_gen = flag(g.frame_gen),
+                "frameGen" => g.frame_gen = FrameGen::parse(value),
+                // The first test builds' switch, which made frames up to the target.
+                "adaptiveFrameGen" if value == "true" => g.frame_gen = FrameGen::Target,
                 "frameGenTarget" => {
                     g.frame_gen_target = match number(g.frame_gen_target) {
                         0 => 0,
@@ -586,7 +623,7 @@ impl Graphics {
     }
     pub fn serialize(&self) -> String {
         format!(
-            "preset:{}\nlodDistance:{}\nfarDetail:{}\ncaveCulling:{}\nentityCulling:{}\nchunkUpdates:{}\nuploadBudgetKiB:{}\ntextureBudgetMiB:{}\nsky:{}\nfog:{}\nweather:{}\nanimatedTextures:{}\nditherCutoutMips:{}\npresentMode:{}\nframePacing:{}\nworkers:{}\noverlay:{}\nresolutionScale:{}\nfxaa:{}\ntaa:{}\nupscaling:{}\nscreenshotQuality:{}\nhdr:{}\nhdrPaperWhite:{}\nhdrPeak:{}\nhdrBlackLevel:{}\nhdrUiBrightness:{}\nhdrKey:{}\nbatteryMode:{}\nshadowCache:{}\nadaptiveFrameGen:{}\nframeGenTarget:{}\ngraphicsApi:{}\npickedShaderPack:{}\n",
+            "preset:{}\nlodDistance:{}\nfarDetail:{}\ncaveCulling:{}\nentityCulling:{}\nchunkUpdates:{}\nuploadBudgetKiB:{}\ntextureBudgetMiB:{}\nsky:{}\nfog:{}\nweather:{}\nanimatedTextures:{}\nditherCutoutMips:{}\npresentMode:{}\nframePacing:{}\nworkers:{}\noverlay:{}\nresolutionScale:{}\nfxaa:{}\ntaa:{}\nupscaling:{}\nscreenshotQuality:{}\nhdr:{}\nhdrPaperWhite:{}\nhdrPeak:{}\nhdrBlackLevel:{}\nhdrUiBrightness:{}\nhdrKey:{}\nbatteryMode:{}\nshadowCache:{}\nframeGen:{}\nframeGenTarget:{}\ngraphicsApi:{}\npickedShaderPack:{}\n",
             self.preset.name(),
             self.lod_distance,
             self.far_detail.name(),
@@ -624,7 +661,7 @@ impl Graphics {
             self.hdr_key,
             bool_text(self.battery),
             bool_text(self.shadow_cache),
-            bool_text(self.frame_gen),
+            self.frame_gen.name(),
             self.frame_gen_target,
             self.api.name(),
             self.shader_pack,

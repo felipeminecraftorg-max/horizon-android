@@ -8038,6 +8038,7 @@ impl Game<'_> {
         // Gui.extractRenderState: the debug overlay comes after the screen
         // and the toasts, so it is over everything, menus included.
         let margins = self.hud_safe_margins();
+        self.frame_graph.extra = self.renderer.as_ref().and_then(|r| r.frame_gen_status());
         horizon_client::hud::inset_overlay(&mut batch, margins, |b| {
             let safe_size = [
                 (b.width * b.scale).round() as u32,
@@ -14857,8 +14858,8 @@ impl Game<'_> {
             }
         }
         self.was_menu_blurred = menu_blur_cache;
-        // Adaptive frame generation: a made frame is the last real one moved to this
-        // frame's camera, so it needs only the camera and the HUD built.
+        // Frame generation: a made frame is the last real one moved to this frame's
+        // camera, so it needs only the camera and the HUD built.
         let made_frame = {
             let allowed = !self.shows_panorama()
                 && self.player.is_some()
@@ -14874,7 +14875,7 @@ impl Game<'_> {
             let refresh = None;
             self.renderer
                 .as_mut()
-                .is_some_and(|r| r.adaptive_frame_gen_next(allowed, refresh))
+                .is_some_and(|r| r.frame_gen_next(allowed, refresh))
         };
         let skip_world_for_blur = menu_blur_cache
             && menu_blur.is_some_and(|r| {

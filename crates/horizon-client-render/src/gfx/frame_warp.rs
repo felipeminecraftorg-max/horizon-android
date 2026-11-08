@@ -1,19 +1,24 @@
-//! Adaptive frame generation (`adaptiveFrameGen` in `horizon-graphics.txt`, off by
-//! default). The player picks a target frame rate; while the real frame rate keeps up,
-//! nothing happens. When it falls below the target, made frames fill in only the frames
-//! that are missing, never more: at 50 real frames a second and a target of 70, about 20
-//! frames a second are made.
+//! Frame generation (`frameGen` in `horizon-graphics.txt`, off by default), in two modes:
 //!
-//! A made frame costs one full-screen pass instead of a whole frame. It is the last real
-//! frame moved to where the camera is now (the newest touch input, so turning feels as
-//! fast as the target), through that frame's depth (`frame_warp.wgsl`). Two copies of each
-//! real frame are kept while it may be needed: the world as it was on the screen before
-//! the hand, and the frame with the hand and screen effects but before the HUD. Where they
-//! differ (the hand, the effects) the made frame keeps the pixels where they were, since
-//! those move with the camera. The HUD is drawn fresh over every made frame. Entities and
-//! animations stand still in a made frame, and its edges fold back the scenery next to
-//! them when a fast turn shows something the last frame never saw; at most one frame is
-//! made between two real ones.
+//! - **Target FPS**: the player picks a frame rate; while the real frames reach it, nothing
+//!   happens, and below it made frames fill in only the frames that are missing, up to two
+//!   after each real one. At 30 real frames a second and a target of 90, two are made after
+//!   each real frame; at 50 and a target of 70, one after about every other real frame.
+//! - **Adaptive**: the target is the frame rate the game usually reaches here, learned as
+//!   it runs (it rises at once and settles slowly), so a drop in a heavy place is filled
+//!   back up to it, one made frame at most after each real one.
+//!
+//! As the FrameGen mod and VR's reprojection do, a made frame is the last real frame moved
+//! to where the camera is now (the newest touch input, so turning feels as fast as the
+//! frame rate), through that frame's depth (`frame_warp.wgsl`). It costs one full-screen
+//! pass instead of a whole frame, and adds no latency, where interpolation (FSR 3, Horizon
+//! on PC) waits for the next real frame. Two copies of each real frame are kept while
+//! frames may be made: the world as the screen showed it before the hand, and the frame
+//! with the hand and screen effects but before the HUD. Where they differ (the hand, the
+//! effects) the made frame keeps the pixels where they were, since those move with the
+//! camera; the HUD is drawn fresh over every made frame. Mobs and animations stand still in
+//! a made frame, and a fast turn folds the scenery at the edge into what the last frame
+//! never saw. Frames past the display's refresh rate are never made: they would not show.
 
 use glam::{DMat4, DVec3};
 use std::time::{Duration, Instant};
@@ -63,9 +68,14 @@ pub struct FrameWarp {
     format: wgpu::TextureFormat,
     kept: Option<Kept>,
     source: Option<Source>,
-    /// The setting, and the target frame rate (0: the display's refresh rate).
-    pub enabled: bool,
+    /// The setting, and Target FPS's frame rate (0: the display's refresh rate).
+    pub mode: crate::graphics::FrameGen,
     pub target_fps: u32,
+    /// Why no frame is made now, for the performance overlay (`status`).
+    why: Why,
+    /// The target and display rate of the last frame, for `status`.
+    shown_target: u32,
+    shown_refresh: u32,
     /// This frame keeps its copies (`keep_world` then `keep_overlay`).
     capturing: bool,
     world_kept: bool,
@@ -178,8 +188,11 @@ impl FrameWarp {
             format,
             kept: None,
             source: None,
-            enabled: false,
+            mode: crate::graphics::FrameGen::Off,
             target_fps: 0,
+            why: Why::Off,
+            shown_target: 0,
+            shown_refresh: 0,
             capturing: false,
             world_kept: false,
             generate: false,
@@ -192,19 +205,36 @@ impl FrameWarp {
         self.pipeline.is_some()
     }
 
-    /// The world needs a target of its own (`world_post`) while this is on, so that its
-    /// depth outlives the frame.
-    pub fn wants_world_target(&self) -> bool {
-        self.enabled && self.supported()
+    /// The settings; any change (render distance, scale) makes Adaptive learn the usual
+    /// frame rate again.
+    pub fn set(&mut self, mode: crate::graphics::FrameGen, target_fps: u32) {
+        self.mode = mode;
+        self.target_fps = target_fps;
+        self.pacer.baseline = 0.0;
     }
 
-    /// The target frame rate, never above the display's: frames past the refresh rate
-    /// are never shown.
-    fn target(&self, refresh_hz: Option<u32>) -> u32 {
-        let refresh = refresh_hz.filter(|&hz| hz >= 30).unwrap_or(60);
-        match self.target_fps {
-            0 => refresh,
-            fps => fps.clamp(30, refresh.max(30)),
+    pub fn enabled(&self) -> bool {
+        self.mode != crate::graphics::FrameGen::Off
+    }
+
+    /// The world needs a target of its own (`world_post`) while this is on, so that its
+    /// depth outlives the frame, and the frame a texture that can be copied.
+    pub fn wants_world_target(&self) -> bool {
+        self.enabled() && self.supported()
+    }
+
+    /// The frame rate to keep, never above the display's: frames past the refresh rate
+    /// are never shown. Adaptive keeps a little under the rate the game usually reaches,
+    /// so that the ordinary wobble of frame times makes nothing.
+    fn target(&self, refresh: u32) -> u32 {
+        use crate::graphics::FrameGen;
+        match self.mode {
+            FrameGen::Off => refresh,
+            FrameGen::Target => match self.target_fps {
+                0 => refresh,
+                fps => fps.clamp(30, refresh.max(30)),
+            },
+            FrameGen::Adaptive => ((self.pacer.baseline * 0.95) as u32).clamp(30, refresh.max(30)),
         }
     }
 
@@ -212,26 +242,42 @@ impl FrameWarp {
     /// whether this one is to be made. `allowed`: a world is shown with nothing over it that
     /// a made frame would get wrong (a menu, the title screen, a shader pack's own passes).
     pub fn next_frame(&mut self, allowed: bool, refresh_hz: Option<u32>, size: [u32; 2]) -> bool {
+        use crate::graphics::FrameGen;
         let now = Instant::now();
         self.pacer.frame_started(now);
-        let interval = 1.0 / f64::from(self.target(refresh_hz));
-        let ready = self.enabled
-            && allowed
-            && self.supported()
-            && self.source.as_ref().is_some_and(|s| s.size == size)
+        let refresh = refresh_hz.filter(|&hz| hz >= 30).unwrap_or(60);
+        let target = self.target(refresh);
+        (self.shown_target, self.shown_refresh) = (target, refresh);
+        let interval = 1.0 / f64::from(target);
+        // Target FPS makes up to two frames after a real one; Adaptive only fills dips.
+        let run = if self.mode == FrameGen::Target { 2 } else { 1 };
+        let kept = self.source.as_ref().is_some_and(|s| s.size == size)
             && self.kept.as_ref().is_some_and(|k| k.size == size);
-        self.generate = if ready {
-            self.pacer.decide(interval)
+        self.why = if !self.enabled() {
+            Why::Off
+        } else if !self.supported() {
+            Why::Unsupported
+        } else if !allowed {
+            Why::Paused
+        } else if self.why == Why::CannotCopy {
+            Why::CannotCopy
+        } else if self.pacer.real <= interval * SLACK {
+            Why::AboveTarget
+        } else {
+            Why::Making
+        };
+        self.generate = if self.why == Why::Making && kept {
+            self.pacer.decide(interval, run)
         } else {
             self.pacer.skip();
             false
         };
         // Copies are kept while frames may be made: near the target or below it.
-        self.capturing = self.enabled
+        self.capturing = self.enabled()
             && allowed
             && self.supported()
             && !self.generate
-            && self.pacer.real_seconds() * SLACK * SLACK > interval;
+            && self.pacer.real * SLACK * SLACK > interval;
         if !self.capturing && !self.generate {
             self.source = None;
         }
@@ -239,9 +285,34 @@ impl FrameWarp {
         self.generate
     }
 
-    /// Made frames and real ones shown over the last second, for the debug overlay.
-    pub fn stats(&self) -> Option<(u32, u32)> {
-        self.enabled.then(|| self.pacer.shown())
+    /// A line for the performance overlay while the setting is on: the target, real and
+    /// made frames shown over the last second, or why none are made.
+    pub fn status(&self) -> Option<String> {
+        use crate::graphics::FrameGen;
+        let (made, real) = self.pacer.shown();
+        let mode = match self.mode {
+            FrameGen::Off => return None,
+            FrameGen::Target => "target",
+            FrameGen::Adaptive => "adaptive",
+        };
+        Some(match self.why {
+            Why::Off => return None,
+            Why::Unsupported => "FG: not supported on this GPU".to_owned(),
+            Why::CannotCopy => "FG: this screen can't keep frames".to_owned(),
+            Why::Paused => format!("FG {mode}: paused"),
+            Why::AboveTarget | Why::Making => {
+                // As the FrameGen mod's HUD: say when even made frames fall short.
+                let short = self.why == Why::Making
+                    && (made + real) * 10 < self.shown_target * 9
+                    && made > 0;
+                format!(
+                    "FG {mode} {}: {real} real + {made} made, {} Hz{}",
+                    self.shown_target,
+                    self.shown_refresh,
+                    if short { " (out of reach)" } else { "" }
+                )
+            }
+        })
     }
 
     fn ensure(&mut self, device: &wgpu::Device, size: [u32; 2]) {
@@ -288,11 +359,20 @@ impl FrameWarp {
         );
     }
 
-    /// Whether a real frame of `frame` (the texture the frame is drawn into) can be kept.
-    fn can_keep(&self, frame: &wgpu::Texture) -> bool {
-        self.capturing
-            && frame.usage().contains(wgpu::TextureUsages::COPY_SRC)
-            && frame.format().remove_srgb_suffix() == self.format
+    /// Whether a real frame of `frame` (the texture the frame is drawn into) can be kept;
+    /// a frame that cannot be copied at all says so in `status`.
+    fn can_keep(&mut self, frame: &wgpu::Texture) -> bool {
+        if !self.capturing {
+            return false;
+        }
+        let copyable = frame.usage().contains(wgpu::TextureUsages::COPY_SRC)
+            && frame.format().remove_srgb_suffix() == self.format;
+        if !copyable {
+            self.why = Why::CannotCopy;
+        } else if self.why == Why::CannotCopy {
+            self.why = Why::Making;
+        }
+        copyable
     }
 
     /// Keeps the world as the screen shows it, after the world post pass and before the
@@ -435,6 +515,20 @@ impl FrameWarp {
     }
 }
 
+/// Why frames are or are not made, for the overlay.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Why {
+    Off,
+    Unsupported,
+    /// A menu, the title screen, a shader pack's passes, HDR or a screenshot.
+    Paused,
+    /// The frame texture cannot be copied (no `COPY_SRC`, another format).
+    CannotCopy,
+    /// The real frames reach the target.
+    AboveTarget,
+    Making,
+}
+
 /// What a kind of frame took last time, and how many of each were shown.
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
@@ -443,16 +537,20 @@ enum Kind {
 }
 
 /// Decides which frames are made from how long frames take. Real frames take `real`
-/// seconds on average and made ones `made`; to show one frame every `interval`, a share
-/// `x` of the real frames needs a made frame after it, where
-/// `(1 + x) / (real + x * made) = 1 / interval`.
+/// seconds on average and made ones `made`; to show one frame every `interval`, `x` made
+/// frames are needed per real one, where `(1 + x) / (real + x * made) = 1 / interval`.
 struct Pacer {
     started: Option<Instant>,
     /// The frame being drawn, and the one before it.
     kind: Kind,
     previous: Kind,
+    /// Made frames in a row up to the last one.
+    run: u32,
     real: f64,
     made: f64,
+    /// The real frame rate the game usually reaches (Adaptive's): it follows a rise at
+    /// once and a drop over most of a minute; settings changes start it again.
+    baseline: f64,
     /// Made frames owed: grows by `x` per real frame, and a made frame pays one.
     owed: f64,
     counted: [u32; 2],
@@ -466,8 +564,10 @@ impl Pacer {
             started: None,
             kind: Kind::Real,
             previous: Kind::Real,
+            run: 0,
             real: 1.0 / 60.0,
             made: 0.002,
+            baseline: 0.0,
             owed: 0.0,
             counted: [0; 2],
             shown: [0; 2],
@@ -485,6 +585,11 @@ impl Pacer {
                 Kind::Real => {
                     self.real += (seconds - self.real) * 0.15;
                     self.counted[0] += 1;
+                    let fps = 1.0 / self.real.max(1e-4);
+                    // Up within a few frames; down with a half-life of about 2300
+                    // real frames (most of a minute), so a heavy place stays filled.
+                    let rate = if fps > self.baseline { 0.1 } else { 0.0003 };
+                    self.baseline += (fps - self.baseline) * rate;
                 }
                 Kind::Made => {
                     self.made += (seconds - self.made) * 0.25;
@@ -498,26 +603,28 @@ impl Pacer {
             self.counted = [0; 2];
             self.since = now;
         }
+        self.run = if self.kind == Kind::Made {
+            self.run + 1
+        } else {
+            0
+        };
         self.previous = self.kind;
         self.kind = Kind::Real;
     }
 
-    fn real_seconds(&self) -> f64 {
-        self.real
-    }
-
-    fn decide(&mut self, interval: f64) -> bool {
-        // Never two made frames in a row: the second would show the same world again.
-        if self.previous == Kind::Made {
+    /// Whether the frame starting now is made, with at most `max_run` in a row.
+    fn decide(&mut self, interval: f64, max_run: u32) -> bool {
+        if self.previous == Kind::Real {
+            if self.real <= interval * SLACK {
+                self.owed = 0.0;
+                return false;
+            }
+            let made = self.made.clamp(0.0005, interval * 0.8);
+            let share = ((self.real - interval) / (interval - made)).clamp(0.0, f64::from(max_run));
+            self.owed = (self.owed + share).min(f64::from(max_run) + 0.5);
+        } else if self.run >= max_run {
             return false;
         }
-        if self.real <= interval * SLACK {
-            self.owed = 0.0;
-            return false;
-        }
-        let made = self.made.clamp(0.0005, interval * 0.8);
-        let share = ((self.real - interval) / (interval - made)).clamp(0.0, 1.0);
-        self.owed = (self.owed + share).min(1.5);
         if self.owed >= 1.0 {
             self.owed -= 1.0;
             self.kind = Kind::Made;
@@ -546,38 +653,61 @@ impl Pacer {
 mod tests {
     use super::*;
 
-    #[test]
-    fn makes_only_the_missing_frames() {
+    /// Real frames of `real_ms`, made ones of 2 ms, against `target`: made and real frames
+    /// shown per second.
+    fn run(real_ms: f64, target: f64, max_run: u32) -> (u32, u32) {
         let mut pacer = Pacer::new();
-        pacer.real = 1.0 / 50.0;
-        pacer.made = 0.002;
-        let interval = 1.0 / 70.0;
-        let mut made = 0;
-        for _ in 0..1000 {
-            pacer.previous = Kind::Real;
-            if pacer.decide(interval) {
-                made += 1;
-            }
+        let mut t = Instant::now();
+        for _ in 0..4000 {
+            pacer.frame_started(t);
+            let made = pacer.decide(1.0 / target, max_run);
+            t += Duration::from_secs_f64(if made { 0.002 } else { real_ms / 1000.0 });
         }
-        // x = (20 - 14.29) / (14.29 - 2) = 0.46 made frames per real one.
-        assert!((440..=490).contains(&made), "{made}");
+        pacer.shown()
     }
 
     #[test]
-    fn never_makes_two_in_a_row() {
-        let mut pacer = Pacer::new();
-        pacer.real = 1.0 / 20.0;
-        pacer.previous = Kind::Made;
-        assert!(!pacer.decide(1.0 / 60.0));
+    fn makes_only_the_missing_frames() {
+        // 50 real frames and a target of 70: about 22 made, about 70 shown.
+        let (made, real) = run(20.0, 70.0, 1);
+        assert!((65..=75).contains(&(made + real)), "{made} + {real}");
+        assert!((15..=30).contains(&made), "{made}");
     }
 
     #[test]
     fn makes_nothing_at_the_target() {
+        assert_eq!(run(1000.0 / 72.0, 70.0, 2).0, 0);
+    }
+
+    #[test]
+    fn target_fps_makes_two_after_a_slow_real_frame() {
+        // 30 real frames against 90: two made after each, about 80 shown.
+        let (made, real) = run(33.3, 90.0, 2);
+        assert!(made >= real * 3 / 2, "{made} made, {real} real");
+        assert!((75..=95).contains(&(made + real)), "{made} + {real}");
+    }
+
+    #[test]
+    fn adaptive_learns_the_usual_rate_and_keeps_it() {
         let mut pacer = Pacer::new();
-        pacer.real = 1.0 / 72.0;
-        for _ in 0..100 {
-            pacer.previous = Kind::Real;
-            assert!(!pacer.decide(1.0 / 70.0));
+        let mut t = Instant::now();
+        // Ten seconds at 80, then frames take 20 ms (50 a second).
+        for i in 0..1800 {
+            pacer.frame_started(t);
+            let slow = i >= 800;
+            let target = (pacer.baseline * 0.95).max(30.0);
+            let made = slow && pacer.decide(1.0 / target, 1);
+            let ms = if made {
+                2.0
+            } else if slow {
+                20.0
+            } else {
+                12.5
+            };
+            t += Duration::from_secs_f64(ms / 1000.0);
         }
+        assert!(pacer.baseline > 65.0, "{}", pacer.baseline);
+        let (made, real) = pacer.shown();
+        assert!(made > 10 && made + real > 62, "{made} + {real}");
     }
 }

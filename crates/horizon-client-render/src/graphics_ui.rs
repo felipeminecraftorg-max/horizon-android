@@ -2,7 +2,7 @@
 //! they show, in what groups, with what description and cost, and their
 //! input. How they look comes from `graphics_style`.
 use crate::{
-    graphics::{FarDetail, GraphicsApi, Overlay, Pacing, PresentMode, Preset, Upscaling},
+    graphics::{FarDetail, FrameGen, GraphicsApi, Overlay, Pacing, PresentMode, Preset, Upscaling},
     graphics_style::{Cost, STYLE},
     hud::{HudAtlas, HudBatch},
     lang,
@@ -58,8 +58,8 @@ pub enum H {
     HdrPaperWhite,
     HdrUiBrightness,
     BatteryMode,
-    /// Adaptive frame generation (`Graphics::frame_gen`).
-    AdaptiveFrameGen,
+    /// Frame generation's mode (`Graphics::frame_gen`) and its target frame rate.
+    FrameGen,
     FrameGenTarget,
     ShadowCache,
     GraphicsApi,
@@ -300,14 +300,14 @@ pub fn rows(level: Level) -> Vec<Row> {
                 "Renders the world smaller and rebuilds it with TAA. Faster, softer.",
             ),
             h(
-                H::AdaptiveFrameGen,
+                H::FrameGen,
                 Saves,
-                "Below the target frame rate, fills in only the missing frames. Off by default.",
+                "Target FPS: made frames fill up to your target. Adaptive: they fill the drops below your usual frame rate. Only missing frames are made.",
             ),
             h(
                 H::FrameGenTarget,
                 None,
-                "The frame rate Adaptive Frame Gen keeps. Auto: the display's refresh rate.",
+                "The frame rate Target FPS keeps. Auto: the display's refresh rate.",
             ),
             h(
                 H::ScreenshotQuality,
@@ -529,7 +529,7 @@ pub fn video_pages() -> Vec<(&'static str, Vec<Row>)> {
             vec![
                 (
                     "Frame Generation",
-                    vec![Hz(H::AdaptiveFrameGen), Hz(H::FrameGenTarget)],
+                    vec![Hz(H::FrameGen), Hz(H::FrameGenTarget)],
                 ),
                 (
                     "Resolution",
@@ -789,7 +789,7 @@ impl H {
                 Text::literal("Shortcut: ").append(crate::keybinds::display_name(&g.hdr_key))
             }
             H::BatteryMode => labelled("Battery Mode", on_off(g.battery)),
-            H::AdaptiveFrameGen => labelled("Adaptive Frame Gen", on_off(g.frame_gen)),
+            H::FrameGen => labelled("Frame Generation", g.frame_gen.label()),
             H::FrameGenTarget => match g.frame_gen_target {
                 0 => labelled("Frame Gen Target", "Auto (display)"),
                 n => labelled("Frame Gen Target", lang::tr("%s FPS", &[&n])),
@@ -884,7 +884,7 @@ impl H {
             }
             H::Hdr => g.hdr = !g.hdr,
             H::BatteryMode => g.battery = !g.battery,
-            H::AdaptiveFrameGen => g.frame_gen = !g.frame_gen,
+            H::FrameGen => g.frame_gen = step(&FrameGen::ALL, g.frame_gen, back),
             H::ShadowCache => g.shadow_cache = !g.shadow_cache,
             H::GraphicsApi => {
                 // Android selects the backend before creating the renderer in
@@ -954,11 +954,11 @@ impl Item {
                 | H::HdrPaperWhite
                 | H::HdrUiBrightness,
             ) if !s.horizon.hdr => Some("Turn HDR on to use it."),
-            Item::Horizon(H::AdaptiveFrameGen | H::FrameGenTarget) if s.horizon.hdr => {
-                Some("Adaptive Frame Gen does not run with HDR output.")
+            Item::Horizon(H::FrameGen | H::FrameGenTarget) if s.horizon.hdr => {
+                Some("Frame generation does not run with HDR output.")
             }
-            Item::Horizon(H::FrameGenTarget) if !s.horizon.frame_gen => {
-                Some("Turn Adaptive Frame Gen on to use it.")
+            Item::Horizon(H::FrameGenTarget) if s.horizon.frame_gen != FrameGen::Target => {
+                Some("Set Frame Generation to Target FPS to use it.")
             }
             _ => None,
         }
@@ -976,7 +976,6 @@ impl Item {
             Item::Horizon(H::DitherCutoutMips) => g.dither_cutout_mips,
             Item::Horizon(H::Hdr) => g.hdr,
             Item::Horizon(H::BatteryMode) => g.battery,
-            Item::Horizon(H::AdaptiveFrameGen) => g.frame_gen,
             Item::Horizon(H::ShadowCache) => g.shadow_cache,
             Item::Vanilla(Opt::ViewBobbing) => s.view_bobbing,
             Item::Vanilla(Opt::Vsync) => s.vsync,
@@ -1038,7 +1037,7 @@ impl Item {
                     | H::PresentMode
                     | H::Workers
                     | H::BatteryMode
-                    | H::AdaptiveFrameGen
+                    | H::FrameGen
                     | H::FrameGenTarget
                     | H::ShadowCache
                     | H::GraphicsApi
