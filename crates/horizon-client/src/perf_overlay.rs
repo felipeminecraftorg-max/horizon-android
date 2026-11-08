@@ -13,8 +13,9 @@ const HISTORY: usize = 160;
 pub struct FrameGraph {
     /// Frame, CPU and GPU milliseconds of recent frames, oldest first.
     frames: VecDeque<(f32, f32, f32)>,
-    /// One more line under the times: frame generation's real and made frames.
-    pub extra: Option<String>,
+    /// More lines under the times: what caps the frame rate (the display's refresh rate,
+    /// VSync, the frame rate limit) and frame generation's real and made frames.
+    pub extra: Vec<String>,
 }
 impl FrameGraph {
     pub fn record(&mut self, frame_ms: f32, cpu_ms: f32, gpu_ms: Option<f32>) {
@@ -37,7 +38,7 @@ impl FrameGraph {
             format!("frame {frame:.1} ms  max {worst:.1}"),
             format!("cpu {cpu:.1}  gpu {gpu:.1} ms"),
         ];
-        lines.extend(self.extra.clone());
+        lines.extend(self.extra.iter().cloned());
         let width = 120.0f32.max(
             lines
                 .iter()

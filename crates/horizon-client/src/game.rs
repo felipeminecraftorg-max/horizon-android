@@ -8038,7 +8038,7 @@ impl Game<'_> {
         // Gui.extractRenderState: the debug overlay comes after the screen
         // and the toasts, so it is over everything, menus included.
         let margins = self.hud_safe_margins();
-        self.frame_graph.extra = self.renderer.as_ref().and_then(|r| r.frame_gen_status());
+        self.frame_graph.extra = self.frame_rate_lines();
         horizon_client::hud::inset_overlay(&mut batch, margins, |b| {
             let safe_size = [
                 (b.width * b.scale).round() as u32,
@@ -14685,6 +14685,35 @@ impl Game<'_> {
             scaled: false,
         });
     }
+    /// The performance overlay's lines on what caps the frame rate: the display's refresh
+    /// rate, how frames are shown, the frame rate limit, and frame generation.
+    fn frame_rate_lines(&self) -> Vec<String> {
+        let Some(r) = self.renderer.as_ref() else {
+            return Vec::new();
+        };
+        let present = match r.config.present_mode {
+            wgpu::PresentMode::Fifo => "VSync",
+            wgpu::PresentMode::Mailbox => "mailbox",
+            wgpu::PresentMode::Immediate => "immediate",
+            _ => "auto",
+        };
+        let limit = self.framerate_limit();
+        let limit = if (1..260).contains(&limit) {
+            format!(", limit {limit}")
+        } else {
+            String::new()
+        };
+        #[cfg(target_os = "android")]
+        let screen = crate::device_runtime::display_refresh_hz();
+        #[cfg(not(target_os = "android"))]
+        let screen: Option<u32> = None;
+        let mut lines = vec![match screen {
+            Some(hz) => format!("screen {hz} Hz, {present}{limit}"),
+            None => format!("{present}{limit}"),
+        }];
+        lines.extend(r.frame_gen_status());
+        lines
+    }
     fn render(&mut self) -> Result<bool> {
         #[cfg(target_os = "android")]
         let device_preferences = crate::device_runtime::preferences();
@@ -14868,9 +14897,11 @@ impl Game<'_> {
                 && !menu_blur_cache;
             #[cfg(target_os = "android")]
             let allowed = allowed && self.pad.touch.editor.is_none();
+            // What the display runs at, else what the player asked it for.
             #[cfg(target_os = "android")]
-            let refresh = (device_preferences.display_hz > 0)
-                .then_some(u32::from(device_preferences.display_hz));
+            let refresh = crate::device_runtime::display_refresh_hz()
+                .or((device_preferences.display_hz > 0)
+                    .then_some(u32::from(device_preferences.display_hz)));
             #[cfg(not(target_os = "android"))]
             let refresh = None;
             self.renderer

@@ -75,6 +75,7 @@ pub struct Frame {
 }
 /// The actual duration is CPU-side frame work including submission waits, not GPU execution time.
 pub fn frame(enabled: bool, hz: u16, active: bool) -> Frame {
+    let mut prefer = None;
     STATE.with(|slot| {
         let mut r = slot.borrow_mut();
         crate::APP.with(|app| {
@@ -94,6 +95,9 @@ pub fn frame(enabled: bool, hz: u16, active: bool) -> Frame {
                     }
                     r.window = ptr;
                     r.hz = requested;
+                    if active {
+                        prefer = Some(hz);
+                    }
                 }
             }
         });
@@ -134,6 +138,9 @@ pub fn frame(enabled: bool, hz: u16, active: bool) -> Frame {
             }
         }
     });
+    if let Some(hz) = prefer {
+        prefer_display_mode(hz);
+    }
     Frame {
         start: Instant::now(),
         enabled: enabled && active,
@@ -162,6 +169,46 @@ impl Drop for Frame {
         }
     }
 }
+/// Asks the window for the display mode nearest `hz` (0: the fastest), through the
+/// activity (`HorizonActivity.horizonPreferRefreshRate`): ANativeWindow_setFrameRate is
+/// only a hint, and some systems (HyperOS, among others) keep apps at 60 Hz unless the
+/// window asks for a mode of its own.
+fn prefer_display_mode(hz: u16) {
+    crate::platform::with_context(|env, activity| {
+        env.call_method(
+            activity,
+            "horizonPreferRefreshRate",
+            "(F)V",
+            &[jni::objects::JValue::Float(f32::from(hz))],
+        )?;
+        Ok(())
+    });
+}
+
+thread_local! {
+    static REFRESH: std::cell::Cell<Option<(Instant, Option<u32>)>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// The refresh rate the display runs at now, asked of the activity once a second.
+pub fn display_refresh_hz() -> Option<u32> {
+    REFRESH.with(|cache| {
+        if let Some((at, hz)) = cache.get()
+            && at.elapsed().as_secs_f32() < 1.0
+        {
+            return hz;
+        }
+        let hz = crate::platform::with_context(|env, activity| {
+            env.call_method(activity, "horizonDisplayRefreshRate", "()F", &[])?
+                .f()
+        })
+        .filter(|hz| *hz >= 20.0)
+        .map(|hz| hz.round() as u32);
+        cache.set(Some((Instant::now(), hz)));
+        hz
+    })
+}
+
 /// Gyro uses Android device axes, remapped by current display rotation.
 pub fn gyro(enabled: bool, sensitivity: f32, rotation: i32) -> [f32; 2] {
     STATE.with(|slot| {
