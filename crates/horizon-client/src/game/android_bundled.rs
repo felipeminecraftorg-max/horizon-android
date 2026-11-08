@@ -104,6 +104,31 @@ mod smartf3_settings;
 #[path = "android_bundled/smartf3/smartf3_click.rs"]
 mod smartf3_click;
 
+/// Horizon's own versions of Java mods' behaviour, which the converter turns on.
+#[cfg(target_os = "android")]
+#[path = "android_bundled/compat.rs"]
+pub(super) mod compat;
+
+/// A player breaks a block (`native_destroy_block`): a chop or a vein takes the rest.
+pub(super) fn native_destroy_block(game: &mut Game<'_>, pos: [i32; 3], state: BlockStateId) {
+    let _ = (&game, &pos, &state);
+    #[cfg(target_os = "android")]
+    {
+        compat::destroy_block(&mut *game, pos, state);
+    }
+}
+
+/// A player right clicks a block (`native_right_click_block`): a grown crop is harvested.
+pub(super) fn native_right_click_block(game: &mut Game<'_>, pos: [i32; 3], canceled: &mut bool) {
+    let _ = (&game, &pos, &canceled);
+    #[cfg(target_os = "android")]
+    {
+        if !*canceled && compat::right_click_block(&mut *game, pos) {
+            *canceled = true;
+        }
+    }
+}
+
 pub(super) fn native_key(game: &mut Game<'_>, key: &str, pressed: bool) {
     let _ = (&game, &key, &pressed);
     #[cfg(target_os = "android")]
@@ -136,6 +161,7 @@ pub(super) fn native_mods(game: &mut Game<'_>, mods: &mut Vec<NativeMod>) {
         minimap_list::run(&mut *mods);
         recipes_list::run(&mut *mods);
         smartf3_list::run(&mut *mods);
+        compat::list(&mut *mods);
     }
 }
 

@@ -12,3 +12,9 @@ this directory is not a directly installable `.hnmod` bundle.
 Android changes reset profile-scoped state on launcher transitions, retain the
 Android debug text scale and preserve the code-of-conduct screen. Update the
 portable runtime tests and Android checks when changing these adapters.
+
+`compat.rs` is not from an upstream mod: it is Horizon Android's own version of
+what three Java mods' code does (Right Click Harvest, Tree Harvester,
+Veinminer), written from their behaviour. The mod converter
+(`android/mod_convert.rs`, `KNOWN`) turns one on when a converted pack has the
+Java mod; like the others, each is off until turned on.

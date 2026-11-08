@@ -8,6 +8,12 @@
 //! of it. A pack is carried over as a whole, so mods that share a library's namespace (YUNG's)
 //! and worldgen that names another mod of the pack keep working together.
 //!
+//! The converter is hybrid, in lanes: (1) data, carried over by `horizon-port-pack`; (4) known
+//! mods, whose Java code Horizon has its own version of (`KNOWN`, `game/android_bundled/compat.rs`),
+//! turned on for a pack that has them; and what is left, which the prompt sorts by the lane that
+//! would cover it: (2) behaviour as data (entities, worldgen types, block shapes), (3) behaviour
+//! callbacks, (4) native ports for engine changes.
+//!
 //! Nothing is dropped without a word. Every file of a pack, and every left-out part of each mod,
 //! ends in one file beside the mods, `horizon-mods/<name>-para-o-Claude.txt` (Files > Mods):
 //! the report for the player, then a prompt that asks for the ports still missing, with each
@@ -32,6 +38,80 @@ pub type Progress<'a> = &'a dyn Fn(&str, f32);
 
 /// Where packs are converted (their work folders) under the game folder.
 const WORK: &str = "modpacks";
+
+/// Java mods whose code Horizon runs in a version of its own (`game/android_bundled/compat.rs`):
+/// the mod ids and Modrinth slugs that ask for it, the built-in mod it turns on, its title, and
+/// how Horizon's version plays.
+static KNOWN: [(&[&str], &str, &str, &str); 3] = [
+    (
+        &["rightclickharvest", "right-click-harvest"],
+        "rightclickharvest",
+        "Right Click Harvest",
+        "right-click a grown crop (wheat, carrots, potatoes, beetroots, nether wart, cocoa, a mod's \
+         crops) to harvest it and replant it",
+    ),
+    (
+        &[
+            "treeharvester",
+            "tree-harvester",
+            "fallingtree",
+            "falling-tree",
+        ],
+        "treeharvester",
+        "Tree Harvester",
+        "breaking a log of a natural tree with an axe fells the tree, up to 256 logs; sneak to \
+         break one log",
+    ),
+    (
+        &[
+            "veinminer",
+            "vein-miner",
+            "veinmining",
+            "vein-mining",
+            "ftbultimine",
+            "ftb-ultimine",
+        ],
+        "veinminer",
+        "Veinminer",
+        "sneak while mining an ore with the right tool to mine its vein, up to 64 blocks (the \
+         Java mod's key is sneak here); it stops before the tool breaks",
+    ),
+];
+
+/// The known mod one of `names` (a mod id, a slug, a name) is.
+fn known(
+    names: &[&str],
+) -> Option<&'static (
+    &'static [&'static str],
+    &'static str,
+    &'static str,
+    &'static str,
+)> {
+    KNOWN.iter().find(|(ids, ..)| {
+        names
+            .iter()
+            .any(|n| !n.is_empty() && (ids.contains(n) || ids.contains(&slug(n).as_str())))
+    })
+}
+
+/// A known mod's entry: Horizon's version turned on, what it does in place of the Java code.
+fn cover(entry: &mut Entry, game: &Path, names: &[&str]) {
+    let Some((_, id, title, how)) = known(names) else {
+        return;
+    };
+    match browser::java::set_enabled(game, id, true) {
+        Ok(()) => {
+            entry.status = Status::Works;
+            entry.reason =
+                format!("Horizon runs its own version of it, now on (Installed > {title}): {how}");
+            entry.left.clear();
+            entry.features.clear();
+        }
+        Err(e) => {
+            entry.reason = format!("{}; Horizon's own version not turned on: {e}", entry.reason)
+        }
+    }
+}
 
 /// The prepared vanilla version the game plays, when it is there: block templates are limited
 /// to its blocks.
@@ -145,6 +225,8 @@ struct Entry {
     /// Classes with behaviour and the methods they override, for the prompt.
     examples: Vec<String>,
     events: Vec<String>,
+    /// What its code does, for the lanes the prompt names.
+    features: Vec<horizon_port_pack::classes::Feature>,
     sha1: Option<String>,
     links: Vec<String>,
 }
@@ -164,6 +246,7 @@ impl Entry {
             left: Vec::new(),
             examples: Vec::new(),
             events: Vec::new(),
+            features: Vec::new(),
             sha1: None,
             links: Vec::new(),
         }
@@ -192,6 +275,7 @@ impl Entry {
             })
             .collect();
         e.events = check.code.events.iter().cloned().collect();
+        e.features = check.code.features.keys().copied().collect();
         e
     }
 }
@@ -247,6 +331,12 @@ impl<'a> Mods<'a> {
         if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
             return Err(format!("its id {id:?} is not a folder name"));
         }
+        if horizon_client::mod_list::ANDROID_BUNDLED
+            .iter()
+            .any(|(bundled, ..)| *bundled == id)
+        {
+            return Err(format!("Horizon has a built-in mod with the id {id}"));
+        }
         if self.packaged.contains(&id) {
             return Err(format!("the Horizon mod {id}.hmod is already installed"));
         }
@@ -292,7 +382,7 @@ fn installed(file: &str, check: &Check, install: Result<String, String>) -> Entr
 fn convert_one(file: &str, jar: &Path, scratch: &Path, mods: &mut Mods) -> Entry {
     let out = scratch.join(slug(file));
     let _ = fs::remove_dir_all(&out);
-    let entry = match check::check(jar, &out) {
+    let mut entry = match check::check(jar, &out) {
         Err(why) => Entry::plain(file, Status::NotYet, format!("can't be read: {why}")),
         Ok(c) if c.verdict == Verdict::No => {
             Entry::checked(file, &c, Status::NotYet, c.summary.clone())
@@ -300,6 +390,12 @@ fn convert_one(file: &str, jar: &Path, scratch: &Path, mods: &mut Mods) -> Entry
         Ok(c) => installed(file, &c, mods.install(&out.join("carry"))),
     };
     let _ = fs::remove_dir_all(&out);
+    let names = [entry.mod_id.clone(), entry.name.clone()];
+    cover(
+        &mut entry,
+        mods.game,
+        &[names[0].as_str(), names[1].as_str()],
+    );
     entry
 }
 
@@ -482,6 +578,13 @@ pub fn convert_pack(
             entry.sha1 = f.sha1.clone();
             entry.links = f.downloads.clone();
         }
+        // A known mod plays in Horizon's own version, downloaded or not.
+        let names = [r.key.clone(), entry.mod_id.clone(), r.name.clone()];
+        cover(
+            &mut entry,
+            game,
+            &[names[0].as_str(), names[1].as_str(), names[2].as_str()],
+        );
         entries.push(entry);
     }
     // The jars a pack ships itself (not downloads), each converted on its own.
@@ -729,7 +832,11 @@ fn document(title: &str, entries: &[Entry], notes: &[String]) -> String {
          source; then add it to Horizon in Rust: as a known-mod port or a reusable pattern \
          (entity, block entity, item use, worldgen feature, processor, event) that the \
          converter applies to every jar that has it, so the next conversion gets it without \
-         you. Keep the vanilla look by default, write tests with signal, and when a mod \
+         you. Each mod names the lanes that would cover it: lane 2, behaviour as data (one \
+         Rust version of a vanilla building block serves every mod that uses it); lane 3, \
+         behaviour callbacks; lane 4, a known-mod port (`KNOWN` in android/mod_convert.rs and \
+         game/android_bundled/compat.rs), which the converter turns on by itself next time. \
+         Prefer the lane that covers the most mods. Keep the vanilla look by default, write tests with signal, and when a mod \
          can't be matched exactly, adapt it and say how. Then build the Android dev APK and \
          tell me, in simple Portuguese, what changed and how to convert again.\n\n\
          {} mods or files are left:\n",
@@ -773,6 +880,9 @@ fn document(title: &str, entries: &[Entry], notes: &[String]) -> String {
         for ex in &e.examples {
             out.push_str(&format!("- class {ex}\n"));
         }
+        for lane in lanes(e) {
+            out.push_str(&format!("- lane: {lane}\n"));
+        }
     }
     if !notes.is_empty() {
         out.push_str("\n### The rest of the pack\n");
@@ -781,6 +891,28 @@ fn document(title: &str, entries: &[Entry], notes: &[String]) -> String {
         }
     }
     out
+}
+
+/// The lanes that would cover what an entry's code does.
+fn lanes(e: &Entry) -> Vec<&'static str> {
+    use horizon_port_pack::classes::Feature as F;
+    let mut out = BTreeSet::new();
+    for f in &e.features {
+        out.insert(match f {
+            F::Entity | F::Renderer => {
+                "2: entities as data (attributes, goals, spawns, models, animations); Horizon \
+                 needs mod entity types first"
+            }
+            F::BlockEntity | F::Menu | F::Screen => {
+                "3: machines (block entities, menus, screens: mod API 0.4)"
+            }
+            F::Mixin | F::Unread => "4: a native port (Mixins patch vanilla's own code)",
+            F::Worldgen => "2: the Java worldgen type, once in Rust for every mod that uses it",
+            F::BlockShape => "2: block shapes as data",
+            _ => "3: behaviour callbacks (use, ticks, events), or 4 when it is a common mechanic",
+        });
+    }
+    out.into_iter().collect()
 }
 
 #[cfg(test)]
@@ -804,6 +936,28 @@ mod tests {
             ("farmers delight", None),
         ] {
             assert_eq!(modpack_slug(query).as_deref(), slug, "{query}");
+        }
+    }
+
+    #[test]
+    fn known_mods_are_found_by_id_slug_or_name() {
+        assert_eq!(known(&["veinminer"]).map(|k| k.1), Some("veinminer"));
+        assert_eq!(
+            known(&["", "Tree Harvester"]).map(|k| k.1),
+            Some("treeharvester")
+        );
+        assert_eq!(
+            known(&["right-click-harvest"]).map(|k| k.1),
+            Some("rightclickharvest")
+        );
+        assert!(known(&["sodium", "Sodium"]).is_none());
+        // Every one is a built-in mod the mod list knows.
+        for (_, id, ..) in KNOWN.iter() {
+            assert!(
+                horizon_client::mod_list::ANDROID_BUNDLED
+                    .iter()
+                    .any(|(b, ..)| *b == *id)
+            );
         }
     }
 

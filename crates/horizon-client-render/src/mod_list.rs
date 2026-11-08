@@ -11,7 +11,7 @@ use std::{
 
 pub const FILE: &str = "horizon-mods.txt";
 /// Fixed native modules compiled into Android APKs, all opt-in.
-pub const ANDROID_BUNDLED: [(&str, &str, &str); 4] = [
+pub const ANDROID_BUNDLED: [(&str, &str, &str); 7] = [
     (
         "zoom",
         "Zoom",
@@ -31,6 +31,23 @@ pub const ANDROID_BUNDLED: [(&str, &str, &str); 4] = [
         "smartf3",
         "SmartF3",
         "Configurable modules for the F3 debug screen",
+    ),
+    // Horizon's own versions of Java mods' behaviour (`game/android_bundled/compat.rs`): the
+    // mod converter turns them on for a pack that has the Java mod.
+    (
+        "rightclickharvest",
+        "Right Click Harvest",
+        "Right-click a grown crop to harvest and replant it",
+    ),
+    (
+        "treeharvester",
+        "Tree Harvester",
+        "Break a tree's log with an axe to fell the whole tree; sneak to break one",
+    ),
+    (
+        "veinminer",
+        "Veinminer",
+        "Sneak while mining an ore with the right tool to mine its whole vein",
     ),
 ];
 
