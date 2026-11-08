@@ -822,6 +822,8 @@ mod tests {
             hdr_key: "key.keyboard.h".into(),
             battery: true,
             shadow_cache: true,
+            frame_gen: FrameGen::Adaptive,
+            frame_gen_target: 90,
             api: GraphicsApi::Dx12,
             shader_pack: "Golden Hour".into(),
         };

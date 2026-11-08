@@ -16,6 +16,9 @@ pub struct FrameGraph {
     /// More lines under the times: what caps the frame rate (the display's refresh rate,
     /// VSync, the frame rate limit) and frame generation's real and made frames.
     pub extra: Vec<String>,
+    /// Frame generation's real and made frames shown over the last second, while it is
+    /// on: the frames per second are then the screen's, the real ones beside them.
+    pub generated: Option<(u32, u32)>,
 }
 impl FrameGraph {
     pub fn record(&mut self, frame_ms: f32, cpu_ms: f32, gpu_ms: Option<f32>) {
@@ -33,8 +36,12 @@ impl FrameGraph {
         let avg = |f: fn(&(f32, f32, f32)) -> f32| self.frames.iter().map(f).sum::<f32>() / n;
         let (frame, cpu, gpu) = (avg(|f| f.0), avg(|f| f.1), avg(|f| f.2));
         let worst = self.frames.iter().map(|f| f.0).fold(0.0f32, f32::max);
+        let fps = match self.generated {
+            Some((real, made)) if made > 0 => format!("{} fps ({real} real)", real + made),
+            _ => format!("{:.0} fps", 1000.0 / frame.max(0.001)),
+        };
         let mut lines = vec![
-            format!("{:.0} fps", 1000.0 / frame.max(0.001)),
+            fps,
             format!("frame {frame:.1} ms  max {worst:.1}"),
             format!("cpu {cpu:.1}  gpu {gpu:.1} ms"),
         ];

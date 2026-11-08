@@ -8040,6 +8040,7 @@ impl Game<'_> {
         // and the toasts, so it is over everything, menus included.
         let margins = self.hud_safe_margins();
         self.frame_graph.extra = self.frame_rate_lines();
+        self.frame_graph.generated = self.renderer.as_ref().and_then(|r| r.frame_gen_stats());
         horizon_client::hud::inset_overlay(&mut batch, margins, |b| {
             let safe_size = [
                 (b.width * b.scale).round() as u32,
@@ -14892,9 +14893,9 @@ impl Game<'_> {
             }
         }
         self.was_menu_blurred = menu_blur_cache;
-        // Frame generation: a made frame is the last real one moved to this frame's
-        // camera, so it needs only the camera and the HUD built.
-        let made_frame = {
+        // Frame generation: every frame drawn is real; the renderer makes the frames
+        // between it and the last one and shows them first, while a world is played.
+        {
             let allowed = !self.shows_panorama()
                 && self.player.is_some()
                 && self.screen == Screen::Playing
@@ -14909,10 +14910,10 @@ impl Game<'_> {
                     .then_some(u32::from(device_preferences.display_hz)));
             #[cfg(not(target_os = "android"))]
             let refresh = None;
-            self.renderer
-                .as_mut()
-                .is_some_and(|r| r.frame_gen_next(allowed, refresh))
-        };
+            if let Some(r) = self.renderer.as_mut() {
+                r.frame_gen_begin(allowed, refresh);
+            }
+        }
         let skip_world_for_blur = menu_blur_cache
             && menu_blur.is_some_and(|r| {
                 self.renderer
@@ -14963,7 +14964,6 @@ impl Game<'_> {
         // The cave culling search runs on its worker while the frame is prepared.
         if cave_culling
             && !skip_world_for_blur
-            && !made_frame
             && self.title.is_none()
             && let Some(renderer) = self.renderer.as_mut()
         {
@@ -15080,7 +15080,6 @@ impl Game<'_> {
         // screen does not hide it: vanilla checks the HUD and the game mode, not the screen.
         let adventure = self.mode == horizon_client::command::args::GameMode::Adventure;
         let outline = if !skip_world_for_blur
-            && !made_frame
             && touch_target_visible
             && !self.ui.hide_gui
             && (self.may_build() || adventure)
@@ -15294,7 +15293,7 @@ impl Game<'_> {
         self.see_through_vertices.clear();
         self.glowing_vertices.get_mut().clear();
         self.shadow_only_vertices.get_mut().clear();
-        let skip_world = title || skip_world_for_blur || made_frame;
+        let skip_world = title || skip_world_for_blur;
         if !skip_world {
             entities = horizon_client::spans::time("entity_geometry", || {
                 self.entity_geometry(camera, alpha, entities)

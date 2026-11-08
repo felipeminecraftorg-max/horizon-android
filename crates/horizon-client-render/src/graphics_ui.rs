@@ -302,12 +302,12 @@ pub fn rows(level: Level) -> Vec<Row> {
             h(
                 H::FrameGen,
                 Saves,
-                "Target FPS: made frames fill up to your target. Adaptive: they fill the drops below your usual frame rate. Only missing frames are made.",
+                "Frames made between real ones, as FSR 3 does: smoother, slightly more lag.",
             ),
             h(
                 H::FrameGenTarget,
                 None,
-                "The frame rate Target FPS keeps. Auto: the display's refresh rate.",
+                "Target FPS's rate, up to 3 made frames per real one. Auto: the display's.",
             ),
             h(
                 H::ScreenshotQuality,

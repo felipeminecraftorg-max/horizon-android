@@ -67,11 +67,9 @@ pub struct Post {
     taa_on: bool,
     /// Whether an external/native shader pack is active this frame.
     pub pack_active: bool,
-    /// The world keeps a target of its own even at scale 1 without anti-aliasing:
-    /// adaptive frame generation reads its depth after the frame (`frame_warp`).
+    /// The world keeps a target of its own even at scale 1 without anti-aliasing: frame
+    /// generation keeps a copy of its depth (`frame_warp`).
     pub keep_target: bool,
-    /// Counts the targets made, so that what holds their views can tell a new one.
-    generation: u64,
     target: Option<WorldTarget>,
     taa_resources: Option<TaaResources>,
     /// Frames jittered so far (the Halton index), and which history the next resolve writes.
@@ -252,7 +250,6 @@ impl Post {
             taa_on: false,
             pack_active: false,
             keep_target: false,
-            generation: 0,
             target: None,
             taa_resources,
             taa_frame: 0,
@@ -412,7 +409,6 @@ impl Post {
             });
             // New textures: no history yet.
             self.taa_this_frame.jitter[2] = 1.0;
-            self.generation = self.generation.wrapping_add(1);
             self.target = Some(WorldTarget {
                 size,
                 color,
@@ -424,11 +420,6 @@ impl Post {
         self.target
             .as_ref()
             .map(|t| (t.color.clone(), t.depth.clone()))
-    }
-
-    /// Which target `prepare` last made (`keep_target`).
-    pub fn generation(&self) -> u64 {
-        self.generation
     }
 
     /// The size of the world's own target, when it has one.

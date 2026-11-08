@@ -894,9 +894,12 @@ pub struct Renderer {
     layout: crate::chunk::ColumnLayout,
     /// Resolution scale, FXAA and TAA (Horizon settings).
     world_post: world_post::Post,
-    /// Adaptive frame generation (`frame_warp`): made frames fill in the frames missing
-    /// below the target frame rate.
+    /// Frame generation (`frame_warp`): frames interpolated between the last two real
+    /// ones fill in the frames missing below the target frame rate.
     frame_warp: frame_warp::FrameWarp,
+    /// The first of the frames this real frame shows (`frame_warp`), drawn into the
+    /// swapchain image it acquired, until it is presented.
+    generated_first: Option<frame_warp::Output>,
     /// Android: a present mode other than Fifo waits until a world has been drawn for a
     /// moment (`set_present_mode`), and the world frames drawn so far.
     deferred_present: Option<(bool, crate::graphics::PresentMode)>,
@@ -1604,6 +1607,13 @@ async fn open_backend(
             cull::Cull::features(&adapter)
         }
         | oit::features(&adapter)
+        // Frame generation asks the compositor when each frame is to be shown.
+        | (adapter.features()
+            & if mobile {
+                wgpu::Features::VULKAN_GOOGLE_DISPLAY_TIMING
+            } else {
+                wgpu::Features::empty()
+            })
         | (adapter.features()
             & (if compatibility || mobile {
                 wgpu::Features::empty()
@@ -3858,6 +3868,7 @@ impl Renderer {
             layout: crate::chunk::ColumnLayout::VANILLA,
             world_post,
             frame_warp,
+            generated_first: None,
             deferred_present: None,
             world_frames: 0,
             present_request: (true, crate::graphics::PresentMode::Auto),
@@ -5274,6 +5285,13 @@ impl Renderer {
             config.width = physical.width.max(1);
             config.height = physical.height.max(1);
         }
+        // Frame generation queues a real frame's frames at once, each held until its time
+        // (up to four), while the last real frame's last ones may still wait for theirs.
+        if self.frame_warp.wants_world_target() {
+            config.desired_maximum_frame_latency = config
+                .desired_maximum_frame_latency
+                .max(frame_warp::MAX_OUTPUTS + 2);
+        }
         if let Some(hdr) = &self.hdr {
             config.format = hdr.output.format();
             config.view_formats = vec![hdr.output.format()];
@@ -5389,19 +5407,25 @@ impl Renderer {
     /// which spaces the made frames out between the real ones; with Mailbox a made frame
     /// shown right after a real one would replace it unseen.
     pub fn set_frame_gen(&mut self, mode: crate::graphics::FrameGen, target_fps: u32) {
+        let was = self.frame_warp.wants_world_target();
         self.frame_warp.set(mode, target_fps);
         self.world_post.keep_target = self.frame_warp.wants_world_target();
         let (vsync, present) = self.present_request;
         self.set_present_mode(vsync, present);
+        // The swapchain's queue depth follows the setting (`surface_config`).
+        if was != self.frame_warp.wants_world_target() {
+            self.configure_surface();
+        }
     }
     /// Whether this device can make frames (the setting is greyed out otherwise).
     pub fn frame_gen_supported(&self) -> bool {
         self.frame_warp.supported()
     }
     /// Called once at the start of every frame, before the game builds it: whether this
-    /// frame is a made one, which then needs only the camera and the HUD. `allowed`: the
-    /// game shows a world with nothing over it a made frame would get wrong.
-    pub fn frame_gen_next(&mut self, allowed: bool, refresh_hz: Option<u32>) -> bool {
+    /// frame goes through frame generation (`frame_warp`), which shows it after the frames
+    /// it makes between it and the last one. `allowed`: the game shows a world with
+    /// nothing over it a made frame would get wrong.
+    pub fn frame_gen_begin(&mut self, allowed: bool, refresh_hz: Option<u32>) -> bool {
         let allowed = allowed
             && !self.suspended
             && self.hdr.is_none()
@@ -5415,12 +5439,98 @@ impl Renderer {
                 .and_then(|m| m.refresh_rate_millihertz())
                 .map(|r| r.div_ceil(1000))
         });
-        self.frame_warp
-            .next_frame(allowed, refresh_hz, [self.config.width, self.config.height])
+        self.frame_warp.begin_frame(allowed, refresh_hz)
+    }
+    /// Real and made frames shown over the last second while frame generation is on.
+    pub fn frame_gen_stats(&self) -> Option<(u32, u32)> {
+        self.frame_warp.enabled().then(|| self.frame_warp.stats())
     }
     /// Frame generation's line for the performance overlay, while it is on.
     pub fn frame_gen_status(&self) -> Option<String> {
         self.frame_warp.status()
+    }
+    /// Gives the next present of the window its time on the screen (`frame_warp`).
+    fn timed_present(&mut self, output: &frame_warp::Output, first: bool) {
+        let Some((id, at)) = self.frame_warp.present_time(output, first) else {
+            return;
+        };
+        let set = self.surface.as_ref().is_some_and(|surface| {
+            horizon_hdr::display_timing::set_next_present(&self.device, surface, id, at)
+        });
+        if !set {
+            self.frame_warp.timing_failed();
+        }
+    }
+    /// The frames a real frame shows after its first (`frame_warp`): each into a swapchain
+    /// image of its own, drawn and queued at once, held by the compositor until its time.
+    /// `previous`: the fraction shown last, to tell VSync's repeats from new frames.
+    fn present_generated(&mut self, outputs: &[frame_warp::Output], mut previous: Option<f32>) {
+        for output in outputs {
+            let Some(surface) = &self.surface else {
+                return;
+            };
+            let acquire = Instant::now();
+            let texture = match surface.get_current_texture() {
+                wgpu::CurrentSurfaceTexture::Success(f)
+                | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
+                // Outdated, lost or busy: the next real frame deals with it.
+                _ => return,
+            };
+            self.last_wait += acquire.elapsed();
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Horizon made frame"),
+                });
+            let view = texture.texture.create_view(&wgpu::TextureViewDescriptor {
+                format: Some(self.config.format.remove_srgb_suffix()),
+                ..Default::default()
+            });
+            let rect = content_rect(&texture.texture);
+            let mut shown = *output;
+            if !self
+                .frame_warp
+                .encode(&self.device, &self.queue, &mut encoder, &shown, &view, rect)
+            {
+                shown.fraction = 1.0;
+                self.frame_warp.encode(
+                    &self.device,
+                    &self.queue,
+                    &mut encoder,
+                    &shown,
+                    &view,
+                    rect,
+                );
+            }
+            #[cfg(target_os = "android")]
+            if self.config.alpha_mode != wgpu::CompositeAlphaMode::Opaque {
+                let format = self.surface_config().format.remove_srgb_suffix();
+                let opaque = self
+                    .opaque_output
+                    .get_or_insert_with(|| opaque_output::OpaqueOutput::new(&self.device, format));
+                if opaque.format != format {
+                    *opaque = opaque_output::OpaqueOutput::new(&self.device, format);
+                }
+                opaque.present(&mut encoder, &texture.texture);
+            }
+            self.queue.submit([encoder.finish()]);
+            self.timed_present(&shown, false);
+            self.queue.present(texture);
+            self.frame_warp
+                .presented(&shown, previous == Some(shown.fraction));
+            previous = Some(shown.fraction);
+        }
+    }
+    /// Reads the compositor's report on the frames shown so far (`frame_warp`).
+    fn collect_present_reports(&mut self) {
+        if !self.frame_warp.timed() {
+            return;
+        }
+        let mut past = Vec::new();
+        if let Some(surface) = &self.surface {
+            horizon_hdr::display_timing::past_presents(&self.device, surface, &mut past);
+        }
+        self.frame_warp.reported(&past);
     }
     pub fn world_render_size(&self) -> [u32; 2] {
         [self.config.width, self.config.height]
@@ -5985,9 +6095,6 @@ impl Renderer {
         if let Some(flat) = &mut self.flat {
             flat.trim(|page| self.arena.has_page(page));
         }
-        // A made frame (`frame_warp`) is this frame's alone: whatever ends it early, the
-        // next frame (a loading screen, say) is real unless the game asks again.
-        let made_frame = std::mem::take(&mut self.frame_warp.generate);
         if self.suspended {
             return Ok(false);
         }
@@ -6097,12 +6204,26 @@ impl Renderer {
                 .unwrap_or_else(|| f.texture.clone()),
             (None, _) => self.offscreen.clone().ok_or("no offscreen target")?,
         };
-        // Frame generation copies the frame: on Android it is drawn into a texture that
-        // can be copied, then shown (the swapchain may not allow copies).
+        // Frame generation (`frame_warp`): the frame is drawn into a texture it keeps, and
+        // reaches the screen after the frames made between it and the last real one.
+        let generating = self.frame_warp.active()
+            && surface_frame.is_some()
+            && self.hdr.is_none()
+            && self.screenshot.is_none()
+            && !frame.title
+            && frame.menu_blur.is_none()
+            && !frame.menu_blur_cache;
+        if self.frame_warp.active() && !generating {
+            self.frame_warp.invalidate();
+        }
+        let target_texture = if generating {
+            self.frame_warp.frame_target(&self.device, size)
+        } else {
+            target_texture
+        };
+        // Android draws a scaled frame into a texture of its own, then onto the screen.
         #[cfg(target_os = "android")]
-        let target_texture = if self.hdr.is_none()
-            && (scaled_presentation || self.frame_warp.wants_world_target())
-        {
+        let target_texture = if !generating && self.hdr.is_none() && scaled_presentation {
             self.frame_scale
                 .get_or_insert_with(|| {
                     frame_scale::FrameScale::new(
@@ -6209,90 +6330,6 @@ impl Renderer {
             self.last_wait += present.elapsed();
             self.last_encode = started.elapsed().saturating_sub(self.last_wait);
             return Ok(true);
-        }
-        // A made frame (`frame_warp`): the last real frame moved to this frame's camera,
-        // and this frame's HUD over it. The game built only the camera and the HUD.
-        if made_frame {
-            let view_proj = self
-                .views(frame)
-                .primary()
-                .view_proj(frame.bob * frame.spin)
-                .as_dmat4();
-            let view_target = target_texture.create_view(&wgpu::TextureViewDescriptor {
-                format: Some(self.config.format.remove_srgb_suffix()),
-                ..Default::default()
-            });
-            self.hud.prepare(
-                &self.device,
-                &mut self.uploads,
-                &mut encoder,
-                frame.hud,
-                [self.config.width, self.config.height],
-            );
-            if self.frame_warp.draw(
-                &self.queue,
-                &mut encoder,
-                &view_target,
-                view_proj,
-                frame.camera,
-            ) {
-                self.hud.draw_range(
-                    &mut encoder,
-                    &view_target,
-                    &self.depth,
-                    frame.hud,
-                    [self.config.width, self.config.height],
-                    0..frame.hud.vertices.len() as u32,
-                );
-                self.uploads.finish(&encoder);
-                if has_section_copies {
-                    self.section_copy_bytes = 0;
-                    self.section_uploads.finish(&encoder);
-                }
-                if let Some(f) = &surface_frame {
-                    self.readback
-                        .present(&self.device, &mut encoder, &f.texture);
-                }
-                #[cfg(target_os = "android")]
-                if let (Some(scale), Some(frame)) = (&self.frame_scale, &surface_frame) {
-                    scale.present(&mut encoder, &frame.texture);
-                }
-                #[cfg(target_os = "android")]
-                if self.config.alpha_mode != wgpu::CompositeAlphaMode::Opaque
-                    && let Some(surface) = &surface_frame
-                {
-                    let format = self.surface_config().format.remove_srgb_suffix();
-                    let output = self.opaque_output.get_or_insert_with(|| {
-                        opaque_output::OpaqueOutput::new(&self.device, format)
-                    });
-                    if output.format != format {
-                        *output = opaque_output::OpaqueOutput::new(&self.device, format);
-                    }
-                    output.present(&mut encoder, &surface.texture);
-                }
-                let commands = crate::spans::time("encode", || encoder.finish());
-                let submission = crate::spans::time("submit", || self.queue.submit([commands]));
-                let present = Instant::now();
-                if let Some(surface_frame) = surface_frame {
-                    if self.config.present_mode == wgpu::PresentMode::Fifo {
-                        self.window.pre_present_notify();
-                    }
-                    self.queue.present(surface_frame);
-                    if reconfigure {
-                        self.configure_surface();
-                    }
-                } else {
-                    self.in_flight.push_back(submission);
-                    if !self.paced_elsewhere {
-                        self.wait_in_flight();
-                    }
-                }
-                self.last_wait += present.elapsed();
-                self.last_encode = started.elapsed().saturating_sub(self.last_wait);
-                return Ok(true);
-            }
-            // Nothing kept for this frame after all: it is drawn as a real one.
-            self.frame_warp.unmade();
         }
         #[cfg(target_os = "android")]
         if let Some(timer) = &mut self.gpu_timer {
@@ -8701,17 +8738,32 @@ impl Renderer {
                 quad_indices: &self.indices,
             });
         }
-        // Adaptive frame generation keeps the world as shown, before the hand.
-        let warp_capture = !frame.title
-            && frame.post_effects.effects.is_empty()
-            && scaled.is_some()
-            && !pack_post
-            && !native_post;
-        if warp_capture {
-            self.frame_warp
-                .keep_world(&self.device, &mut encoder, &target_texture, size);
-        } else {
-            self.frame_warp.discard();
+        // Frame generation keeps the world as shown, before the hand, with its depth and
+        // camera. A shader pack's or a post effect's frame can't be interpolated.
+        if generating {
+            match &scaled {
+                Some((_, depth))
+                    if frame.post_effects.effects.is_empty() && !pack_post && !native_post =>
+                {
+                    let camera = frame_warp::Camera {
+                        position: frame.camera,
+                        yaw: frame.yaw,
+                        pitch: frame.pitch,
+                        fov_degrees: frame.fov_degrees,
+                        aspect: self.config.width as f32 / self.config.height.max(1) as f32,
+                        far: frame.depth_far,
+                        pose: frame.bob * frame.spin,
+                    };
+                    self.frame_warp.keep(
+                        &self.device,
+                        &mut encoder,
+                        &target_texture,
+                        depth.texture(),
+                        camera,
+                    );
+                }
+                _ => self.frame_warp.invalidate(),
+            }
         }
         if let Some(hdr) = &self.hdr {
             hdr.keep_world(&mut encoder);
@@ -8847,19 +8899,6 @@ impl Renderer {
             let first = debug_depth + debug_top;
             pass.draw(0..4, first..first + crosshair);
         }
-        // ... and the frame with the hand and the screen effects, before the HUD.
-        if warp_capture && let Some((_, depth)) = &scaled {
-            self.frame_warp.keep_overlay(
-                &self.device,
-                &mut encoder,
-                &target_texture,
-                size,
-                view_proj.as_dmat4(),
-                frame.camera,
-                depth,
-                self.world_post.generation(),
-            );
-        }
         let blur_at = menu_blur.map_or(0, |_| frame.hud.blur_at);
         self.hud.draw_range(
             &mut encoder,
@@ -8929,6 +8968,40 @@ impl Renderer {
         #[cfg(target_os = "android")]
         if let (Some(scale), Some(frame)) = (&self.frame_scale, &surface_frame) {
             scale.present(&mut encoder, &frame.texture);
+        }
+        // Frame generation: what this real frame shows, made frames first; the first goes
+        // into the swapchain image this frame acquired, the rest after it.
+        let generated = if generating {
+            self.frame_warp.plan(Instant::now())
+        } else {
+            Vec::new()
+        };
+        if let (Some(first), Some(f)) = (generated.first(), &surface_frame) {
+            let view = f.texture.create_view(&wgpu::TextureViewDescriptor {
+                format: Some(self.config.format.remove_srgb_suffix()),
+                ..Default::default()
+            });
+            let rect = content_rect(&f.texture);
+            let first = if self.frame_warp.encode(
+                &self.device,
+                &self.queue,
+                &mut encoder,
+                first,
+                &view,
+                rect,
+            ) {
+                *first
+            } else {
+                // Nothing to make it from after all: the real frame.
+                let real = frame_warp::Output {
+                    fraction: 1.0,
+                    at: first.at,
+                };
+                self.frame_warp
+                    .encode(&self.device, &self.queue, &mut encoder, &real, &view, rect);
+                real
+            };
+            self.generated_first = Some(first);
         }
         #[cfg(target_os = "android")]
         if self.config.alpha_mode != wgpu::CompositeAlphaMode::Opaque
@@ -9012,6 +9085,7 @@ impl Renderer {
             }
         }
         let present = Instant::now();
+        let first_output = self.generated_first.take();
         if let Some(surface_frame) = surface_frame {
             // On Wayland this ties RedrawRequested to the compositor's frame
             // callbacks, one per refresh. Only VSync (Fifo) waits for the
@@ -9022,7 +9096,17 @@ impl Renderer {
             if first_frame {
                 startup_step(format_args!("presenting the first frame"));
             }
-            self.queue.present(surface_frame);
+            if let Some(first) = &first_output {
+                self.timed_present(first, true);
+            }
+            if generating && generated.is_empty() {
+                // Frame generation shows this real frame's moment in the frames it makes
+                // next, between it and the following one (`frame_warp`): its own image
+                // goes unshown.
+                drop(surface_frame);
+            } else {
+                self.queue.present(surface_frame);
+            }
             if self.hdr.is_some()
                 && let Some(marker) = self.hdr_marker.take()
             {
@@ -9039,12 +9123,39 @@ impl Renderer {
             }
         }
         self.last_wait += present.elapsed();
+        if generating {
+            if let Some(first) = &first_output {
+                self.frame_warp.presented(first, false);
+            }
+            // A reconfigured swapchain (a rotation) shows the next real frame first.
+            if first_output.is_some() && !reconfigure {
+                self.present_generated(&generated[1..], first_output.map(|f| f.fraction));
+            }
+            self.collect_present_reports();
+            self.frame_warp.finish(Instant::now());
+        }
         self.last_encode = started.elapsed().saturating_sub(self.last_wait);
         let _ = self.started;
         self.visible = visible;
         self.visible_lods = visible_lods;
         self.shadow_visible = shadow_visible;
         Ok(true)
+    }
+}
+/// The part of a swapchain image the frame fills: Android's content rectangle (a
+/// scaled presentation), the whole image elsewhere.
+fn content_rect(texture: &wgpu::Texture) -> Option<[u32; 4]> {
+    #[cfg(target_os = "android")]
+    {
+        Some(winit::platform::android::native_content_rect([
+            texture.width(),
+            texture.height(),
+        ]))
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = texture;
+        None
     }
 }
 /// Out-of-memory and validation error scopes, popped together: the first error either caught.

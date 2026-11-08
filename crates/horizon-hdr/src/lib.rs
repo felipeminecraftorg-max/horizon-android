@@ -3,6 +3,7 @@
 //! without it a compositor may clip or tone-map everything above 1.0 (80 nits)
 //! of an scRGB swapchain.
 
+pub mod display_timing;
 #[cfg(target_os = "linux")]
 pub mod wayland;
 
