@@ -5,6 +5,7 @@
 //! be rerun, resumed and inspected. The work folder belongs to the user: the
 //! jars they downloaded and what is carried over from them stay there and
 //! are never uploaded or committed.
+pub mod api;
 pub mod carry;
 pub mod check;
 pub mod classes;
@@ -24,6 +25,7 @@ pub mod remap;
 pub mod report;
 pub mod resourcepacks;
 pub mod shapes;
+pub mod stubs;
 pub mod upgrade;
 pub mod worldgen;
 mod yung;

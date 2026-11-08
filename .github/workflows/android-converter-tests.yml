@@ -52,3 +52,121 @@ jobs:
             ~/.cargo/git
             .local/converter-target
           key: converter-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
+
+  # Lane 3's stand-ins on real data: the official 1.21.1 client jar (named by Mojang's client
+  # mappings), NeoForge's jar and a public NeoForge mod, downloaded here and never kept. The
+  # mod's classes are then loaded beside the stand-ins and Horizon's Java API slice, verified
+  # as a JVM verifies them.
+  stand-ins:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_TARGET_DIR: ${{ github.workspace }}/.local/converter-target
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .local/converter-target
+          key: converter-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
+          restore-keys: |
+            converter-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+      - name: Download the game's and the loader's jars, and mods to try
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+          os.makedirs('.local/l3/mods', exist_ok=True)
+          def get(url, path=None):
+              req = urllib.request.Request(url, headers={'User-Agent': 'horizon-android-ci (github.com/felipeminecraftorg-max/horizon-android)'})
+              data = urllib.request.urlopen(req, timeout=120).read()
+              if path:
+                  with open(path, 'wb') as f:
+                      f.write(data)
+              return data
+          manifest = json.loads(get('https://piston-meta.mojang.com/mc/game/version_manifest_v2.json'))
+          entry = next(v for v in manifest['versions'] if v['id'] == '1.21.1')
+          version = json.loads(get(entry['url']))
+          get(version['downloads']['client']['url'], '.local/l3/client.jar')
+          get(version['downloads']['client_mappings']['url'], '.local/l3/client.txt')
+          get('https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.172/neoforge-21.1.172-universal.jar', '.local/l3/neoforge.jar')
+          for slug in ['farmers-delight', 'waystones', 'supplementaries']:
+              q = f'https://api.modrinth.com/v2/project/{slug}/version?loaders=%5B%22neoforge%22%5D&game_versions=%5B%221.21.1%22%5D'
+              try:
+                  f = json.loads(get(q))[0]['files'][0]
+                  get(f['url'], f'.local/l3/mods/{slug}.jar')
+                  print(slug, f['filename'])
+              except Exception as e:
+                  print(slug, 'not downloaded:', e)
+          PY
+      - name: Compile Horizon's Java API slice
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          stubs = {
+              'android/os/Build.java': 'package android.os; public class Build { public static class VERSION { public static final int SDK_INT = 34; } }',
+              'dalvik/system/DexClassLoader.java': 'package dalvik.system; public class DexClassLoader extends ClassLoader { public DexClassLoader(String a, String b, String c, ClassLoader p) { super(p); } }',
+              'com/android/tools/r8/CompilationFailedException.java': 'package com.android.tools.r8; public class CompilationFailedException extends Exception {}',
+              'com/android/tools/r8/D8Command.java': 'package com.android.tools.r8; import java.nio.file.Path; public class D8Command { public static Builder builder(DiagnosticsHandler h) { return new Builder(); } public static class Builder { public Builder addProgramFiles(Path... p) { return this; } public Builder setMinApiLevel(int a) { return this; } public Builder setMode(CompilationMode m) { return this; } public Builder setOutput(Path p, OutputMode m) { return this; } public D8Command build() throws CompilationFailedException { return new D8Command(); } } }',
+              'com/android/tools/r8/DiagnosticsHandler.java': 'package com.android.tools.r8; public interface DiagnosticsHandler { default void error(Diagnostic d) {} default void warning(Diagnostic d) {} default void info(Diagnostic d) {} }',
+              'com/android/tools/r8/Diagnostic.java': 'package com.android.tools.r8; public interface Diagnostic { String getDiagnosticMessage(); }',
+              'com/android/tools/r8/D8.java': 'package com.android.tools.r8; public class D8 { public static void run(D8Command c) throws CompilationFailedException {} }',
+              'com/android/tools/r8/CompilationMode.java': 'package com.android.tools.r8; public enum CompilationMode { DEBUG, RELEASE }',
+              'com/android/tools/r8/OutputMode.java': 'package com.android.tools.r8; public enum OutputMode { DexIndexed, DexFilePerClass, ClassFile }',
+          }
+          for path, text in stubs.items():
+              p = Path('.local/l3/android') / path
+              p.parent.mkdir(parents=True, exist_ok=True)
+              p.write_text(text + '\n')
+          PY
+          "$JAVA_HOME_21_X64/bin/javac" -nowarn -d .local/l3/slice \
+            $(grep -v '^#' tools/android_lane3_sources.txt) $(find .local/l3/android -name '*.java')
+      - name: Write the stand-ins and load each mod beside them
+        run: |
+          mkdir -p .local/l3/check
+          cat > .local/l3/check/LoadAll.java <<'JAVA'
+          import java.net.*; import java.nio.file.*; import java.util.*; import java.util.zip.*;
+          public class LoadAll {
+            public static void main(String[] a) throws Exception {
+              List<URL> urls = new ArrayList<>();
+              for (String p : a) urls.add(Paths.get(p).toUri().toURL());
+              URLClassLoader l = new URLClassLoader(urls.toArray(new URL[0]), LoadAll.class.getClassLoader());
+              int ok = 0, bad = 0; Map<String, Integer> why = new TreeMap<>();
+              try (ZipFile z = new ZipFile(a[0])) {
+                for (ZipEntry e : Collections.list(z.entries())) {
+                  String n = e.getName();
+                  if (!n.endsWith(".class") || n.startsWith("META-INF/")) continue;
+                  try { Class.forName(n.substring(0, n.length() - 6).replace('/', '.'), true, l); ok++; }
+                  catch (Throwable t) {
+                    bad++;
+                    Throwable c = t; while (c.getCause() != null) c = c.getCause();
+                    String w = c.getClass().getSimpleName() + ": " + String.valueOf(c.getMessage()).split("\n")[0];
+                    if (w.length() > 200) w = w.substring(0, 200);
+                    why.merge(w, 1, Integer::sum);
+                  }
+                }
+              }
+              System.out.println(ok + " classes load and initialise, " + bad + " fail");
+              why.entrySet().stream().sorted((x, y) -> y.getValue() - x.getValue()).limit(25)
+                  .forEach(e -> System.out.println("  " + e.getValue() + "x " + e.getKey()));
+            }
+          }
+          JAVA
+          "$JAVA_HOME_21_X64/bin/javac" -d .local/l3/check .local/l3/check/LoadAll.java
+          for jar in .local/l3/mods/*.jar; do
+            name=$(basename "$jar" .jar)
+            echo "::group::$name"
+            rm -rf .local/l3/stubs-$name
+            cargo run -q -p horizon-port-pack --example lane3_stubs -- \
+              .local/l3/client.jar .local/l3/client.txt .local/l3/slice .local/l3/stubs-$name "$jar" .local/l3/neoforge.jar
+            echo "Verified:"
+            "$JAVA_HOME_21_X64/bin/java" -cp .local/l3/check LoadAll "$jar" .local/l3/stubs-$name .local/l3/slice || true
+            echo "Unverified:"
+            "$JAVA_HOME_21_X64/bin/java" -XX:+UnlockDiagnosticVMOptions -XX:-BytecodeVerificationRemote \
+              -cp .local/l3/check LoadAll "$jar" .local/l3/stubs-$name .local/l3/slice || true
+            echo "::endgroup::"
+          done

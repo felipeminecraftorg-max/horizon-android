@@ -58,16 +58,16 @@ fn descriptor(java: &str, class: &HashMap<String, String>) -> String {
 
 /// What Mojang's client mappings (ProGuard's format) say, by official name.
 #[derive(Default)]
-struct Mojang {
+pub(crate) struct Mojang {
     /// Official internal class name → Mojang's.
-    classes: HashMap<String, String>,
+    pub(crate) classes: HashMap<String, String>,
     /// (official class, official field) → Mojang's field name.
-    fields: HashMap<(String, String), String>,
+    pub(crate) fields: HashMap<(String, String), String>,
     /// (official class, official name, official descriptor) → Mojang's method name.
-    methods: HashMap<(String, String, String), String>,
+    pub(crate) methods: HashMap<(String, String, String), String>,
 }
 
-fn mojang(proguard: &str) -> Result<Mojang, String> {
+pub(crate) fn mojang(proguard: &str) -> Result<Mojang, String> {
     // Classes first: a method's descriptor names classes of any part of the file.
     let mut named_to_official = HashMap::new();
     for line in proguard.lines() {
