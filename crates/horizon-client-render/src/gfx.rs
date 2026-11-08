@@ -219,6 +219,7 @@ mod hdr;
 mod hdr_stats;
 pub use hdr::Calibration as HdrCalibration;
 pub mod block_light;
+mod frame_warp;
 pub mod lightning;
 mod lod;
 mod native_material;
@@ -256,7 +257,6 @@ pub(crate) mod upload;
 mod view;
 mod wgsl_prefix;
 mod world_post;
-mod frame_warp;
 
 /// A section's instance: its camera-relative origin and, in `w`, the step of
 /// its fixed-point UVs (`terrain.wgsl`'s `terrain_uv`).

@@ -204,8 +204,50 @@ impl Style {
     }
 }
 
+/// The look of the Video Settings screen (`graphics_ui::Level::Video`), after Sodium's
+/// own options screen and Reese's Sodium Options: Sodium 0.9's `Colors` and `Layout`,
+/// with rows a little taller so that a finger hits them.
+pub mod sodium {
+    /// Sodium writes its colours as ARGB; the HUD takes RGBA in little-endian order.
+    pub const fn argb(c: u32) -> u32 {
+        let (a, r, g, b) = (c >> 24, (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF);
+        a << 24 | b << 16 | g << 8 | r
+    }
+    pub const THEME: u32 = argb(0xFF94_E4D3);
+    pub const THEME_LIGHTER: u32 = argb(0xFFCC_FDEE);
+    pub const THEME_DARKER: u32 = argb(0xFF7A_9E9E);
+    pub const FOREGROUND: u32 = argb(0xFFFF_FFFF);
+    pub const FOREGROUND_DISABLED: u32 = argb(0xFFAA_AAAA);
+    pub const BACKGROUND_LIGHT: u32 = argb(0x4000_0000);
+    pub const BACKGROUND_HOVER: u32 = argb(0xE000_0000);
+    pub const BACKGROUND_OVERLAY: u32 = argb(0xEA00_0000);
+    pub const BACKGROUND_DEFAULT: u32 = argb(0x9000_0000);
+    pub const BACKGROUND_DARKER: u32 = argb(0xB000_0000);
+    pub const BACKGROUND_HIGHLIGHT: u32 = argb(0x08FF_FFFF);
+    pub const TRACK: u32 = argb(0x60FF_FFFF);
+    pub const BUTTON_BORDER: u32 = argb(0x8000_FFEE);
+    /// The page list down the left.
+    pub const PAGE_LIST_WIDTH: f32 = 125.0;
+    /// An option row, with the tooltip beside it where the screen has room.
+    pub const OPTION_WIDTH: f32 = 210.0;
+    /// A row, a page tab: Sodium's are a line of text and some padding; these are the
+    /// height of a vanilla button, for touch.
+    pub const ENTRY_HEIGHT: f32 = 20.0;
+    pub const GROUP_HEADER_HEIGHT: f32 = 14.0;
+    pub const OPTION_PAGE_MARGIN: f32 = 6.0;
+    pub const TEXT_LEFT_PADDING: f32 = 8.0;
+    pub const OPTION_TEXT_SIDE_PADDING: f32 = 6.0;
+    pub const SLIDER_WIDTH: f32 = 90.0;
+    pub const SLIDER_HEIGHT: f32 = 10.0;
+    pub const CONTROL_ICON_SIZE: f32 = 10.0;
+    pub const MIN_TOOLTIP_WIDTH: f32 = 100.0;
+    pub const MAX_TOOLTIP_WIDTH: f32 = 200.0;
+    pub const SELECTION_BAR_WIDTH: f32 = 3.0;
+    pub const SCROLLBAR_WIDTH: f32 = 7.0;
+}
+
 /// Greedy word wrap; the first line is `indent` narrower.
-fn wrap(atlas: &HudAtlas, text: &str, width: f32, indent: f32) -> Vec<String> {
+pub fn wrap(atlas: &HudAtlas, text: &str, width: f32, indent: f32) -> Vec<String> {
     let mut lines = vec![String::new()];
     for word in text.split_whitespace() {
         let room = if lines.len() == 1 {

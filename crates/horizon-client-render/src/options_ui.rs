@@ -1491,6 +1491,9 @@ pub enum Page {
     Graphics,
     GraphicsAdvanced,
     GraphicsHdr,
+    /// Video Settings as Sodium and Reese's Sodium Options draw it
+    /// (`graphics_ui::Level::Video`): vanilla's video options and Horizon's on pages.
+    GraphicsVideo,
     /// HDR calibration, full screen (`calibration`).
     HdrCalibration,
     /// Horizon's controller settings and button binds.
@@ -2398,7 +2401,7 @@ impl OptionsUi {
         }
         if matches!(
             page,
-            Page::Graphics | Page::GraphicsAdvanced | Page::GraphicsHdr
+            Page::Graphics | Page::GraphicsAdvanced | Page::GraphicsHdr | Page::GraphicsVideo
         ) {
             self.graphics.reset();
         }
@@ -2412,6 +2415,7 @@ impl OptionsUi {
             Page::Graphics => Some(crate::graphics_ui::Level::Simple),
             Page::GraphicsAdvanced => Some(crate::graphics_ui::Level::Advanced),
             Page::GraphicsHdr => Some(crate::graphics_ui::Level::Hdr),
+            Page::GraphicsVideo => Some(crate::graphics_ui::Level::Video),
             _ => None,
         }
     }
@@ -2442,9 +2446,11 @@ impl OptionsUi {
             Page::NativeMod(_) => "Mod Settings",
             Page::ShaderPacks => "horizon.pages.shader_packs",
             Page::ShaderOptions | Page::NativePackOptions(..) => "horizon.pages.shader_options",
-            Page::Graphics | Page::GraphicsAdvanced | Page::GraphicsHdr | Page::HdrCalibration => {
-                "options.videoTitle"
-            }
+            Page::Graphics
+            | Page::GraphicsAdvanced
+            | Page::GraphicsHdr
+            | Page::GraphicsVideo
+            | Page::HdrCalibration => "options.videoTitle",
             Page::Controller => "horizon.pages.controller",
             Page::PadBinds => "horizon.pages.controller_binds",
             Page::Extras => "horizon.pages.extras",
@@ -3026,7 +3032,8 @@ impl OptionsUi {
                 let entries = [
                     ("options.skinCustomisation", Some(Page::Skin)),
                     ("options.sounds", Some(Page::Sound)),
-                    ("options.video", Some(Page::Video)),
+                    // Sodium's way: Video Settings opens its own screen.
+                    ("options.video", Some(Page::GraphicsVideo)),
                     ("options.controls", Some(Page::Controls)),
                     (
                         "options.language",

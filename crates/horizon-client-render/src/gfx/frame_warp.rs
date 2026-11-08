@@ -335,9 +335,7 @@ impl FrameWarp {
         let Some(kept) = &self.kept else { return };
         Self::copy(encoder, frame, &kept.overlay);
         let group = match self.source.take() {
-            Some(source) if source.generation == generation && source.size == size => {
-                source.group
-            }
+            Some(source) if source.generation == generation && source.size == size => source.group,
             _ => device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("Horizon frame warp"),
                 layout: &self.layout,
@@ -393,8 +391,9 @@ impl FrameWarp {
         let to_previous = source.view_proj
             * DMat4::from_translation(camera - source.camera)
             * view_proj.inverse();
-        let to_current =
-            view_proj * DMat4::from_translation(source.camera - camera) * source.view_proj.inverse();
+        let to_current = view_proj
+            * DMat4::from_translation(source.camera - camera)
+            * source.view_proj.inverse();
         let still = to_previous.abs_diff_eq(DMat4::IDENTITY, 1e-7);
         let uniform = WarpUniform {
             to_previous: to_previous.as_mat4().to_cols_array_2d(),

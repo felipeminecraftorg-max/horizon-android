@@ -157,14 +157,22 @@ pub fn android_present_mode(
     setting: Option<PresentMode>,
 ) -> Option<PresentMode> {
     if vsync {
-        return [PresentMode::Fifo, PresentMode::Mailbox, PresentMode::Immediate]
-            .into_iter()
-            .find(|mode| supported.contains(mode));
+        return [
+            PresentMode::Fifo,
+            PresentMode::Mailbox,
+            PresentMode::Immediate,
+        ]
+        .into_iter()
+        .find(|mode| supported.contains(mode));
     }
     setting.filter(|m| supported.contains(m)).or_else(|| {
-        [PresentMode::Mailbox, PresentMode::Fifo, PresentMode::Immediate]
-            .into_iter()
-            .find(|mode| supported.contains(mode))
+        [
+            PresentMode::Mailbox,
+            PresentMode::Fifo,
+            PresentMode::Immediate,
+        ]
+        .into_iter()
+        .find(|mode| supported.contains(mode))
     })
 }
 
@@ -593,8 +601,14 @@ mod android_present_tests {
     #[test]
     fn android_vsync_off_takes_mailbox_and_vsync_on_fifo() {
         let all = [PresentMode::Fifo, PresentMode::Mailbox];
-        assert_eq!(android_present_mode(&all, true, None), Some(PresentMode::Fifo));
-        assert_eq!(android_present_mode(&all, false, None), Some(PresentMode::Mailbox));
+        assert_eq!(
+            android_present_mode(&all, true, None),
+            Some(PresentMode::Fifo)
+        );
+        assert_eq!(
+            android_present_mode(&all, false, None),
+            Some(PresentMode::Mailbox)
+        );
         assert_eq!(
             android_present_mode(&all, false, Some(PresentMode::Fifo)),
             Some(PresentMode::Fifo)

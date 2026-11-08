@@ -17,6 +17,10 @@ pub enum Level {
     Advanced,
     /// HDR output's own settings, opened from Advanced while HDR is on.
     Hdr,
+    /// Video Settings as Sodium and Reese's Sodium Options draw it: pages down the left,
+    /// the open page's options in groups, the hovered or tapped one's tooltip beside
+    /// them. Vanilla's options and Horizon's together (`video_pages`).
+    Video,
 }
 
 /// Horizon's own settings (`graphics::Graphics`).
@@ -136,6 +140,12 @@ pub fn rows(level: Level) -> Vec<Row> {
         "Sets the options below together. Changing one makes it Custom.",
     );
     let mut rows = match level {
+        Level::Video => {
+            return video_pages()
+                .into_iter()
+                .flat_map(|(_, rows)| rows)
+                .collect();
+        }
         Level::Simple => vec![preset, render, lod, far, fov, fps, vsync, gui],
         Level::Hdr => vec![
             Row::Header("HDR"),
@@ -400,6 +410,175 @@ const LOD_STEPS: [u32; 18] = [
     crate::lod::MAX_CHUNKS,
 ];
 
+/// The pages of `Level::Video` and their groups, as Sodium arranges its own: General,
+/// Quality, Performance and Advanced, with Horizon's frame rate tools on a page of their
+/// own. Each row is the one the Advanced screen describes; an option a platform lacks
+/// (or hides) is left out.
+pub fn video_pages() -> Vec<(&'static str, Vec<Row>)> {
+    use Item::{Horizon as Hz, Vanilla as Va};
+    let mut pool = rows(Level::Advanced);
+    pool.push(v(
+        Opt::TextureFiltering,
+        Cost::Low,
+        "How block textures are sampled up close and at an angle.",
+    ));
+    pool.push(v(
+        Opt::MaxAnisotropy,
+        Cost::Medium,
+        "Sharper textures on surfaces seen at a shallow angle.",
+    ));
+    pool.push(v(
+        Opt::MenuBlur,
+        Cost::Low,
+        "Blurs the world behind menus. Off is fastest.",
+    ));
+    let spec: Vec<(&'static str, Vec<(&'static str, Vec<Item>)>)> = vec![
+        (
+            "General",
+            vec![
+                (
+                    "Distance",
+                    vec![
+                        Va(Opt::RenderDistance),
+                        Hz(H::LodDistance),
+                        Hz(H::FarDetail),
+                        Va(Opt::SimulationDistance),
+                        Va(Opt::EntityDistance),
+                    ],
+                ),
+                (
+                    "Display",
+                    vec![
+                        Va(Opt::Fov),
+                        Va(Opt::GuiScale),
+                        Va(Opt::Gamma),
+                        Va(Opt::Fullscreen),
+                        Va(Opt::Vsync),
+                        Va(Opt::MaxFps),
+                        Va(Opt::InactivityFps),
+                    ],
+                ),
+                (
+                    "Interface",
+                    vec![
+                        Va(Opt::ViewBobbing),
+                        Va(Opt::AttackIndicator),
+                        Va(Opt::Autosave),
+                    ],
+                ),
+            ],
+        ),
+        (
+            "Quality",
+            vec![
+                (
+                    "Graphics",
+                    vec![
+                        Hz(H::Preset),
+                        Va(Opt::Clouds),
+                        Va(Opt::CloudRange),
+                        Hz(H::Weather),
+                        Va(Opt::WeatherRadius),
+                        Va(Opt::CutoutLeaves),
+                        Va(Opt::Particles),
+                        Hz(H::Sky),
+                        Hz(H::Fog),
+                    ],
+                ),
+                (
+                    "Lighting",
+                    vec![
+                        Va(Opt::SmoothLighting),
+                        Va(Opt::BiomeBlend),
+                        Va(Opt::EntityShadows),
+                        Va(Opt::Vignette),
+                    ],
+                ),
+                (
+                    "Textures",
+                    vec![
+                        Va(Opt::Mipmaps),
+                        Va(Opt::TextureFiltering),
+                        Va(Opt::MaxAnisotropy),
+                        Hz(H::AnimatedTextures),
+                        Hz(H::DitherCutoutMips),
+                        Va(Opt::ImprovedTransparency),
+                    ],
+                ),
+                ("Effects", vec![Va(Opt::ChunkFade), Va(Opt::MenuBlur)]),
+            ],
+        ),
+        (
+            "Performance",
+            vec![
+                (
+                    "Chunks",
+                    vec![
+                        Va(Opt::ChunkBuilder),
+                        Hz(H::Workers),
+                        Hz(H::ChunkUpdates),
+                        Hz(H::UploadBudget),
+                    ],
+                ),
+                ("Culling", vec![Hz(H::CaveCulling), Hz(H::EntityCulling)]),
+                ("Power", vec![Hz(H::BatteryMode), Hz(H::ShadowCache)]),
+            ],
+        ),
+        (
+            "Frame Rate",
+            vec![
+                (
+                    "Frame Generation",
+                    vec![Hz(H::AdaptiveFrameGen), Hz(H::FrameGenTarget)],
+                ),
+                (
+                    "Resolution",
+                    vec![
+                        Hz(H::ResolutionScale),
+                        Hz(H::Antialiasing),
+                        Hz(H::Upscaling),
+                    ],
+                ),
+            ],
+        ),
+        (
+            "Advanced",
+            vec![
+                ("Presentation", vec![Hz(H::PresentMode), Hz(H::Pacing)]),
+                ("Output", vec![Hz(H::HdrSettings), Hz(H::ScreenshotQuality)]),
+                ("Debug", vec![Hz(H::Overlay), Hz(H::GraphicsApi)]),
+            ],
+        ),
+    ];
+    let mut pages = Vec::new();
+    for (page, groups) in spec {
+        let mut rows = Vec::new();
+        for (group, items) in groups {
+            let mut taken = Vec::new();
+            for item in items {
+                // Android has no window to make fullscreen.
+                if cfg!(target_os = "android") && item == Va(Opt::Fullscreen) {
+                    continue;
+                }
+                if let Some(i) = pool
+                    .iter()
+                    .position(|r| matches!(r, Row::Setting(s) if s.item == item))
+                {
+                    taken.push(pool.remove(i));
+                }
+            }
+            if !taken.is_empty() {
+                rows.push(Row::Header(group));
+                rows.extend(taken);
+            }
+        }
+        if !rows.is_empty() {
+            pages.push((page, rows));
+        }
+    }
+    pages
+}
+
 /// Horizon's graphics screens supplement the vanilla options on Video Settings.
 /// Upscaling is only there while TAA is, which does it.
 fn extra_rows(level: Level, settings: &Settings) -> Vec<Row> {
@@ -492,7 +671,9 @@ impl H {
                 Some(i as f32 / (LOD_STEPS.len() - 1) as f32)
             }
             H::Workers => Some(g.workers as f32 / max_workers() as f32),
-            H::FrameGenTarget => Some(frame_gen_step(g.frame_gen_target) as f32 / FRAME_GEN_STEPS as f32),
+            H::FrameGenTarget => {
+                Some(frame_gen_step(g.frame_gen_target) as f32 / FRAME_GEN_STEPS as f32)
+            }
             H::ResolutionScale => Some((g.resolution_scale as f32 - 50.0) / 150.0),
             // Auto, then 10..480 by 10.
             H::HdrPaperWhite => Some(g.hdr_paper_white as f32 / 480.0),
@@ -954,6 +1135,9 @@ pub struct GraphicsUi {
     pub can_change_value: bool,
     /// The key binding the options screen is waiting on (`Action::BindKey`).
     pub binding: Option<&'static str>,
+    /// `Level::Video`'s open page (`video_pages`), kept while the screen closes, as
+    /// Reese's Sodium Options remembers it.
+    pub page: usize,
 }
 
 impl GraphicsUi {
@@ -963,8 +1147,12 @@ impl GraphicsUi {
         self.focus = None;
         self.can_change_value = false;
     }
-    /// The scrollbar's column: right of the descriptions.
-    fn scrollbar_x(w: f32) -> f32 {
+    /// The scrollbar's column: right of the descriptions (right of the rows on Video).
+    fn scrollbar_x(level: Level, w: f32) -> f32 {
+        if level == Level::Video {
+            let f = video_frame(w);
+            return f.list_x + f.list_w + 2.0;
+        }
         STYLE.row_x(w) + STYLE.control_width + STYLE.gap + STYLE.text_width(w) + 6.0
     }
     fn bounds(h: f32) -> (f32, f32) {
@@ -987,6 +1175,9 @@ impl GraphicsUi {
         w: f32,
         h: f32,
     ) -> (Vec<Widget>, Vec<(f32, &'static str)>, f32) {
+        if level == Level::Video {
+            return self.video_layout(s, w, h);
+        }
         let content = Self::content_height(level, s);
         self.clamp_scroll(h, content);
         let (top, _) = Self::bounds(h);
@@ -1017,8 +1208,8 @@ impl GraphicsUi {
         let other = match level {
             Level::Simple => Action::OpenAdvanced,
             Level::Advanced => Action::OpenSimple,
-            // One Done, back to Advanced.
-            Level::Hdr => {
+            // One Done, back to Advanced (Video lays itself out above).
+            Level::Hdr | Level::Video => {
                 widgets.push(Widget {
                     x: cx - 100.0,
                     y: by,
@@ -1058,6 +1249,10 @@ impl GraphicsUi {
         cursor: (f32, f32),
         in_world: bool,
     ) {
+        if level == Level::Video {
+            self.video_draw(s, batch, atlas, cursor, in_world);
+            return;
+        }
         let (w, h) = (batch.width, batch.height);
         let (widgets, headers, content) = self.layout(level, s, w, h);
         let (top, bottom) = Self::bounds(h);
@@ -1154,7 +1349,7 @@ impl GraphicsUi {
         ui::scrollbar(
             batch,
             atlas,
-            Self::scrollbar_x(w),
+            Self::scrollbar_x(level, w),
             top,
             bottom,
             content,
@@ -1164,6 +1359,7 @@ impl GraphicsUi {
             Level::Simple => "Graphics",
             Level::Advanced => "Graphics: Advanced",
             Level::Hdr => "Graphics: HDR",
+            Level::Video => "options.videoTitle",
         };
         STYLE.title(batch, atlas, &Text::literal(lang::get(title)));
         if let Some(lines) = tooltip {
@@ -1181,6 +1377,19 @@ impl GraphicsUi {
         drag: bool,
         right: bool,
     ) -> Vec<Action> {
+        if level == Level::Video
+            && !drag
+            && !right
+            && let Some(page) = video_tab_at((x, y), w, h)
+        {
+            if page != self.page {
+                self.page = page;
+                self.scroll = ui::Scroll::default();
+                self.focus = None;
+                self.dragging = None;
+            }
+            return vec![Action::ButtonClick];
+        }
         let (widgets, _, content) = self.layout(level, s, w, h);
         let (top, bottom) = Self::bounds(h);
         if drag {
@@ -1205,7 +1414,7 @@ impl GraphicsUi {
         // AbstractScrollArea.updateScrolling: a press on the scrollbar holds it, silently.
         if self
             .scroll
-            .press((x, y), Self::scrollbar_x(w), top, bottom, content)
+            .press((x, y), Self::scrollbar_x(level, w), top, bottom, content)
         {
             return Vec::new();
         }
@@ -1264,7 +1473,11 @@ impl GraphicsUi {
         self.dragging.take().is_some()
     }
     pub fn scroll(&mut self, level: Level, s: &Settings, h: f32, amount: f32) {
-        let content = Self::content_height(level, s);
+        let content = if level == Level::Video {
+            self.video_content_height()
+        } else {
+            Self::content_height(level, s)
+        };
         let (top, bottom) = Self::bounds(h);
         self.scroll.clamp(top, bottom, content);
         self.scroll.wheel(amount, 18.0, top, bottom, content);
@@ -1508,6 +1721,552 @@ impl GraphicsUi {
         }
 
         (Vec::new(), false)
+    }
+}
+
+/// Where `Level::Video` puts things on a screen `w` wide: the page list, the rows (210
+/// wide with the tooltip beside them where there is room, else the whole width) and the
+/// tooltip's column.
+struct VideoFrame {
+    side: f32,
+    list_x: f32,
+    list_w: f32,
+    tip: Option<(f32, f32)>,
+}
+
+fn video_frame(w: f32) -> VideoFrame {
+    use crate::graphics_style::sodium as so;
+    let side = so::PAGE_LIST_WIDTH.min((w * 0.28).floor()).max(80.0);
+    let list_x = side + so::OPTION_PAGE_MARGIN;
+    let room = (w - list_x - so::OPTION_PAGE_MARGIN - so::SCROLLBAR_WIDTH - 2.0).max(60.0);
+    let beside = room >= so::OPTION_WIDTH + so::MIN_TOOLTIP_WIDTH + so::OPTION_PAGE_MARGIN;
+    let list_w = if beside { so::OPTION_WIDTH } else { room };
+    let tip = beside.then(|| {
+        let x = list_x + list_w + so::SCROLLBAR_WIDTH + 2.0 + so::OPTION_PAGE_MARGIN;
+        (
+            x,
+            (w - x - so::OPTION_PAGE_MARGIN).min(so::MAX_TOOLTIP_WIDTH),
+        )
+    });
+    VideoFrame {
+        side,
+        list_x,
+        list_w,
+        tip,
+    }
+}
+
+/// The page tab under `(x, y)` on the page list.
+fn video_tab_at((x, y): (f32, f32), w: f32, h: f32) -> Option<usize> {
+    use crate::graphics_style::sodium as so;
+    let (top, bottom) = GraphicsUi::bounds(h);
+    if x < 0.0 || x >= video_frame(w).side || y < top || y >= bottom {
+        return None;
+    }
+    let i = ((y - top) / so::ENTRY_HEIGHT).floor() as usize;
+    (i < video_pages().len()).then_some(i)
+}
+
+/// A setting's label split as Sodium shows it: the name on the left, the value on the
+/// right (`labelled` joins them with ": ").
+fn split_label(label: &Text) -> (String, String) {
+    let plain = label.plain();
+    match plain.split_once(": ") {
+        Some((name, value)) => (name.to_owned(), value.to_owned()),
+        None => (plain, String::new()),
+    }
+}
+
+/// `text` cut to `room` pixels, with an ellipsis when it had to be.
+fn fit_text(atlas: &HudAtlas, text: &str, room: f32) -> String {
+    if atlas.font.width(text) <= room {
+        return text.to_owned();
+    }
+    let mut out = String::new();
+    for c in text.chars() {
+        let next = format!("{out}{c}…");
+        if atlas.font.width(&next) > room {
+            break;
+        }
+        out.push(c);
+    }
+    out.push('…');
+    out
+}
+
+impl GraphicsUi {
+    fn video_content(rows: &[Row]) -> f32 {
+        use crate::graphics_style::sodium as so;
+        rows.iter().fold(8.0, |height, row| {
+            height
+                + match row {
+                    Row::Header(_) => so::GROUP_HEADER_HEIGHT,
+                    Row::Setting(_) => so::ENTRY_HEIGHT,
+                }
+        })
+    }
+    fn video_content_height(&self) -> f32 {
+        let pages = video_pages();
+        pages
+            .get(self.page)
+            .or(pages.first())
+            .map_or(0.0, |(_, rows)| Self::video_content(rows))
+    }
+    /// `Level::Video`'s widgets: a row per setting of the open page (a slider only its
+    /// track, so that a drag maps onto it), and Done at the bottom right.
+    fn video_layout(
+        &mut self,
+        s: &Settings,
+        w: f32,
+        h: f32,
+    ) -> (Vec<Widget>, Vec<(f32, &'static str)>, f32) {
+        use crate::graphics_style::sodium as so;
+        let pages = video_pages();
+        self.page = self.page.min(pages.len().saturating_sub(1));
+        let f = video_frame(w);
+        let rows: &[Row] = match pages.get(self.page) {
+            Some((_, rows)) => rows,
+            None => &[],
+        };
+        let content = Self::video_content(rows);
+        self.clamp_scroll(h, content);
+        let (top, _) = Self::bounds(h);
+        let mut y = top + 4.0 - self.scroll.amount;
+        let mut widgets = Vec::new();
+        let mut headers = Vec::new();
+        for row in rows {
+            match row {
+                Row::Header(name) => {
+                    headers.push((y, *name));
+                    y += so::GROUP_HEADER_HEIGHT;
+                }
+                Row::Setting(set) => {
+                    let (x, ww) = if set.item.slider(s).is_some() {
+                        (
+                            f.list_x + f.list_w - so::OPTION_TEXT_SIDE_PADDING - so::SLIDER_WIDTH,
+                            so::SLIDER_WIDTH,
+                        )
+                    } else {
+                        (f.list_x, f.list_w)
+                    };
+                    widgets.push(Widget {
+                        x,
+                        y,
+                        w: ww,
+                        target: Target::Item(set.item),
+                        list: true,
+                    });
+                    y += so::ENTRY_HEIGHT;
+                }
+            }
+        }
+        widgets.push(Widget {
+            x: w - so::OPTION_PAGE_MARGIN - 100.0,
+            y: h - 27.0,
+            w: 100.0,
+            target: Target::Button(Action::Done),
+            list: false,
+        });
+        (widgets, headers, content)
+    }
+    /// A flat Sodium button with a thin border.
+    fn video_button(
+        batch: &mut HudBatch,
+        atlas: &HudAtlas,
+        (x, y, w, h): (f32, f32, f32, f32),
+        label: &str,
+        hover: bool,
+    ) {
+        use crate::graphics_style::sodium as so;
+        crate::widgets::record(label, [x, y, w, h], true);
+        crate::widgets::target([x, y, w, h]);
+        crate::widgets::widget_cursor(hover, true);
+        batch.fill(
+            atlas,
+            x,
+            y,
+            w,
+            h,
+            if hover {
+                so::BACKGROUND_HOVER
+            } else {
+                so::BACKGROUND_DEFAULT
+            },
+        );
+        let border = if hover { so::THEME } else { so::BUTTON_BORDER };
+        batch.fill(atlas, x, y, w, 1.0, border);
+        batch.fill(atlas, x, y + h - 1.0, w, 1.0, border);
+        batch.fill(atlas, x, y, 1.0, h, border);
+        batch.fill(atlas, x + w - 1.0, y, 1.0, h, border);
+        let tw = atlas.font.width(label);
+        batch.text(
+            atlas,
+            label,
+            x + ((w - tw) / 2.0).floor(),
+            y + ((h - 8.0) / 2.0).floor(),
+            so::FOREGROUND,
+            true,
+        );
+    }
+    fn video_draw(
+        &mut self,
+        s: &Settings,
+        batch: &mut HudBatch,
+        atlas: &HudAtlas,
+        cursor: (f32, f32),
+        in_world: bool,
+    ) {
+        use crate::graphics_style::sodium as so;
+        let (w, h) = (batch.width, batch.height);
+        let (widgets, headers, content) = self.video_layout(s, w, h);
+        let pages = video_pages();
+        let f = video_frame(w);
+        let (top, bottom) = Self::bounds(h);
+        ui::menu_background(batch, atlas, 0.0, 0.0, w, h, in_world);
+
+        // The page list: the mod's name, then a tab per page, the open one marked.
+        batch.fill(atlas, 0.0, 0.0, f.side, h, so::BACKGROUND_DARKER);
+        batch.text(
+            atlas,
+            "Horizon",
+            so::TEXT_LEFT_PADDING,
+            12.0,
+            so::THEME,
+            true,
+        );
+        for (i, (name, _)) in pages.iter().enumerate() {
+            let y = top + i as f32 * so::ENTRY_HEIGHT;
+            let selected = i == self.page;
+            let hover = ui::hovered(cursor, 0.0, y, f.side, so::ENTRY_HEIGHT);
+            if selected {
+                batch.fill(
+                    atlas,
+                    0.0,
+                    y,
+                    f.side,
+                    so::ENTRY_HEIGHT,
+                    so::BACKGROUND_HOVER,
+                );
+                batch.fill(
+                    atlas,
+                    0.0,
+                    y,
+                    so::SELECTION_BAR_WIDTH,
+                    so::ENTRY_HEIGHT,
+                    so::THEME,
+                );
+            } else if hover {
+                batch.fill(
+                    atlas,
+                    0.0,
+                    y,
+                    f.side,
+                    so::ENTRY_HEIGHT,
+                    so::BACKGROUND_LIGHT,
+                );
+            }
+            let label = lang::get(name);
+            let label = fit_text(atlas, &label, f.side - so::TEXT_LEFT_PADDING * 2.0);
+            batch.text(
+                atlas,
+                &label,
+                so::TEXT_LEFT_PADDING + 2.0,
+                y + 6.0,
+                if selected { so::THEME } else { so::FOREGROUND },
+                true,
+            );
+            let rect = [0.0, y, f.side, so::ENTRY_HEIGHT];
+            crate::widgets::record(&label, rect, true);
+            crate::widgets::target_as(rect, crate::widgets::Kind::Tab(selected));
+            crate::widgets::widget_cursor(hover, true);
+        }
+
+        // The open page's name over its rows.
+        if let Some((name, rows)) = pages.get(self.page) {
+            batch.text(
+                atlas,
+                &lang::get(name),
+                f.list_x,
+                12.0,
+                so::FOREGROUND,
+                true,
+            );
+            let start = batch.vertices.len();
+            let mark = crate::widgets::targets_mark();
+            for (y, name) in &headers {
+                if *y + so::GROUP_HEADER_HEIGHT > top && *y < bottom {
+                    batch.text(
+                        atlas,
+                        &lang::get(name),
+                        f.list_x + 2.0,
+                        y + 4.0,
+                        so::THEME,
+                        true,
+                    );
+                }
+            }
+            let mut tooltip = None;
+            for wd in &widgets {
+                let Target::Item(item) = wd.target else {
+                    continue;
+                };
+                let Some((cost, text)) = rows.iter().find_map(|r| match r {
+                    Row::Setting(set) if set.item == item => Some((set.cost, set.text)),
+                    _ => None,
+                }) else {
+                    continue;
+                };
+                let y = wd.y;
+                if y + so::ENTRY_HEIGHT <= top || y >= bottom {
+                    continue;
+                }
+                let focused = self.focus == Some(wd.target);
+                let hover = ui::hovered(cursor, f.list_x, y, f.list_w, so::ENTRY_HEIGHT)
+                    && cursor.1 >= top
+                    && cursor.1 < bottom;
+                let blocked = item.blocked(s);
+                let live = blocked.is_none();
+                batch.fill(
+                    atlas,
+                    f.list_x,
+                    y,
+                    f.list_w,
+                    so::ENTRY_HEIGHT - 1.0,
+                    if hover || focused || self.dragging == Some(item) {
+                        so::BACKGROUND_HOVER
+                    } else {
+                        so::BACKGROUND_DEFAULT
+                    },
+                );
+                let colour = if live {
+                    so::FOREGROUND
+                } else {
+                    so::FOREGROUND_DISABLED
+                };
+                let mut label = item.label(s);
+                if item == Item::Horizon(H::HdrKey) && self.binding.is_some() {
+                    label = Text::literal("Shortcut: > ")
+                        .append(crate::keybinds::display_name(&s.horizon.hdr_key))
+                        .append(" <");
+                }
+                let (name, value) = split_label(&label);
+                let right = f.list_x + f.list_w - so::OPTION_TEXT_SIDE_PADDING;
+                let text_y = y + 6.0;
+                let control_x = match (item.switch(s), item.slider(s)) {
+                    (Some(on), _) => {
+                        // Sodium's tick box: a square outline, filled with the theme when on.
+                        let size = so::CONTROL_ICON_SIZE;
+                        let (bx, by) =
+                            (right - size, y + ((so::ENTRY_HEIGHT - size) / 2.0).floor());
+                        batch.fill(atlas, bx, by, size, size, colour);
+                        batch.fill(
+                            atlas,
+                            bx + 1.0,
+                            by + 1.0,
+                            size - 2.0,
+                            size - 2.0,
+                            so::BACKGROUND_DARKER,
+                        );
+                        if on {
+                            batch.fill(
+                                atlas,
+                                bx + 2.0,
+                                by + 2.0,
+                                size - 4.0,
+                                size - 4.0,
+                                if live {
+                                    so::THEME
+                                } else {
+                                    so::FOREGROUND_DISABLED
+                                },
+                            );
+                        }
+                        crate::widgets::record(
+                            &label.plain(),
+                            [f.list_x, y, f.list_w, so::ENTRY_HEIGHT],
+                            live,
+                        );
+                        if live {
+                            crate::widgets::target([f.list_x, y, f.list_w, so::ENTRY_HEIGHT]);
+                        }
+                        bx
+                    }
+                    (None, Some(position)) => {
+                        // A thin track filled with the theme up to the value, its handle
+                        // brighter while held; the value to its left.
+                        let tx = right - so::SLIDER_WIDTH;
+                        let cy = y + (so::ENTRY_HEIGHT / 2.0).floor();
+                        let position = position.clamp(0.0, 1.0);
+                        batch.fill(atlas, tx, cy - 1.0, so::SLIDER_WIDTH, 2.0, so::TRACK);
+                        batch.fill(
+                            atlas,
+                            tx,
+                            cy - 1.0,
+                            (so::SLIDER_WIDTH * position).round(),
+                            2.0,
+                            if live {
+                                so::THEME
+                            } else {
+                                so::FOREGROUND_DISABLED
+                            },
+                        );
+                        let held = self.dragging == Some(item);
+                        let hx = tx + ((so::SLIDER_WIDTH - 4.0) * position).round();
+                        batch.fill(
+                            atlas,
+                            hx,
+                            cy - so::SLIDER_HEIGHT / 2.0,
+                            4.0,
+                            so::SLIDER_HEIGHT,
+                            if !live {
+                                so::FOREGROUND_DISABLED
+                            } else if held || (focused && self.can_change_value) {
+                                so::FOREGROUND
+                            } else {
+                                so::THEME_LIGHTER
+                            },
+                        );
+                        let vw = atlas.font.width(&value);
+                        let vx = tx - 6.0 - vw;
+                        batch.text(atlas, &value, vx, text_y, colour, true);
+                        let kind = crate::widgets::Kind::Slider {
+                            value: position,
+                            track: [tx, so::SLIDER_WIDTH],
+                        };
+                        let rect = [tx, y, so::SLIDER_WIDTH, so::ENTRY_HEIGHT];
+                        crate::widgets::record_as(&label.plain(), rect, live, kind);
+                        if live {
+                            crate::widgets::target_as(rect, kind);
+                        }
+                        vx
+                    }
+                    (None, None) => {
+                        // A cycling value, right-aligned.
+                        let vw = atlas.font.width(&value);
+                        let vx = right - vw;
+                        batch.text(
+                            atlas,
+                            &value,
+                            vx,
+                            text_y,
+                            if live {
+                                so::THEME_LIGHTER
+                            } else {
+                                so::FOREGROUND_DISABLED
+                            },
+                            true,
+                        );
+                        crate::widgets::record(
+                            &label.plain(),
+                            [f.list_x, y, f.list_w, so::ENTRY_HEIGHT],
+                            live,
+                        );
+                        if live {
+                            crate::widgets::target([f.list_x, y, f.list_w, so::ENTRY_HEIGHT]);
+                        }
+                        vx
+                    }
+                };
+                crate::widgets::widget_cursor(hover, live);
+                let room = control_x - (f.list_x + so::OPTION_TEXT_SIDE_PADDING) - 6.0;
+                let name = fit_text(atlas, &name, room.max(20.0));
+                batch.text(
+                    atlas,
+                    &name,
+                    f.list_x + so::OPTION_TEXT_SIDE_PADDING,
+                    text_y,
+                    colour,
+                    true,
+                );
+                if hover || focused {
+                    tooltip = Some((item, cost, text, blocked));
+                }
+            }
+            batch.clip_since(start, f.list_x, top, f.list_x + f.list_w + 1.0, bottom);
+            crate::widgets::clip_targets(mark, top, bottom);
+            ui::scrollbar(
+                batch,
+                atlas,
+                Self::scrollbar_x(Level::Video, w),
+                top,
+                bottom,
+                content,
+                self.scroll.amount,
+            );
+
+            // The tooltip: what the option does, what it costs, and why it is greyed.
+            if let Some((item, cost, text, blocked)) = tooltip {
+                let (tx, tw) = f.tip.unwrap_or((f.list_x, f.list_w));
+                let inner = tw - 2.0 * so::OPTION_TEXT_SIDE_PADDING;
+                let mut lines: Vec<(String, u32)> = Vec::new();
+                for line in crate::graphics_style::wrap(
+                    atlas,
+                    &lang::get(description(item, s, text)),
+                    inner,
+                    0.0,
+                ) {
+                    lines.push((line, so::FOREGROUND));
+                }
+                let impact = match cost {
+                    Cost::None => None,
+                    Cost::Low => Some("Low"),
+                    Cost::Medium => Some("Medium"),
+                    Cost::High => Some("High"),
+                    Cost::Saves => Some("Improves performance"),
+                };
+                if let Some(impact) = impact {
+                    lines.push((String::new(), so::FOREGROUND));
+                    lines.push((
+                        format!("{} {}", lang::get("Performance Impact:"), lang::get(impact)),
+                        so::THEME_LIGHTER,
+                    ));
+                }
+                if let Some(why) = blocked {
+                    lines.push((String::new(), so::FOREGROUND));
+                    for line in crate::graphics_style::wrap(atlas, &lang::get(why), inner, 0.0) {
+                        lines.push((line, so::FOREGROUND_DISABLED));
+                    }
+                }
+                let box_h = lines.len() as f32 * 10.0 + 2.0 * so::OPTION_TEXT_SIDE_PADDING - 2.0;
+                // Beside the rows at the top of the list; without room there, over the
+                // bottom of the list.
+                let ty = if f.tip.is_some() {
+                    top + 4.0
+                } else {
+                    (bottom - box_h - 2.0).max(top)
+                };
+                batch.fill(atlas, tx, ty, tw, box_h, so::BACKGROUND_OVERLAY);
+                batch.fill(atlas, tx, ty, tw, 1.0, so::THEME);
+                batch.fill(atlas, tx, ty + box_h - 1.0, tw, 1.0, so::THEME);
+                batch.fill(atlas, tx, ty, 1.0, box_h, so::THEME);
+                batch.fill(atlas, tx + tw - 1.0, ty, 1.0, box_h, so::THEME);
+                for (i, (line, colour)) in lines.iter().enumerate() {
+                    batch.text(
+                        atlas,
+                        line,
+                        tx + so::OPTION_TEXT_SIDE_PADDING,
+                        ty + so::OPTION_TEXT_SIDE_PADDING + i as f32 * 10.0,
+                        *colour,
+                        true,
+                    );
+                }
+            }
+        }
+
+        // Done, at the bottom right; settings apply at once, as everywhere in Horizon.
+        for wd in &widgets {
+            if let Target::Button(_) = wd.target {
+                let hover =
+                    ui::hovered(cursor, wd.x, wd.y, wd.w, 20.0) || self.focus == Some(wd.target);
+                Self::video_button(
+                    batch,
+                    atlas,
+                    (wd.x, wd.y, wd.w, 20.0),
+                    &lang::get("gui.done"),
+                    hover,
+                );
+            }
+        }
     }
 }
 
