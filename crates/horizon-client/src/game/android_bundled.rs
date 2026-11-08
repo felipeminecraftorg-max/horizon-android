@@ -118,6 +118,14 @@ pub(super) mod lane3;
 #[path = "android_bundled/sound_physics.rs"]
 pub(super) mod sound_physics;
 
+#[cfg(target_os = "android")]
+#[path = "android_bundled/bundled_settings.rs"]
+pub(super) mod bundled_settings;
+
+#[cfg(target_os = "android")]
+#[path = "android_bundled/camera_overhaul.rs"]
+pub(super) mod camera_overhaul;
+
 /// A player breaks a block (`native_destroy_block`): a lane 3 mod may keep it; otherwise a chop
 /// or a vein takes the rest.
 pub(super) fn native_destroy_block(
@@ -164,6 +172,73 @@ pub(super) fn native_right_click_block(
 }
 
 /// The server's tick starts or ends: lane 3 mods start with the first and hear each.
+/// CameraOverhaul's view, every frame: the yaw and pitch with its effects, and the roll
+/// (degrees, the right side down when positive).
+pub(super) fn native_camera(
+    game: &Game<'_>,
+    camera: [f64; 3],
+    yaw: f32,
+    pitch: f32,
+) -> (f32, f32, f32) {
+    let _ = (&game, &camera);
+    #[cfg(target_os = "android")]
+    {
+        camera_overhaul::run(game, camera, yaw, pitch)
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        (yaw, pitch, 0.0)
+    }
+}
+
+/// Something shook the screen, for CameraOverhaul: an explosion `distance` blocks away (none:
+/// thunder), or the player's swing (`swing`).
+pub(super) fn native_jolt(game: &Game<'_>, distance: Option<f64>, swing: bool) {
+    let _ = (&game, &distance, &swing);
+    #[cfg(target_os = "android")]
+    {
+        use camera_overhaul::Jolt;
+        let jolt = match (distance, swing) {
+            (_, true) => Jolt::Swing,
+            (Some(d), _) => Jolt::Explosion(d),
+            (None, _) => Jolt::Thunder,
+        };
+        camera_overhaul::jolt(game, jolt);
+    }
+}
+
+/// First-person Model's settings (its page in Options > Mods).
+#[derive(Clone, Copy, Debug)]
+pub(super) struct FirstPerson {
+    /// The model's own arms hold the items, instead of the first-person view's hands.
+    pub player_arms: bool,
+    /// How far back the body is set from the eyes.
+    pub offset: f64,
+    pub armor: bool,
+}
+
+pub(super) fn first_person_settings(game: &Game<'_>) -> FirstPerson {
+    let _ = &game;
+    #[cfg(target_os = "android")]
+    {
+        use bundled_settings::FIRST_PERSON as S;
+        let id = compat::FIRST_PERSON;
+        FirstPerson {
+            player_arms: S[0].value(game, id) == "player",
+            offset: f64::from(S[1].number(game, id)),
+            armor: S[2].on(game, id),
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        FirstPerson {
+            player_arms: false,
+            offset: 0.3,
+            armor: true,
+        }
+    }
+}
+
 /// FirstPerson's body in first person (`perspective.rs`): on when its port is.
 pub(super) fn first_person_body_on(game: &Game<'_>) -> bool {
     let _ = &game;
@@ -246,6 +321,7 @@ pub(super) fn native_settings(game: &mut Game<'_>, mod_id: &str, buttons: &mut V
         minimap_settings::run(&mut *game, mod_id, &mut *buttons);
         recipes_settings::run(&mut *game, mod_id, &mut *buttons);
         smartf3_settings::run(&mut *game, mod_id, &mut *buttons);
+        bundled_settings::settings(&mut *game, mod_id, &mut *buttons);
     }
 }
 
@@ -257,6 +333,7 @@ pub(super) fn native_settings_click(game: &mut Game<'_>, mod_id: &str, button: u
         minimap_click::run(&mut *game, mod_id, button);
         recipes_click::run(&mut *game, mod_id, button);
         smartf3_click::run(&mut *game, mod_id, button);
+        bundled_settings::settings_click(&mut *game, mod_id, button);
     }
 }
 

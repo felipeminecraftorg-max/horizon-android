@@ -11,7 +11,7 @@ use std::{
 
 pub const FILE: &str = "horizon-mods.txt";
 /// Fixed native modules compiled into Android APKs, all opt-in.
-pub const ANDROID_BUNDLED: [(&str, &str, &str); 9] = [
+pub const ANDROID_BUNDLED: [(&str, &str, &str); 10] = [
     (
         "zoom",
         "Zoom",
@@ -58,6 +58,11 @@ pub const ANDROID_BUNDLED: [(&str, &str, &str); 9] = [
         "firstperson",
         "First-person Model",
         "See your own body and legs when you look down in first person",
+    ),
+    (
+        "cameraoverhaul",
+        "CameraOverhaul",
+        "The camera rolls and tilts as you move and turn, sways while idle, shakes from blasts",
     ),
 ];
 

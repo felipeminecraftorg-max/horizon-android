@@ -13332,8 +13332,11 @@ impl Game<'_> {
     /// both hands in view space, converted to camera-relative world space.
     fn hand_geometry(&mut self, alpha: f64) -> Vec<Vertex> {
         let mut out = Vec::new();
-        // GameRenderer.renderItemInHand: F1 hides the hand with the HUD.
-        if self.spectator()
+        // GameRenderer.renderItemInHand: F1 hides the hand with the HUD. First-person Model's
+        // port with the player's own arms draws them on the body instead.
+        if (self.first_person_body_shown()
+            && android_bundled::first_person_settings(self).player_arms)
+            || self.spectator()
             || self.ui.hide_gui
             || self.sleeping.is_some()
             || !self.camera_type.first_person()
@@ -14946,6 +14949,12 @@ impl Game<'_> {
             ),
         };
         let (view_yaw, view_pitch) = self.shaken_view(view_yaw, view_pitch);
+        let (view_yaw, view_pitch, view_roll) = android_bundled::native_camera(
+            self,
+            [camera.x, camera.y, camera.z],
+            view_yaw,
+            view_pitch,
+        );
         self.audio
             .set_listener([camera.x, camera.y, camera.z], view_yaw, view_pitch);
         android_bundled::native_sound_physics(self, [camera.x, camera.y, camera.z], underwater);
@@ -15045,7 +15054,8 @@ impl Game<'_> {
         } else {
             Vec::new()
         };
-        let view = horizon_client::camera::view_matrix(view_yaw, view_pitch);
+        let view = glam::Mat4::from_rotation_z(view_roll.to_radians())
+            * horizon_client::camera::view_matrix(view_yaw, view_pitch);
         let at = camera.to_array();
         // GameRenderer.render3dHud: the debug crosshair, first person with the HUD shown.
         let mut crosshair = horizon_client::gizmos::Gizmos::default();

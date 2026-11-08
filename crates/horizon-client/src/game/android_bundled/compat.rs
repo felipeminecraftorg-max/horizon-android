@@ -8,6 +8,7 @@
 //! - Veinminer: sneaking while mining an ore with the right tool mines its vein.
 //! - Sound Physics (Sound Physics Remastered): `sound_physics.rs`, on the window's side.
 //! - First-person Model: the body in first person (`game/perspective.rs`), on the window's side.
+//! - CameraOverhaul: `camera_overhaul.rs`, on the window's side.
 //!
 //! They run where the world runs (the server thread, a LAN host, a dedicated server), for every
 //! player, through the game's own block breaking: drops, experience, tool wear, hunger and
@@ -23,7 +24,7 @@ pub(crate) const VEINMINER: &str = "veinminer";
 pub(crate) const FIRST_PERSON: &str = "firstperson";
 
 /// The bundled versions: id, title, description (Options > Mods and the launcher).
-pub(crate) const MODS: [(&str, &str, &str); 5] = [
+pub(crate) const MODS: [(&str, &str, &str); 6] = [
     (
         RIGHT_CLICK_HARVEST,
         "Right Click Harvest",
@@ -48,6 +49,11 @@ pub(crate) const MODS: [(&str, &str, &str); 5] = [
         FIRST_PERSON,
         "First-person Model",
         "See your own body and legs when you look down in first person",
+    ),
+    (
+        super::camera_overhaul::CAMERA_OVERHAUL,
+        "CameraOverhaul",
+        "The camera rolls and tilts as you move and turn, sways while idle, shakes from blasts",
     ),
 ];
 

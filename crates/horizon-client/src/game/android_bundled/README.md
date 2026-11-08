@@ -26,6 +26,12 @@ listener, rays bounced around the sound) and the mixer
 (`horizon_client::audio::Physics`) muffles it and feeds four echoes. Converting
 the mod's jar turns it on.
 
+`camera_overhaul.rs` is its own version of CameraOverhaul (camera roll and pitch
+from movement and turning, idle sway, screen shakes), and the first-person body
+of First-person Model is drawn by `game/perspective.rs`. `bundled_settings.rs`
+gives these ports their settings pages in Options > Mods (a button per setting
+that steps through its values).
+
 `lane3.rs` starts the Java mods the converter made ready (lane 3: their own
 code, run by Android's runtime; the Java half is
 `packaging/android/java/dev/horizon/android/lane3/`), fires the Fabric events

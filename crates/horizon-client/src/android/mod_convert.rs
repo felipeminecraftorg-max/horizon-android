@@ -42,7 +42,7 @@ const WORK: &str = "modpacks";
 /// Java mods whose code Horizon runs in a version of its own (`game/android_bundled/compat.rs`):
 /// the mod ids and Modrinth slugs that ask for it, the built-in mod it turns on, its title, and
 /// how Horizon's version plays.
-static KNOWN: [(&[&str], &str, &str, &str); 5] = [
+static KNOWN: [(&[&str], &str, &str, &str); 6] = [
     (
         &["rightclickharvest", "right-click-harvest"],
         "rightclickharvest",
@@ -97,8 +97,16 @@ static KNOWN: [(&[&str], &str, &str, &str); 5] = [
         ],
         "firstperson",
         "First-person Model",
-        "in first person, look down to see your body and legs (no head, so nothing blocks the \
-         view; your hands are the usual first-person ones)",
+        "in first person, look down to see your body and legs, with your own arms holding \
+         your items (or the usual first-person hands: its settings in Options > Mods)",
+    ),
+    (
+        &["cameraoverhaul", "camera-overhaul", "camera_overhaul"],
+        "cameraoverhaul",
+        "CameraOverhaul",
+        "the camera rolls as you strafe and turn, tilts with your speed and falls, sways gently \
+         while you stand still and shakes from explosions, thunder and swings (settings in \
+         Options > Mods)",
     ),
 ];
 

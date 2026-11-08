@@ -708,8 +708,10 @@ impl Game<'_> {
         let (Some(p), Some(m)) = (self.player.as_ref(), self.player_model.as_ref()) else {
             return;
         };
+        let settings = super::android_bundled::first_person_settings(self);
         let mut m = m.clone();
         m.extra.first_person_body = true;
+        m.extra.first_person_arms = settings.player_arms;
         let probe = entity_light_block(
             m.position,
             m.extra.crouching,
@@ -721,21 +723,29 @@ impl Game<'_> {
         let lookup = |name: &str| atlas.sprites.get(name).map(|r| [r.u0, r.v0, r.u1, r.v1]);
         // Back along the view's level facing, more while sneaking: the chest stays below the
         // eyes whatever the body's turn.
-        let back = if m.extra.crouching { 0.45 } else { 0.3 };
+        let back = settings.offset + if m.extra.crouching { 0.15 } else { 0.0 };
         let yaw = f64::from(self.yaw).to_radians();
         let forward = glam::DVec3::new(-yaw.sin(), 0.0, yaw.cos());
         let mut worn = self.armor.clone();
         worn[0] = None;
+        if !settings.armor {
+            worn = Default::default();
+        }
+        let shifted = camera + forward * back;
         horizon_client::mobs::render::render_with(
             &m,
             alpha as f32,
-            camera + forward * back,
+            shifted,
             &lookup,
             packed,
             self.res.mob_data(),
             &self.stack_armor_layers(&worn),
             out,
         );
+        // The player's own arms hold what's in its hands.
+        if settings.player_arms {
+            self.held_item_geometry(&m, shifted, alpha, packed, true, out);
+        }
     }
     /// `extractEntityInInventoryFollowsMouse`: the player in the box
     /// `[x0, x1) x [y0, y1)`, `size` pixels per block, turned toward the

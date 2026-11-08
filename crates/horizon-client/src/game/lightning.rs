@@ -297,6 +297,10 @@ impl Game<'_> {
     }
     /// `LightningBolt.tick` for every bolt.
     pub(super) fn tick_bolts(&mut self) {
+        // A bolt's thunder shakes the screen (CameraOverhaul's port).
+        if self.bolts.iter().any(|b| b.life == 2) {
+            super::android_bundled::native_jolt(self, None, false);
+        }
         let mut bolts = std::mem::take(&mut self.bolts);
         bolts.retain_mut(|b| {
             if b.life == 2 {

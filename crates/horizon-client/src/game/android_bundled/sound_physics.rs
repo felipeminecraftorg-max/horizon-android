@@ -13,19 +13,44 @@ use horizon_client::blocks::{Fluid, StateFacts};
 
 pub(crate) const SOUND_PHYSICS: &str = "sound_physics_remastered";
 
-/// Rays cast from a sound to find the space around it, and how often each bounces.
-const RAYS: usize = 16;
-const BOUNCES: usize = 3;
-/// How far one ray goes between bounces.
-const REACH: f64 = 64.0;
 /// Occlusion stops counting here: ten full blocks are as quiet as it gets.
 const MAX_OCCLUSION: f32 = 10.0;
-/// How much of the highs each unit of occlusion takes (`exp(-occlusion * ABSORPTION)`).
-const ABSORPTION: f32 = 1.0;
 /// The air's own toll on the highs, per block.
 const AIR: f32 = 0.004;
-/// How loud the echoes are overall.
-const REVERB_GAIN: f32 = 1.0;
+
+/// The player's settings (`bundled_settings::SOUND_PHYSICS`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Tuning {
+    /// How much of the highs each unit of occlusion takes (`exp(-occlusion * this)`).
+    pub occlusion: f32,
+    /// How loud the echoes are overall.
+    pub reverb: f32,
+    /// The frequency the echoes' highs are damped from.
+    pub brightness: f32,
+    /// A muffled sound seems to come from the way round what's between.
+    pub direction: bool,
+    pub underwater: bool,
+    pub air: bool,
+    /// Rays cast from a sound, how often each bounces, how far each goes between bounces.
+    pub rays: usize,
+    pub bounces: usize,
+    pub reach: f64,
+}
+impl Default for Tuning {
+    fn default() -> Self {
+        Self {
+            occlusion: 1.0,
+            reverb: 1.0,
+            brightness: 6_000.0,
+            direction: true,
+            underwater: true,
+            air: true,
+            rays: 16,
+            bounces: 3,
+            reach: 64.0,
+        }
+    }
+}
 /// Sounds measured per frame at most; the rest wait for the next frames.
 const PER_FRAME: usize = 6;
 /// A looping sound is measured again this often.
@@ -164,11 +189,11 @@ pub(crate) fn occlusion(
     total.min(MAX_OCCLUSION)
 }
 
-/// Directions spread evenly over the sphere (a golden-angle spiral).
-fn directions() -> impl Iterator<Item = [f64; 3]> {
+/// `n` directions spread evenly over the sphere (a golden-angle spiral).
+fn directions(n: usize) -> impl Iterator<Item = [f64; 3]> {
     let golden = std::f64::consts::PI * (3.0 - 5f64.sqrt());
-    (0..RAYS).map(move |i| {
-        let y = 1.0 - (i as f64 + 0.5) / RAYS as f64 * 2.0;
+    (0..n).map(move |i| {
+        let y = 1.0 - (i as f64 + 0.5) / n as f64 * 2.0;
         let r = (1.0 - y * y).sqrt();
         let a = golden * i as f64;
         [a.cos() * r, y, a.sin() * r]
@@ -180,6 +205,7 @@ pub(crate) fn measure(
     at: [f64; 3],
     listener: [f64; 3],
     blocks: &dyn Fn([i32; 3]) -> Material,
+    t: &Tuning,
 ) -> Physics {
     let source = at.map(|v| v.floor() as i32);
     // The sound gets round small things: the least occluded of a few nearby starting points.
@@ -203,20 +229,29 @@ pub(crate) fn measure(
         + (at[1] - listener[1]).powi(2)
         + (at[2] - listener[2]).powi(2))
     .sqrt();
-    let through = (-occluded * ABSORPTION).exp();
-    let highs = through * (-(d as f32) * AIR).exp();
+    let through = (-occluded * t.occlusion).exp();
+    let air = if t.air {
+        (-(d as f32) * AIR).exp()
+    } else {
+        1.0
+    };
+    let highs = through * air;
     // The echoes: rays from the sound, bounced off what they hit; each bounce point the
-    // listener can hear from feeds the echo its path's length belongs to.
+    // listener can hear from feeds the echo its path's length belongs to, and pulls where a
+    // muffled sound seems to come from.
     let mut sends = [0.0f32; 4];
-    for mut dir in directions() {
+    let mut toward = [0.0f64; 3];
+    let mut toward_weight = 0.0f32;
+    let reach = t.reach;
+    for mut dir in directions(t.rays.max(1)) {
         let mut from = at;
-        let mut path = d.min(REACH);
+        let mut path = d.min(reach);
         let mut energy = 1.0f32;
-        for _ in 0..BOUNCES {
+        for _ in 0..t.bounces {
             let to = [
-                from[0] + dir[0] * REACH,
-                from[1] + dir[1] * REACH,
-                from[2] + dir[2] * REACH,
+                from[0] + dir[0] * reach,
+                from[1] + dir[1] * reach,
+                from[2] + dir[2] * reach,
             ];
             let mut hit = None;
             line(from, to, 400, |cell, face, t| {
@@ -254,6 +289,16 @@ pub(crate) fn measure(
                     let w = (1.0 - (x - k as f32).abs()).max(0.0);
                     *send += heard * w;
                 }
+                let v = [
+                    point[0] - listener[0],
+                    point[1] - listener[1],
+                    point[2] - listener[2],
+                ];
+                let length = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-6);
+                for a in 0..3 {
+                    toward[a] += v[a] / length * f64::from(heard);
+                }
+                toward_weight += heard;
             }
             dir[face] = -dir[face];
             from = point;
@@ -262,21 +307,59 @@ pub(crate) fn measure(
             }
         }
     }
-    let rays = RAYS as f32;
+    let rays = t.rays.max(1) as f32;
+    // A muffled sound seems to come from where its way round is: between the straight line
+    // and the heard bounces, the more muffled the more round.
+    let heard_from = (t.direction && occluded > 0.3 && toward_weight > 0.0 && d > 1.0).then(|| {
+        let straight = [
+            at[0] - listener[0],
+            at[1] - listener[1],
+            at[2] - listener[2],
+        ]
+        .map(|v| v / d);
+        let w = f64::from((occluded / 2.0).min(1.0));
+        let round = toward.map(|v| v / f64::from(toward_weight));
+        let dir: [f64; 3] = std::array::from_fn(|a| straight[a] * (1.0 - w) + round[a] * w);
+        let length = (dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2])
+            .sqrt()
+            .max(1e-6);
+        std::array::from_fn(|a| listener[a] + dir[a] / length * d)
+    });
     Physics {
         gain: through.powf(0.1),
         highs,
-        sends: sends.map(|s| (s / rays * 2.0 * REVERB_GAIN).min(1.0)),
+        sends: sends.map(|s| (s / rays * 2.0 * t.reverb).min(1.0)),
+        heard_from,
     }
 }
 
-/// Every frame: sound physics follows its switch, and the sounds waiting are measured.
+/// The player's settings for Sound Physics, from its page.
+fn tuning(game: &Game<'_>) -> Tuning {
+    use super::bundled_settings::SOUND_PHYSICS as S;
+    let id = SOUND_PHYSICS;
+    Tuning {
+        occlusion: S[0].number(game, id),
+        reverb: S[1].number(game, id),
+        brightness: S[2].number(game, id),
+        direction: S[3].on(game, id),
+        underwater: S[4].on(game, id),
+        air: S[5].on(game, id),
+        rays: S[6].number(game, id) as usize,
+        bounces: S[7].number(game, id) as usize,
+        reach: f64::from(S[8].number(game, id)),
+    }
+}
+
+/// Every frame: sound physics follows its switch and settings, and the sounds waiting are
+/// measured.
 pub(super) fn run(game: &mut Game<'_>, listener: [f64; 3], underwater: bool) {
     let on = game.native_on(SOUND_PHYSICS);
-    game.audio.set_sound_physics(on, underwater);
+    let t = if on { tuning(game) } else { Tuning::default() };
+    game.audio.set_sound_physics(on, underwater && t.underwater);
     if !on {
         return;
     }
+    game.audio.set_echo_brightness(t.brightness);
     let mut wanted = game.audio.physics_wanted(AGAIN);
     if wanted.is_empty() {
         return;
@@ -295,7 +378,7 @@ pub(super) fn run(game: &mut Game<'_>, listener: [f64; 3], underwater: bool) {
     };
     let measured = wanted
         .into_iter()
-        .map(|(id, at)| (id, measure(at, listener, &blocks)))
+        .map(|(id, at)| (id, measure(at, listener, &blocks, &t)))
         .collect();
     game.audio.set_physics(measured);
 }
@@ -327,8 +410,9 @@ mod tests {
     fn a_wall_muffles_and_a_cave_echoes() {
         let open = |_: [i32; 3]| AIR_;
         let walled = |c: [i32; 3]| if c[0] == 3 { STONE } else { AIR_ };
-        let outside = measure([0.5, 64.5, 0.5], [6.5, 64.5, 0.5], &open);
-        let behind = measure([0.5, 64.5, 0.5], [6.5, 64.5, 0.5], &walled);
+        let t = Tuning::default();
+        let outside = measure([0.5, 64.5, 0.5], [6.5, 64.5, 0.5], &open, &t);
+        let behind = measure([0.5, 64.5, 0.5], [6.5, 64.5, 0.5], &walled, &t);
         assert_eq!(outside.sends, [0.0; 4]);
         assert!(outside.highs > 0.9);
         assert!(behind.highs < 0.5 && behind.gain < outside.gain);
@@ -340,8 +424,33 @@ mod tests {
                 AIR_
             }
         };
-        let inside = measure([0.5, 0.5, 0.5], [2.5, 0.5, 0.5], &room);
+        let inside = measure([0.5, 0.5, 0.5], [2.5, 0.5, 0.5], &room, &t);
         assert!(inside.sends.iter().sum::<f32>() > 0.1, "{inside:?}");
         assert!(inside.highs > 0.9);
+        assert_eq!(inside.heard_from, None);
+    }
+
+    #[test]
+    fn a_sound_round_a_corner_seems_to_come_from_the_opening() {
+        // A wall between, open above it; a floor and a ceiling for the echoes to work with.
+        let wall = |c: [i32; 3]| {
+            if c[1] < 0 || c[1] > 8 || (c[0] == 3 && c[1] < 4) {
+                STONE
+            } else {
+                AIR_
+            }
+        };
+        let p = measure([0.5, 0.5, 0.5], [6.5, 0.5, 0.5], &wall, &Tuning::default());
+        let from = p.heard_from.expect("heard from elsewhere");
+        assert!(from[1] > 1.0, "{from:?}");
+        // Off, it stays where it is.
+        let t = Tuning {
+            direction: false,
+            ..Tuning::default()
+        };
+        assert_eq!(
+            measure([0.5, 0.5, 0.5], [6.5, 0.5, 0.5], &wall, &t).heard_from,
+            None
+        );
     }
 }

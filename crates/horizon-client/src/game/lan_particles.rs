@@ -398,6 +398,13 @@ impl Game<'_> {
     /// `ClientPacketListener.handleExplosion`: the blast's particles (and its
     /// sound, when the packet carries it), then the player's push.
     pub(super) fn remote_explode(&mut self, p: &play::Explode) {
+        if let Some(eye) = self.eye_position() {
+            let d = (0..3)
+                .map(|a| (p.center[a] - eye[a]).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            super::android_bundled::native_jolt(self, Some(d), false);
+        }
         if p.play_sound {
             let pitch = (1.0
                 + (self.particles.random().next_float() - self.particles.random().next_float())

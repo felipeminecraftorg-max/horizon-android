@@ -858,15 +858,12 @@ pub fn setup(
             if player {
                 player_model_visibility(p, m.extra.hidden_model_parts, m.extra.spectator);
                 if m.extra.first_person_body {
-                    for part in [
-                        "head",
-                        "hat",
-                        "right_arm",
-                        "left_arm",
-                        "right_sleeve",
-                        "left_sleeve",
-                    ] {
-                        p.visible(part, false);
+                    p.visible("head", false);
+                    p.visible("hat", false);
+                    if !m.extra.first_person_arms {
+                        for part in ["right_arm", "left_arm", "right_sleeve", "left_sleeve"] {
+                            p.visible(part, false);
+                        }
                     }
                 }
             }

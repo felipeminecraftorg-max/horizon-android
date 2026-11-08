@@ -67,6 +67,9 @@ pub struct Physics {
     /// How much feeds each echo of the space around it, shortest first
     /// (`REVERB_DECAYS`).
     pub sends: [f32; 4],
+    /// Where it seems to come from, when the way round what's between is clearer than the
+    /// straight line (Sound Physics Remastered's sound direction evaluation).
+    pub heard_from: Option<[f64; 3]>,
 }
 #[derive(Default)]
 struct Mixer {
@@ -89,6 +92,8 @@ struct Mixer {
     /// Sound physics on (`Audio::set_sound_physics`), and the listener under water.
     physics: bool,
     underwater: bool,
+    /// How bright the echoes are: the frequency their highs are damped from, in Hz.
+    echo_brightness: f32,
     /// The echoes of sound physics, made when first needed, and their input this buffer.
     reverb: Option<Box<Reverb>>,
     /// The output device the stream was opened on (`Library.currentDeviceName`).
@@ -715,7 +720,7 @@ struct Echo {
     damping: f32,
 }
 impl Echo {
-    fn new(decay: f32, lines_ms: [f32; 4], rate: u32) -> Self {
+    fn new(decay: f32, lines_ms: [f32; 4], rate: u32, brightness: f32) -> Self {
         let fs = rate.max(1) as f32;
         let lengths = lines_ms.map(|ms| ((ms / 1000.0 * fs) as usize).max(1));
         Self {
@@ -723,7 +728,7 @@ impl Echo {
             at: [0; 4],
             gain: lengths.map(|n| 10f32.powf(-3.0 * n as f32 / fs / decay)),
             damped: [0.0; 4],
-            damping: 1.0 - (-2.0 * std::f32::consts::PI * 6_000.0 / fs).exp(),
+            damping: 1.0 - (-2.0 * std::f32::consts::PI * brightness / fs).exp(),
         }
     }
     fn step(&mut self, input: f32) -> [f32; 2] {
@@ -748,14 +753,18 @@ impl Echo {
 /// Sound physics' echoes and what the sources sent them this buffer.
 struct Reverb {
     rate: u32,
+    brightness: f32,
     echoes: [Echo; 4],
     input: [Vec<f32>; 4],
 }
 impl Reverb {
-    fn new(rate: u32) -> Self {
+    fn new(rate: u32, brightness: f32) -> Self {
         Self {
             rate,
-            echoes: std::array::from_fn(|i| Echo::new(REVERB_DECAYS[i], REVERB_LINES[i], rate)),
+            brightness,
+            echoes: std::array::from_fn(|i| {
+                Echo::new(REVERB_DECAYS[i], REVERB_LINES[i], rate, brightness)
+            }),
             input: std::array::from_fn(|_| Vec::new()),
         }
     }
@@ -864,6 +873,16 @@ fn mix(mixer: &mut Mixer, data: &mut [f32], channels: usize, rate: u32) {
         let (listener, (forward, up, right)) = camera.unwrap_or(([0.0; 3], basis(0.0, 0.0)));
         let d = if c.relative { at } else { away(listener) };
         let distance = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt() as f32;
+        // Sound physics may say it comes from elsewhere: only where it's heard from changes,
+        // never how far it is.
+        let d = match c.physics.as_ref().and_then(|(p, _)| p.heard_from) {
+            Some(from) if physics_on && !c.relative => [
+                from[0] - listener[0],
+                from[1] - listener[1],
+                from[2] - listener[2],
+            ],
+            _ => d,
+        };
         let gain = if camera.is_some() {
             c.gain.clamp(0.0, 1.0) * distance_gain(c.linear, distance)
         } else {
@@ -921,8 +940,18 @@ fn mix(mixer: &mut Mixer, data: &mut [f32], channels: usize, rate: u32) {
     }
     let frames_out_count = data.len() / channels.max(1);
     let any_send = voices.iter().any(|v| v.4.iter().any(|g| *g > 0.0));
-    if any_send && mixer.reverb.as_ref().is_none_or(|r| r.rate != rate) {
-        mixer.reverb = Some(Box::new(Reverb::new(rate)));
+    let brightness = if mixer.echo_brightness > 0.0 {
+        mixer.echo_brightness
+    } else {
+        6_000.0
+    };
+    if any_send
+        && mixer
+            .reverb
+            .as_ref()
+            .is_none_or(|r| r.rate != rate || r.brightness != brightness)
+    {
+        mixer.reverb = Some(Box::new(Reverb::new(rate, brightness)));
     }
     if let Some(r) = &mut mixer.reverb {
         for input in &mut r.input {
@@ -1423,6 +1452,12 @@ impl Audio {
             }
             m.physics = on;
             m.underwater = underwater;
+        }
+    }
+    /// How bright sound physics' echoes are: the frequency their highs are damped from (Hz).
+    pub fn set_echo_brightness(&self, hz: f32) {
+        if let Ok(mut m) = self.backend.mixer.lock() {
+            m.echo_brightness = hz;
         }
     }
     /// World sounds sound physics hasn't measured yet, or measured longer than `again` ago
@@ -2415,6 +2450,7 @@ mod tests {
             gain: 0.8,
             highs: 0.05,
             sends: [0.0; 4],
+            heard_from: None,
         }));
         assert!(walled < open * 0.1, "{walled} {open}");
         // A click in a cave rings on after it stops; in the open it doesn't.
@@ -2431,6 +2467,7 @@ mod tests {
                     gain: 1.0,
                     highs: 1.0,
                     sends,
+                    heard_from: None,
                 },
                 std::time::Instant::now(),
             ));
