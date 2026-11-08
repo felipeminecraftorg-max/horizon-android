@@ -229,6 +229,8 @@ fn android_main(app: AndroidApp) {
         secure_store::initialize(vm);
     }
     let engine_data = app.asset_manager().open(c"engine-data.zip");
+    // Lane 3's API slice, which the phone loads with the Java mods (android/lane3.rs).
+    let lane3_api = app.asset_manager().open(c"lane3-api.jar");
     APP.with(|slot| *slot.borrow_mut() = Some(app));
     let Some(cache) = platform::cache_dir() else {
         log::error!("Android supplied no application cache directory");
@@ -267,6 +269,19 @@ fn android_main(app: AndroidApp) {
         })();
         if let Err(error) = copied {
             log::error!("Cannot unpack engine data: {error}");
+        }
+    }
+    if let Some(mut data) = lane3_api {
+        let dir = home.join("lane3/.api");
+        let copied = (|| -> std::io::Result<()> {
+            std::fs::create_dir_all(&dir)?;
+            let mut file = std::fs::File::create(dir.join("lane3-api.partial"))?;
+            std::io::copy(&mut data, &mut file)?;
+            drop(file);
+            std::fs::rename(dir.join("lane3-api.partial"), dir.join("lane3-api.jar"))
+        })();
+        if let Err(error) = copied {
+            log::error!("Cannot unpack lane 3's API slice: {error}");
         }
     }
     let mut launcher = launcher::Launcher::new(home.clone());

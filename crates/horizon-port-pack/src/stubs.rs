@@ -676,6 +676,68 @@ pub struct Provided<'a> {
     pub ancestors: &'a dyn Fn(&str) -> BTreeSet<String>,
 }
 
+/// The stand-ins for a mod (`refs`) beside Horizon's API slice `held` (its classes read by
+/// [`crate::api::read`], and any library that runs as it is), from the game's API `api`.
+pub fn stand_ins(
+    refs: &Refs,
+    held: &std::collections::HashMap<String, crate::api::ApiClass>,
+    api: &crate::api::Api,
+) -> Stubs {
+    let class = |c: &str| {
+        held.get(c).map(|k| Known {
+            interface: k.is_interface(),
+            plain: k
+                .methods
+                .get(&("<init>".to_owned(), "()V".to_owned()))
+                .is_some_and(|a| a & 1 != 0),
+        })
+    };
+    let constructor = |c: &str, d: &str| {
+        held.get(c)
+            .is_some_and(|k| k.methods.contains_key(&("<init>".to_owned(), d.to_owned())))
+    };
+    let member = |c: &str, n: &str, d: &str| {
+        let mut at = Some(c.to_owned());
+        let mut steps = 0;
+        while let Some(name) = at.take() {
+            let Some(k) = held.get(&name) else { break };
+            if k.methods.contains_key(&(n.to_owned(), d.to_owned()))
+                || k.fields.iter().any(|f| f.0 == n && f.1 == d)
+            {
+                return true;
+            }
+            steps += 1;
+            if steps < 64 {
+                at = Some(k.parent.clone());
+            }
+        }
+        false
+    };
+    let ancestors = |c: &str| {
+        let mut out = BTreeSet::new();
+        let mut queue = vec![c.to_owned()];
+        while let Some(name) = queue.pop() {
+            let Some(k) = held.get(&name) else { continue };
+            for up in std::iter::once(&k.parent).chain(&k.interfaces) {
+                if !up.is_empty() && out.insert(up.clone()) {
+                    queue.push(up.clone());
+                }
+            }
+        }
+        out
+    };
+    stubs(
+        refs,
+        &Provided {
+            class: &class,
+            constructor: &constructor,
+            member: &member,
+            ancestors: &ancestors,
+        },
+        api,
+    )
+}
+
 /// The stand-ins, and what they could not stand in for.
 #[derive(Debug, Default)]
 pub struct Stubs {
@@ -1743,4 +1805,90 @@ mod tests {
         assert_eq!(instruction_length(&code, 0).unwrap(), 1);
         assert_eq!(instruction_length(&code, 1).unwrap(), code.len() - 2);
     }
+}
+
+/// What [`write_stand_ins`] wrote.
+#[derive(Debug, Default)]
+pub struct Written {
+    /// Stand-in classes.
+    pub stand_ins: usize,
+    /// Horizon's slice classes written with what the mod names added.
+    pub patched: usize,
+    /// What no stand-in could fill ([`Stubs::unmet`]).
+    pub gaps: Vec<String>,
+}
+
+/// The class files of a jar, by internal name (no `.class`), nested jars left out.
+pub fn jar_classes(path: &std::path::Path) -> Result<Vec<(String, Vec<u8>)>, String> {
+    use std::io::Read;
+    let file = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut out = Vec::new();
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
+        let name = entry.name().map_err(|e| e.to_string())?.into_owned();
+        if !name.ends_with(".class") || name.starts_with("META-INF/") {
+            continue;
+        }
+        let mut bytes = Vec::new();
+        entry
+            .read_to_end(&mut bytes)
+            .map_err(|e| format!("{name}: {e}"))?;
+        out.push((name.trim_end_matches(".class").to_owned(), bytes));
+    }
+    Ok(out)
+}
+
+/// Writes to the jar `out` what the mod jar `mod_jar` needs beside Horizon's API slice (the jar
+/// `slice`): stand-ins for the game's classes the slice does not hold, from the game's API
+/// `api`, and the slice's own classes with the members and supertypes the mod names added
+/// ([`patch`]). Loaded before the slice, they take its classes' place.
+pub fn write_stand_ins(
+    mod_jar: &std::path::Path,
+    slice: &std::path::Path,
+    api: &crate::api::Api,
+    out: &std::path::Path,
+) -> Result<Written, String> {
+    use std::io::Write;
+    let mut refs = Refs::default();
+    for (_, bytes) in jar_classes(mod_jar)? {
+        let _ = refs.add_class(&bytes);
+    }
+    let slice_files: HashMap<String, Vec<u8>> = jar_classes(slice)?.into_iter().collect();
+    let held: HashMap<String, crate::api::ApiClass> = slice_files
+        .values()
+        .filter_map(|b| crate::api::read(b).ok())
+        .collect();
+    let made = stand_ins(&refs, &held, api);
+    let file = std::fs::File::create(out).map_err(|e| format!("{}: {e}", out.display()))?;
+    let mut writer = zip::ZipWriter::new(file);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    let mut written = Written {
+        gaps: made.unmet.iter().cloned().collect(),
+        ..Written::default()
+    };
+    for (name, bytes) in &made.classes {
+        writer
+            .start_file(format!("{name}.class"), options)
+            .map_err(|e| e.to_string())?;
+        writer.write_all(bytes).map_err(|e| e.to_string())?;
+        written.stand_ins += 1;
+    }
+    for (name, p) in &made.patches {
+        let Some(bytes) = slice_files.get(name) else {
+            continue;
+        };
+        let Ok(patched) = patch(bytes, p, &made.makeable) else {
+            written.gaps.push(format!("{name}: could not add to it"));
+            continue;
+        };
+        writer
+            .start_file(format!("{name}.class"), options)
+            .map_err(|e| e.to_string())?;
+        writer.write_all(&patched).map_err(|e| e.to_string())?;
+        written.patched += 1;
+    }
+    writer.finish().map_err(|e| e.to_string())?;
+    Ok(written)
 }

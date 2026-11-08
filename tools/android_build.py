@@ -93,6 +93,34 @@ def engine_data(public=False):
     return output
 
 
+def lane3_api(java_home, sdk, assets, suffix):
+    """Lane 3's API slice (packaging/android/lane3-api/) as class files, the asset lane3-api.jar.
+
+    It is not in the app: the phone loads it with the mods, after the converter adds to it what
+    each mod names (dev.horizon.android.lane3.Bridge). Native is the app's, compiled here only
+    for the slice to name and left out of the jar."""
+    import zipfile
+    out = ROOT / '.local/android/lane3-api'
+    shutil.rmtree(out, ignore_errors=True)
+    (out / 'native').mkdir(parents=True)
+    (out / 'classes').mkdir(parents=True)
+    javac = java_home / 'bin' / ('javac' + suffix)
+    platforms = [p for p in (sdk / 'platforms').glob('android-*') if p.name[8:].isdigit()]
+    android_jar = max(platforms, key=lambda p: int(p.name[8:])) / 'android.jar'
+    native = ROOT / 'packaging/android/java/dev/horizon/android/lane3/Native.java'
+    run([javac, '--release', '17', '-nowarn', '-d', out / 'native', native])
+    sources = sorted(str(p) for p in (ROOT / 'packaging/android/lane3-api').rglob('*.java'))
+    listing = out / 'sources.txt'
+    listing.write_text('\n'.join(sources) + '\n')
+    run([javac, '--release', '17', '-nowarn', '-encoding', 'UTF-8',
+         '-cp', os.pathsep.join([str(android_jar), str(out / 'native')]),
+         '-d', out / 'classes', '@' + str(listing)])
+    (assets / 'lane3-api.jar').unlink(missing_ok=True)
+    with zipfile.ZipFile(assets / 'lane3-api.jar', 'w', zipfile.ZIP_DEFLATED) as jar:
+        for f in sorted((out / 'classes').rglob('*.class')):
+            jar.write(f, f.relative_to(out / 'classes').as_posix())
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--abi', choices=TARGETS, default='arm64-v8a')
@@ -205,6 +233,7 @@ def main():
     shutil.copyfile(ROOT / 'LICENSE', assets / 'LICENSE.txt')
     shutil.copyfile(ROOT / 'THIRD_PARTY_NOTICES.md', assets / 'THIRD_PARTY_NOTICES.md')
     shutil.copyfile(engine_data(args.public), assets / 'engine-data.zip')
+    lane3_api(args.java_home, args.sdk, assets, suffix)
     controls = ROOT / '.local/android/bedrock-controls.zip'
     if not args.public and not controls.is_file():
         import sys

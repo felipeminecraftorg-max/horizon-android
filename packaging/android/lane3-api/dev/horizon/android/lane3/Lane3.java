@@ -1,13 +1,6 @@
 // Horizon Android, lane 3 of the mod converter: written for Horizon (the repository's licence).
 package dev.horizon.android.lane3;
 
-import com.android.tools.r8.CompilationMode;
-import com.android.tools.r8.D8;
-import com.android.tools.r8.D8Command;
-import com.android.tools.r8.Diagnostic;
-import com.android.tools.r8.DiagnosticsHandler;
-import com.android.tools.r8.OutputMode;
-import dalvik.system.DexClassLoader;
 import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -96,67 +89,25 @@ public final class Lane3 {
         REGISTERED.computeIfAbsent(current, k -> new LinkedHashMap<>()).merge(what, 1, Integer::sum);
     }
 
-    /** Jars ({@code \n} between them) to one DEX archive at {@code output}: "" or why not. */
-    public static String dex(String inputs, String output) {
-        StringBuilder errors = new StringBuilder();
-        DiagnosticsHandler handler = new DiagnosticsHandler() {
-            @Override
-            public void error(Diagnostic d) {
-                errors.append(d.getDiagnosticMessage()).append('\n');
-            }
-
-            @Override
-            public void warning(Diagnostic d) {}
-
-            @Override
-            public void info(Diagnostic d) {}
-        };
-        try {
-            D8Command.Builder b = D8Command.builder(handler);
-            for (String jar : inputs.split("\n")) {
-                if (!jar.isEmpty()) b.addProgramFiles(Paths.get(jar));
-            }
-            b.setMinApiLevel(Math.max(28, android.os.Build.VERSION.SDK_INT));
-            b.setMode(CompilationMode.RELEASE);
-            b.setOutput(Paths.get(output), OutputMode.DexIndexed);
-            D8.run(b.build());
-            return "";
-        } catch (Throwable t) {
-            String why = errors.length() > 0 ? errors.toString().trim() : String.valueOf(t);
-            return why.length() > 2000 ? why.substring(0, 2000) : why;
-        }
-    }
-
     /**
-     * Loads the DEX archives ({@code \n} between them) in one class loader and starts the mods:
-     * lines {@code id\tclass} of their main entrypoints, libraries first. Returns a line per mod:
-     * {@code id\tok\tevents} or {@code id\tmissing\tapi} or {@code id\terror\twhy}.
+     * Starts the mods of this class loader (the app's {@code Bridge} made it over their DEX and the
+     * API slice's): lines {@code id\tclass} of their entrypoints, libraries first. Returns a line
+     * per mod: {@code id\tok\tevents} or {@code id\tmissing\tapi} or {@code id\terror\twhy}.
      */
-    public static synchronized String start(String dexFiles, String mods, String dir) {
+    public static synchronized String start(String mods, String dir) {
         EventFactory.clearAll();
         Neo.clear();
         REGISTERED.clear();
         MODS.clear();
         ERRORS.clear();
         gameDir = dir;
-        List<String> paths = new ArrayList<>();
-        for (String p : dexFiles.split("\n")) {
-            if (p.isEmpty()) continue;
-            // Android 14 loads only read-only code files.
-            new File(p).setReadOnly();
-            paths.add(p);
-        }
         String[] lines = mods.split("\n");
         for (String line : lines) {
             String[] parts = line.split("\t");
             if (parts.length >= 1 && !parts[0].isEmpty()) MODS.add(parts[0]);
         }
         StringBuilder report = new StringBuilder();
-        try {
-            loader = new DexClassLoader(String.join(File.pathSeparator, paths), null, null, Lane3.class.getClassLoader());
-        } catch (Throwable t) {
-            return "*\terror\t" + t;
-        }
+        loader = Lane3.class.getClassLoader();
         Map<String, String> outcome = new LinkedHashMap<>();
         for (String line : lines) {
             String[] parts = line.split("\t");
@@ -317,10 +268,29 @@ public final class Lane3 {
                 ServerLevel.CURRENT, ServerPlayer.ACTING, new BlockPos(x, y, z), BlockState.of(state), null));
     }
 
+    /** An entity is inside a mod's block {@code block} at x, y, z: its {@code entityInside} runs. */
+    public static void entityInside(String block, int x, int y, int z) {
+        if (loader == null) return;
+        guard("inside " + block, () -> {
+            try {
+                Neo.entityInside(block, x, y, z);
+            } catch (RuntimeException | Error e) {
+                throw e;
+            } catch (Throwable t) {
+                throw new RuntimeException(t);
+            }
+        });
+    }
+
     /** The server's tick starts ({@code end} false) or ends. */
     public static void serverTick(boolean end) {
         if (loader == null) return;
         MinecraftServer server = MinecraftServer.CURRENT;
+        // NeoForge's mods hear it on the game's bus.
+        if (!Neo.MOD_BUSES.isEmpty()) {
+            Neo.GAME.post(end ? new net.neoforged.neoforge.event.tick.ServerTickEvent.Post(server)
+                    : new net.neoforged.neoforge.event.tick.ServerTickEvent.Pre(server));
+        }
         if (end) {
             guard("world tick", () -> ServerTickEvents.END_WORLD_TICK.invoker().onEndTick(ServerLevel.CURRENT));
             guard("server tick", () -> ServerTickEvents.END_SERVER_TICK.invoker().onEndTick(server));

@@ -51,7 +51,7 @@ pub unsafe fn initialize(
                     &[],
                 )?
                 .l()?;
-            let name = JObject::from(env.new_string("dev.horizon.android.lane3.Lane3")?);
+            let name = JObject::from(env.new_string("dev.horizon.android.lane3.Bridge")?);
             let class = env
                 .call_method(
                     &loader,
@@ -527,6 +527,120 @@ fn prepare_in(jar: &Path, file: &str, dir: &Path, scratch: &Path, mappings: &mut
     })
 }
 
+/// Where lane 3 keeps Horizon's API slice (unpacked there at launch, `android_main.rs`) and the
+/// game's API: `lane3/.api/` of the app's data, whichever profile plays.
+fn api_dir(_game: &Path) -> PathBuf {
+    crate::backend::data_dir().join(DIR).join(".api")
+}
+
+/// The app's API slice as it unpacks it at launch: class files (`lane3-api.jar`).
+pub fn slice_jar(game: &Path) -> PathBuf {
+    api_dir(game).join("lane3-api.jar")
+}
+
+fn fnv(bytes: &[u8]) -> u64 {
+    let mut h = 0xcbf2_9ce4_8422_2325u64;
+    for b in bytes {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
+}
+
+/// The API slice as DEX, which lane 3's class loader holds after the mods': made the first
+/// time and again when the app brings another slice.
+pub fn slice_dex(game: &Path) -> Result<PathBuf, String> {
+    let jar = slice_jar(game);
+    let bytes = fs::read(&jar).map_err(|e| format!("{}: {e}", jar.display()))?;
+    let stamp = format!("{:x} {}", fnv(&bytes), bytes.len());
+    let out = api_dir(game).join("lane3-api.dex.jar");
+    let kept = api_dir(game).join("lane3-api.stamp");
+    if out.is_file() && fs::read_to_string(&kept).is_ok_and(|s| s == stamp) {
+        return Ok(out);
+    }
+    dex(&[jar], &out)?;
+    let _ = fs::write(&kept, stamp);
+    Ok(out)
+}
+
+/// The newest version starting with `prefix` a Maven repository's metadata lists.
+fn newest(metadata: &str, prefix: &str) -> Option<String> {
+    metadata
+        .split("<version>")
+        .skip(1)
+        .filter_map(|v| v.split("</version>").next())
+        .filter(|v| v.starts_with(prefix) && !v.contains("beta") && !v.contains("alpha"))
+        .last()
+        .map(str::to_owned)
+}
+
+/// The API of Minecraft 1.21.1 and NeoForge that NeoForge mods name: the classes, their
+/// supertypes and members, from the player's own downloads of the game's client jar and its
+/// mappings (Mojang's servers) and NeoForge's jars (NeoForge's Maven), read once and kept.
+fn neoforge_api(game: &Path) -> Result<horizon_port_pack::api::Api, String> {
+    use horizon_port_pack::api::Api;
+    let dir = api_dir(game);
+    let kept = dir.join("api-1.21.1-neoforge.txt");
+    if let Ok(text) = fs::read_to_string(&kept) {
+        let api = Api::load(&text);
+        if !api.classes.is_empty() {
+            return Ok(api);
+        }
+    }
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let manifest: serde_json::Value = serde_json::from_slice(&get(
+        "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json",
+        8 << 20,
+    )?)
+    .map_err(|e| e.to_string())?;
+    let url = manifest["versions"]
+        .as_array()
+        .and_then(|v| v.iter().find(|e| e["id"] == "1.21.1"))
+        .and_then(|e| e["url"].as_str())
+        .ok_or("Minecraft 1.21.1 is not in Mojang's list")?
+        .to_owned();
+    let info: serde_json::Value =
+        serde_json::from_slice(&get(&url, 8 << 20)?).map_err(|e| e.to_string())?;
+    let client = info["downloads"]["client"]["url"]
+        .as_str()
+        .ok_or("Minecraft 1.21.1 has no client jar")?;
+    let mappings = info["downloads"]["client_mappings"]["url"]
+        .as_str()
+        .ok_or("Minecraft 1.21.1 has no mappings")?;
+    let scratch = dir.join(".download.jar");
+    fs::write(&scratch, get(client, 96 << 20)?).map_err(|e| e.to_string())?;
+    let proguard = String::from_utf8(get(mappings, 64 << 20)?).map_err(|e| e.to_string())?;
+    let mut api = Api::default();
+    let read = api.add_official(&scratch, &proguard);
+    let _ = fs::remove_file(&scratch);
+    read?;
+    for (path, artifact, prefix, suffix) in [
+        ("net/neoforged/neoforge", "neoforge", "21.1.", "-universal"),
+        ("net/neoforged/fancymodloader/loader", "loader", "4.0.", ""),
+        ("net/neoforged/bus", "bus", "8.", ""),
+    ] {
+        let base = format!("https://maven.neoforged.net/releases/{path}");
+        let metadata =
+            String::from_utf8_lossy(&get(&format!("{base}/maven-metadata.xml"), 4 << 20)?)
+                .into_owned();
+        let version = newest(&metadata, prefix)
+            .ok_or(format!("no {artifact} {prefix}x on NeoForge's Maven"))?;
+        fs::write(
+            &scratch,
+            get(
+                &format!("{base}/{version}/{artifact}-{version}{suffix}.jar"),
+                64 << 20,
+            )?,
+        )
+        .map_err(|e| e.to_string())?;
+        let read = api.add_jar(&scratch, None);
+        let _ = fs::remove_file(&scratch);
+        read?;
+    }
+    let _ = fs::write(&kept, api.save());
+    Ok(api)
+}
+
 /// A NeoForge mod (already in Mojang's names, `jar` its copy without signatures) made ready
 /// for lane 3: its `@Mod` classes start it, its `@EventBusSubscriber` classes hear events.
 fn prepare_neoforge(
@@ -564,11 +678,41 @@ fn prepare_neoforge(
     if let Err(e) = fs::create_dir_all(&part) {
         return Outcome::Failed(e.to_string());
     }
-    if let Err(e) = dex(&[jar.to_path_buf()], &part.join("classes.jar")) {
+    // What the mod names of the game's API and Horizon's slice does not hold: stand-ins, and
+    // the slice's classes with the members it names added (they come before the slice's own).
+    let game = dir.parent().unwrap_or(dir);
+    let api = match neoforge_api(game) {
+        Ok(api) => api,
+        Err(e) => {
+            let _ = fs::remove_dir_all(&part);
+            return Outcome::Failed(format!("NeoForge's API not downloaded: {e}"));
+        }
+    };
+    let stand_ins = part.join("stand-ins.jar");
+    let written =
+        match horizon_port_pack::stubs::write_stand_ins(jar, &slice_jar(game), &api, &stand_ins) {
+            Ok(w) => w,
+            Err(e) => {
+                let _ = fs::remove_dir_all(&part);
+                return Outcome::Failed(format!("stand-ins not written: {e}"));
+            }
+        };
+    drop(api);
+    if let Err(e) = dex(
+        &[jar.to_path_buf(), stand_ins.clone()],
+        &part.join("classes.jar"),
+    ) {
         let _ = fs::remove_dir_all(&part);
         return Outcome::Failed(format!("D8 could not make DEX: {e}"));
     }
-    let mut entry = format!("file\t{file}\nloader\tneoforge\n");
+    let _ = fs::remove_file(&stand_ins);
+    let mut entry = format!(
+        "file\t{file}\nloader\tneoforge\nstand-ins\t{} classes, {} of Horizon's added to, {} gaps\n",
+        written.stand_ins,
+        written.patched,
+        written.gaps.len()
+    );
+    let _ = fs::write(part.join("gaps.txt"), written.gaps.join("\n"));
     for class in &neo.mods {
         entry.push_str(&format!("neoforge\t{class}\n"));
     }
@@ -623,6 +767,13 @@ pub fn installed(game: &Path, on: &dyn Fn(&str) -> bool) -> (Vec<PathBuf>, Vec<(
             } else if let Some(class) = line.strip_prefix("subscriber\t") {
                 entries.push((id.clone(), format!("subscriber:{class}")));
             }
+        }
+    }
+    // Horizon's API slice after the mods: a class a mod's stand-ins add to comes first.
+    if !dex.is_empty() {
+        match slice_dex(game) {
+            Ok(slice) => dex.push(slice),
+            Err(e) => log::warn!("Horizon: lane 3's API slice is not ready: {e}"),
         }
     }
     (dex, entries)

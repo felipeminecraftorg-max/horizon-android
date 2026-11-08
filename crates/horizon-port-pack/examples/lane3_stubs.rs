@@ -8,7 +8,7 @@
 //! loader's jars are only mapped (their classes get stand-ins), the game's libraries run as
 //! they are (DataFixerUpper, Brigadier, Guava, fastutil...).
 use horizon_port_pack::api::{Api, ApiClass, read};
-use horizon_port_pack::stubs::{Known, Provided, Refs, stubs};
+use horizon_port_pack::stubs::{Refs, stand_ins};
 use std::{collections::HashMap, fs, io::Read, path::Path};
 
 fn classes_of(jar: &Path, refs: &mut Refs, depth: usize) -> Result<usize, String> {
@@ -83,59 +83,7 @@ fn main() -> Result<(), String> {
         only.add_jar(Path::new(lib), None)?;
         held.extend(only.classes);
     }
-    let class = |c: &str| {
-        held.get(c).map(|k| Known {
-            interface: k.is_interface(),
-            plain: k
-                .methods
-                .get(&("<init>".to_owned(), "()V".to_owned()))
-                .is_some_and(|a| a & 1 != 0),
-        })
-    };
-    let constructor = |c: &str, d: &str| {
-        held.get(c)
-            .is_some_and(|k| k.methods.contains_key(&("<init>".to_owned(), d.to_owned())))
-    };
-    let member = |c: &str, n: &str, d: &str| {
-        let mut at = Some(c.to_owned());
-        let mut steps = 0;
-        while let Some(name) = at.take() {
-            let Some(k) = held.get(&name) else { break };
-            if k.methods.contains_key(&(n.to_owned(), d.to_owned()))
-                || k.fields.iter().any(|f| f.0 == n && f.1 == d)
-            {
-                return true;
-            }
-            steps += 1;
-            if steps < 64 {
-                at = Some(k.parent.clone());
-            }
-        }
-        false
-    };
-    let ancestors = |c: &str| {
-        let mut out = std::collections::BTreeSet::new();
-        let mut queue = vec![c.to_owned()];
-        while let Some(name) = queue.pop() {
-            let Some(k) = held.get(&name) else { continue };
-            for up in std::iter::once(&k.parent).chain(&k.interfaces) {
-                if !up.is_empty() && out.insert(up.clone()) {
-                    queue.push(up.clone());
-                }
-            }
-        }
-        out
-    };
-    let made = stubs(
-        &refs,
-        &Provided {
-            class: &class,
-            constructor: &constructor,
-            member: &member,
-            ancestors: &ancestors,
-        },
-        &api,
-    );
+    let made = stand_ins(&refs, &held, &api);
     for (name, bytes) in &made.classes {
         let p = Path::new(out).join(format!("{name}.class"));
         fs::create_dir_all(p.parent().unwrap()).map_err(|e| e.to_string())?;

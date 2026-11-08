@@ -143,6 +143,8 @@ public final class Neo {
     static final Map<String, Integer> REGISTRIES = new LinkedHashMap<>();
 
     static void clear() {
+        PLAIN.clear();
+        INSIDE.clear();
         DEFINED.clear();
         MADE.clear();
         REGISTRIES.clear();
@@ -218,6 +220,51 @@ public final class Neo {
         }
         Bus bus = which == EventBusSubscriber.Bus.MOD ? MOD_BUSES.computeIfAbsent(id, i -> new Bus()) : GAME;
         bus.register(type);
+    }
+
+    /** The blocks whose {@code entityInside} is not a mod's own, by id: not asked again. */
+    private static final java.util.Set<String> PLAIN = new java.util.HashSet<>();
+    /** A block's own {@code entityInside}, by its class. */
+    private static final Map<Class<?>, Method> INSIDE = new HashMap<>();
+
+    /** Whether a mod registered the block {@code id}. */
+    public static boolean ownsBlock(String id) {
+        return key("minecraft:block", id) != null;
+    }
+
+    /** An entity (the acting player) is inside the mod block {@code id} at x, y, z. */
+    static void entityInside(String id, int x, int y, int z) throws Throwable {
+        if (PLAIN.contains(id)) return;
+        ResourceKey<?> key = key("minecraft:block", id);
+        if (key == null) {
+            PLAIN.add(id);
+            return;
+        }
+        Object block = value(key);
+        Method m = INSIDE.get(block.getClass());
+        if (m == null) {
+            for (Class<?> c = block.getClass(); c != null && c != net.minecraft.world.level.block.Block.class; c = c.getSuperclass()) {
+                for (Method d : c.getDeclaredMethods()) {
+                    if (d.getName().equals("entityInside") && d.getParameterCount() == 4) {
+                        m = d;
+                        break;
+                    }
+                }
+                if (m != null) break;
+            }
+            if (m == null) {
+                PLAIN.add(id);
+                return;
+            }
+            m.setAccessible(true);
+            INSIDE.put(block.getClass(), m);
+        }
+        try {
+            m.invoke(block, net.minecraft.world.level.block.state.BlockState.of(id), net.minecraft.server.level.ServerLevel.CURRENT,
+                    new net.minecraft.core.BlockPos(x, y, z), net.minecraft.server.level.ServerPlayer.ACTING);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            throw e.getCause();
+        }
     }
 
     /** What the mods registered, for the report: {@code registry xN, ...}. */
