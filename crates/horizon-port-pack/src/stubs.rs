@@ -621,6 +621,8 @@ pub struct Provided<'a> {
     pub constructor: &'a dyn Fn(&str, &str) -> bool,
     /// Whether a class Horizon holds declares (or inherits) this method or field.
     pub member: &'a dyn Fn(&str, &str, &str) -> bool,
+    /// Every superclass and interface of a class Horizon holds, as Horizon declares them.
+    pub ancestors: &'a dyn Fn(&str) -> BTreeSet<String>,
 }
 
 /// The stand-ins, and what they could not stand in for.
@@ -628,8 +630,9 @@ pub struct Provided<'a> {
 pub struct Stubs {
     /// Class files by internal name.
     pub classes: BTreeMap<String, Vec<u8>>,
-    /// Members a mod names on a class Horizon holds that it lacks (`owner.name descriptor`):
-    /// the API slice's own gaps, which no stand-in can fill.
+    /// Members a mod names on a class Horizon holds that it lacks (`owner.name descriptor`),
+    /// and the game's supertypes Horizon's class lacks (`owner is a supertype`): the API
+    /// slice's own gaps, which no stand-in can fill.
     pub unmet: BTreeSet<String>,
 }
 
@@ -1101,6 +1104,30 @@ pub fn stubs(refs: &Refs, provided: &Provided, api: &crate::api::Api) -> Stubs {
         class.extend_from_slice(&0u16.to_be_bytes());
         out.insert(name.to_owned(), class);
     }
+    // A class Horizon holds that misses one of the game's supertypes: the mod's code passing
+    // one where the supertype is asked for would not verify.
+    for c in refs.classes.iter().filter(|c| known(c).is_some()) {
+        let Some(info) = api.classes.get(c) else {
+            continue;
+        };
+        let held = (provided.ancestors)(c);
+        let mut queue: Vec<&str> = std::iter::once(info.parent.as_str())
+            .chain(info.interfaces.iter().map(String::as_str))
+            .collect();
+        let mut seen = BTreeSet::new();
+        while let Some(up) = queue.pop() {
+            if up.is_empty() || platform(up) || !seen.insert(up) {
+                continue;
+            }
+            if !held.contains(up) {
+                unmet.insert(format!("{c} is a {up}"));
+            }
+            if let Some(i) = api.classes.get(up) {
+                queue.push(i.parent.as_str());
+                queue.extend(i.interfaces.iter().map(String::as_str));
+            }
+        }
+    }
     Stubs {
         classes: out,
         unmet,
@@ -1164,12 +1191,14 @@ mod tests {
         };
         let constructor = |_: &str, _: &str| false;
         let member = |_: &str, _: &str, _: &str| false;
+        let ancestors = |_: &str| BTreeSet::new();
         stubs(
             refs,
             &Provided {
                 class: &class,
                 constructor: &constructor,
                 member: &member,
+                ancestors: &ancestors,
             },
             api,
         )

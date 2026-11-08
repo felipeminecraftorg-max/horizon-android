@@ -99,12 +99,26 @@ fn main() -> Result<(), String> {
         }
         false
     };
+    let ancestors = |c: &str| {
+        let mut out = std::collections::BTreeSet::new();
+        let mut queue = vec![c.to_owned()];
+        while let Some(name) = queue.pop() {
+            let Some(k) = held.get(&name) else { continue };
+            for up in std::iter::once(&k.parent).chain(&k.interfaces) {
+                if !up.is_empty() && out.insert(up.clone()) {
+                    queue.push(up.clone());
+                }
+            }
+        }
+        out
+    };
     let made = stubs(
         &refs,
         &Provided {
             class: &class,
             constructor: &constructor,
             member: &member,
+            ancestors: &ancestors,
         },
         &api,
     );
@@ -120,7 +134,7 @@ fn main() -> Result<(), String> {
         made.classes.len(),
         made.unmet.len()
     );
-    for gap in made.unmet.iter().take(60) {
+    for gap in made.unmet.iter().take(150) {
         println!("  gap: {gap}");
     }
     Ok(())
