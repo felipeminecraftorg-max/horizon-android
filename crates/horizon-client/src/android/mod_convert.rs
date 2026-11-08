@@ -399,6 +399,74 @@ fn installed(file: &str, check: &Check, install: Result<String, String>) -> Entr
     }
 }
 
+/// Gives a carried-over mod its creative inventory tab, which a Java mod makes in code the carry
+/// can't take: every item it has (its client item definitions), titled as its own tab was (the
+/// language file's `item_group` name) or by the mod's name, in the order its language file
+/// names them. A mod with a tab of its own keeps that.
+fn creative_tab(carry: &Path, id: &str, name: &str) {
+    let dir = carry.join("data").join(id).join("horizon/creative_tab");
+    if dir.is_dir() {
+        return;
+    }
+    let mut items = Vec::new();
+    for ns in fs::read_dir(carry.join("assets"))
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let namespace = ns.file_name().to_string_lossy().into_owned();
+        if namespace == "minecraft" {
+            continue;
+        }
+        for file in fs::read_dir(ns.path().join("items"))
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            let file_name = file.file_name().to_string_lossy().into_owned();
+            if let Some(stem) = file_name.strip_suffix(".json") {
+                items.push((namespace.clone(), stem.to_owned()));
+            }
+        }
+    }
+    if items.is_empty() {
+        return;
+    }
+    let lang = fs::read_to_string(carry.join("assets").join(id).join("lang/en_us.json"))
+        .unwrap_or_default();
+    let at = |ns: &str, path: &str| {
+        ["item", "block"]
+            .iter()
+            .filter_map(|kind| lang.find(&format!("\"{kind}.{ns}.{path}\"")))
+            .min()
+            .unwrap_or(usize::MAX)
+    };
+    let mut ordered: Vec<(usize, String)> = items
+        .iter()
+        .map(|(ns, path)| (at(ns, path), format!("{ns}:{path}")))
+        .collect();
+    ordered.sort();
+    let items: Vec<String> = ordered.into_iter().map(|(_, item)| item).collect();
+    let titles: BTreeMap<String, String> = serde_json::from_str(&lang).unwrap_or_default();
+    let title = titles
+        .iter()
+        .filter(|(k, _)| k.starts_with("item_group.") || k.starts_with("itemGroup."))
+        .min_by_key(|(k, _)| lang.find(&format!("\"{k}\"")).unwrap_or(usize::MAX))
+        .map(|(_, v)| v.clone())
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| {
+            if name.is_empty() {
+                id.to_owned()
+            } else {
+                name.to_owned()
+            }
+        });
+    let json = serde_json::json!({"title": title, "icon": items[0], "items": items});
+    if fs::create_dir_all(&dir).is_ok() {
+        let _ = fs::write(dir.join(format!("{id}.json")), json.to_string());
+    }
+}
+
 /// A PNG's width and height, from its header.
 fn png_size(path: &Path) -> Option<(u32, u32)> {
     use std::io::Read;
@@ -556,6 +624,7 @@ fn convert_one(file: &str, jar: &Path, scratch: &Path, mods: &mut Mods) -> Entry
             lane2(game, &out.join("carry"), &c, mods, e)
         }
         Ok(c) => {
+            creative_tab(&out.join("carry"), &c.mod_id, &c.name);
             let e = installed(file, &c, mods.install(&out.join("carry")));
             let game = mods.game;
             lane2(game, &out.join("carry"), &c, mods, e)
@@ -838,6 +907,7 @@ pub fn convert_pack(
                     lane2(game, &out.join("carry"), &c, &mut mods, e)
                 }
                 Ok(c) => {
+                    creative_tab(&out.join("carry"), &c.mod_id, &c.name);
                     let e = installed(file, &c, mods.install(&out.join("carry")));
                     lane2(game, &out.join("carry"), &c, &mut mods, e)
                 }
