@@ -417,6 +417,10 @@ impl Game<'_> {
         let visually_swimming =
             p.pose == Pose::Swimming || (!p.fall_flying && p.pose == Pose::FallFlying);
         let in_water = p.fluids.was_touching_water;
+        // What a pack's model animations read (`horizon_client::emf`).
+        let (on_ground, sprinting, eye_in_water) =
+            (p.ground.on_ground, p.sprinting, p.fluids.was_eye_in_water);
+        let climbing = p.last_climbable.is_some() && !on_ground;
         let (yaw, pitch) = (self.yaw, self.pitch);
         let main = self.inventory[self.selected].clone();
         let off = self.offhand.as_ref().map(|s| s.item.clone());
@@ -523,6 +527,11 @@ impl Game<'_> {
         m.extra.swing_right_arm = swing_right_arm;
         m.extra.swing_stab = self.swing.current.is_some_and(|c| c.animation.kind == 2);
         m.hurt_time = hurt;
+        m.on_ground = on_ground;
+        m.extra.sprinting = sprinting;
+        m.climbing = climbing;
+        m.fluids.in_water = in_water;
+        m.fluids.eye_in_water = eye_in_water;
     }
     /// `Entity.turn` for the player, by the mouse, a pad, the arrow keys or an
     /// agent's `turn`.
