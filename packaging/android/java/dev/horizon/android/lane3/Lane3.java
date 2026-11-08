@@ -134,6 +134,7 @@ public final class Lane3 {
      */
     public static synchronized String start(String dexFiles, String mods, String dir) {
         EventFactory.clearAll();
+        Neo.clear();
         REGISTERED.clear();
         MODS.clear();
         ERRORS.clear();
@@ -163,6 +164,20 @@ public final class Lane3 {
             String id = parts[0];
             current = id;
             try {
+                // NeoForge's: the @Mod class with its bus, the subscribers on theirs.
+                if (parts[1].startsWith("neoforge:")) {
+                    Neo.construct(id, Class.forName(parts[1].substring(9), true, loader));
+                    outcome.putIfAbsent(id, "ok");
+                    continue;
+                }
+                if (parts[1].startsWith("subscriber:")) {
+                    try {
+                        Neo.subscribe(id, Class.forName(parts[1].substring(11), true, loader));
+                    } catch (Throwable t) {
+                        failed("subscriber " + parts[1].substring(11), t);
+                    }
+                    continue;
+                }
                 Class<?> type = Class.forName(parts[1], true, loader);
                 Object entry;
                 try {
@@ -185,7 +200,9 @@ public final class Lane3 {
             String id = e.getKey();
             String state = e.getValue();
             report.append(id).append('\t');
-            if (state.equals("ok")) {
+            if (state.equals("ok") && Neo.MOD_BUSES.containsKey(id)) {
+                report.append("ok\t").append(Neo.registrations());
+            } else if (state.equals("ok")) {
                 report.append("ok\t").append(events(id));
             } else {
                 report.append(state);
@@ -232,6 +249,19 @@ public final class Lane3 {
         }
         String why = t.toString();
         return "error\t" + (why.length() > 400 ? why.substring(0, 400) : why);
+    }
+
+    /** A mod's code that threw while the game called it, counted once a kind and logged once. */
+    public static synchronized void failed(String where, Throwable t) {
+        String why = describe(t);
+        String key = where + ": " + why;
+        if (ERRORS.merge(key, 1, Integer::sum) == 1) {
+            try {
+                Native.log("lane 3 " + where + ": " + why.replace('\t', ' '));
+            } catch (Throwable ignored) {
+                // Outside a game.
+            }
+        }
     }
 
     private static void guard(String where, Runnable call) {

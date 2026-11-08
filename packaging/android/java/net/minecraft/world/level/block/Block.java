@@ -5,11 +5,22 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.block.state.BlockState;
 
 /** A block by its id: what it does is Horizon's (lane 1 carried a mod's own). */
-public class Block {
-    final String id;
+public class Block extends net.minecraft.world.level.block.state.BlockBehaviour {
+    String id;
 
     public Block(String id) {
+        super(null);
         this.id = id;
+    }
+
+    /** A mod's block: its id is the one it is registered under (lane 3 sets it). */
+    public Block(net.minecraft.world.level.block.state.BlockBehaviour.Properties properties) {
+        super(properties);
+    }
+
+    /** The id lane 3 registered this block under. */
+    public final void horizonId(String id) {
+        if (this.id == null) this.id = id;
     }
 
     public BlockState defaultBlockState() {
