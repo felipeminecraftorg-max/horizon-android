@@ -422,7 +422,7 @@ pub fn remap_jar(
     let mut found = Unpacked::default();
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
-        let name = entry.name().to_owned();
+        let name = entry.name().map_err(|e| e.to_string())?.into_owned();
         if entry.is_dir() || entry.size() > MAX_ENTRY {
             continue;
         }
