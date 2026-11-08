@@ -58,7 +58,7 @@ fn descriptor(java: &str, class: &HashMap<String, String>) -> String {
 
 /// What Mojang's client mappings (ProGuard's format) say, by official name.
 #[derive(Default)]
-pub(crate) struct Mojang {
+pub struct Mojang {
     /// Official internal class name → Mojang's.
     pub(crate) classes: HashMap<String, String>,
     /// (official class, official field) → Mojang's field name.
