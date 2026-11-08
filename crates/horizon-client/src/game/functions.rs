@@ -199,10 +199,9 @@ impl Game<'_> {
             &packs,
             &self.level.enabled_features,
         );
-        let enabled: Vec<_> = enabled
-            .iter()
-            .filter_map(|id| packs.iter().find(|p| &p.id == id))
-            .collect();
+        // The mods' own biomes and dimensions too (`datapack::mod_pack`).
+        let mods = horizon_client::datapack::mod_pack(&self.options.resources);
+        let enabled = horizon_client::datapack::with_mod_pack(mods.as_ref(), &packs, &enabled);
         let (overrides, _) = horizon_client::datapack::worldgen_overrides(&enabled, |_| true);
         for (bundle, registry) in [
             ("biomes", "minecraft:worldgen/biome"),

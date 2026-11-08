@@ -502,7 +502,17 @@ impl GeneratorData {
             biome_names.push(Arc::<str>::from(name.as_str()));
             temperatures.push(BiomeTemperatureSettings::from_json(json)?);
             let value: Value = serde_json::from_str(json)?;
-            biome_carvers.push(carvers.decode_set(&value["carvers"].to_string())?);
+            // A pack's biome whose carvers are not 26.3's (a mod's older biome) carves
+            // nothing, instead of keeping the world from opening.
+            let set = match carvers.decode_set(&value["carvers"].to_string()) {
+                Ok(set) => set,
+                Err(e) if ov.entries("biomes").any(|(id, _)| id == name) => {
+                    warnings.push(format!("biome {name}: its carvers are left out: {e}"));
+                    Vec::new()
+                }
+                Err(e) => return Err(e.into()),
+            };
+            biome_carvers.push(set);
             biome_json.push(json.clone());
         }
         let carving_blocks = CarvingBlocks::from_registry(

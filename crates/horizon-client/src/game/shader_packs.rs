@@ -333,10 +333,10 @@ impl Game<'_> {
             return PackInputs::default();
         }
         let name = picked.to_owned();
-        let dimension = match self.dim {
-            Dim::Overworld => 0,
+        let dimension = match self.dim.like() {
             Dim::Nether => -1,
             Dim::End => 1,
+            _ => 0,
         };
         let path = Self::shader_packs_dir().join(&name);
         if horizon_shader_api::package::is_pack(&path) {

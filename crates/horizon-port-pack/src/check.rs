@@ -248,13 +248,27 @@ fn judge(check: &mut Check, info: &jar::JarInfo, report: &carry::Report) {
             "files the game can't read",
         ));
     }
-    if c.dimensions > 0 {
+    if !report.dimensions.is_empty() {
+        // The levels come with the mod (`crate::dimensions`); the way in is its code.
+        check.ports.push(format!(
+            "{} (/execute in {} run tp @s ~ ~ ~)",
+            plural(
+                report.dimensions.len(),
+                "dimension of its own",
+                "dimensions of its own"
+            ),
+            report.dimensions[0]
+        ));
+        skipped.push(plural(
+            report.dimensions.len(),
+            "portal or way into its dimension, which its Java code makes (lane 3)",
+            "portals or ways into its dimensions, which its Java code makes (lane 3)",
+        ));
+    } else if c.dimensions > 0 {
         skipped.push(plural(
             c.dimensions,
-            "dimension of its own, and the portal into it: Horizon has the vanilla three \
-             (lane 2)",
-            "dimensions of its own, and the portals into them: Horizon has the vanilla three \
-             (lane 2)",
+            "dimension of its own the game can't read, and the portal into it (lane 2)",
+            "dimensions of its own the game can't read, and the portals into them (lane 2)",
         ));
     }
     let wg = &report.worldgen_types;

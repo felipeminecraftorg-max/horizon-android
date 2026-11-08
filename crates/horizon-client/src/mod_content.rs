@@ -1637,6 +1637,33 @@ impl Addition {
     }
 }
 
+/// Folders of a mod's own namespace that make its dimensions, which go into the mods' worldgen
+/// pack too (`datapack::MOD_PACK`): the level stems, their dimension types, the biomes and the
+/// noise, density functions, carvers and surface rules they name. The bundles above take the
+/// structures and features; the vanilla namespace stays the game's own.
+const MOD_PACK_KINDS: [&str; 9] = [
+    "dimension/",
+    "dimension_type/",
+    "worldgen/biome/",
+    "worldgen/carver/",
+    "worldgen/density_function/",
+    "worldgen/material_condition/",
+    "worldgen/material_rule/",
+    "worldgen/noise/",
+    "worldgen/noise_settings/",
+];
+
+/// Whether a mod file goes into the mods' worldgen pack ([`MOD_PACK_KINDS`]).
+fn mod_pack_file(file: &str) -> bool {
+    file.ends_with(".json")
+        && file
+            .strip_prefix("data/")
+            .and_then(|r| r.split_once('/'))
+            .is_some_and(|(ns, rest)| {
+                ns != "minecraft" && MOD_PACK_KINDS.iter().any(|k| rest.starts_with(k))
+            })
+}
+
 /// The worldgen loader's bundles of biomes and of placed feature tags.
 const BIOMES: &str = "worldgen/biomes.json";
 const FEATURE_TAGS: &str = "worldgen/feature_tags.json";
@@ -2023,6 +2050,7 @@ pub fn build(base: &Path, mods: &[ContentMod], out: &Path) -> Result<Vec<String>
     let mut worldgen: BTreeMap<&str, Vec<(String, String)>> = BTreeMap::new();
     let mut additions: BTreeMap<&str, Vec<Addition>> = BTreeMap::new();
     let mut modifiers = Vec::new();
+    let mut mod_pack = false;
     for m in mods {
         let declarations = format!("data/{}/horizon/", m.id);
         let mut reader = m.content.reader()?;
@@ -2041,6 +2069,10 @@ pub fn build(base: &Path, mods: &[ContentMod], out: &Path) -> Result<Vec<String>
                 warnings.extend(merge.add(&m.id, file, replace, shared, values));
             } else if !file.starts_with(&declarations) {
                 overlay.write(file, &bytes)?;
+                if mod_pack_file(file) {
+                    overlay.write(&format!("{}/{file}", crate::datapack::MOD_PACK), &bytes)?;
+                    mod_pack = true;
+                }
                 if biomes::is_modifier(file) {
                     let text = String::from_utf8(bytes).map_err(|e| format!("{file}: {e}"))?;
                     modifiers.extend(biomes::Modifier::read(&m.id, file, &text, &mut warnings)?);
@@ -2062,6 +2094,16 @@ pub fn build(base: &Path, mods: &[ContentMod], out: &Path) -> Result<Vec<String>
                 }
             }
         }
+    }
+    if mod_pack {
+        overlay.write(
+            &format!("{}/pack.mcmeta", crate::datapack::MOD_PACK),
+            format!(
+                "{{\"pack\": {{\"description\": \"The mods' own dimensions\", \"pack_format\": {}}}}}\n",
+                horizon_core::version::DATA_PACK_FORMAT.0
+            )
+            .as_bytes(),
+        )?;
     }
     // A tag naming an id nobody registers fails as a whole in vanilla, and
     // carried-over mods name blocks left out or other mods' ids: such
@@ -2289,7 +2331,7 @@ fn stamp(base: &Path, mods: &[ContentMod]) -> Result<String> {
             modified.as_nanos()
         ))
     };
-    let mut parts = vec!["horizon mod content 1".to_owned()];
+    let mut parts = vec!["horizon mod content 2".to_owned()];
     parts.push(meta(&std::env::current_exe()?)?);
     let base = std::path::absolute(base)?;
     parts.push(

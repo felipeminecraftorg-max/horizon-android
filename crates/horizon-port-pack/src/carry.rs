@@ -65,6 +65,12 @@ pub struct Report {
     pub worldgen_types: crate::worldgen::Upgrade,
     /// The loader's convention biome tags the structures name, carried.
     pub convention_biome_tags: usize,
+    /// Its own dimensions (`crate::dimensions`), by id.
+    pub dimensions: Vec<String>,
+    /// Their files rewritten in 26.3's formats.
+    pub dimensions_upgraded: usize,
+    /// What of them has no faithful 26.3 form, with how often.
+    pub dimensions_lossy: BTreeMap<String, usize>,
 }
 
 /// The pack around a mod being carried.
@@ -948,6 +954,11 @@ pub fn carry(
         }
         write(&dest, &bytes)?;
     }
+    // Its own dimensions, in 26.3's formats (`crate::dimensions`).
+    let dims = crate::dimensions::carry(&inside, &owned)?;
+    report.dimensions = dims.dimensions;
+    report.dimensions_upgraded = dims.upgraded;
+    report.dimensions_lossy = dims.lossy;
     // Entries the mod adds to other structure sets in Java code, for the
     // structures it has.
     for (file, set, entries) in crate::legacy_structure_mods::ctov::code_set_entries(id) {

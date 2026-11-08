@@ -496,7 +496,10 @@ impl Hub {
             .id("minecraft:chat_type", "minecraft:chat")
             .unwrap_or(0);
         let dimension_type = sync
-            .id("minecraft:dimension_type", &config.dimension)
+            .id(
+                "minecraft:dimension_type",
+                &crate::data_dimensions::type_of(&config.dimension),
+            )
             .unwrap_or(0);
         let clock_ids = (0..sync.dynamic.len("minecraft:world_clock") as i32).collect();
         let mut encoder = encoder;
@@ -899,9 +902,16 @@ impl Hub {
 
     /// The levels of a server, in MinecraftServer.levelKeys order.
     fn level_keys() -> Vec<String> {
-        ["overworld", "the_end", "the_nether"]
+        let mut keys: Vec<String> = ["overworld", "the_end", "the_nether"]
             .map(|l| format!("minecraft:{l}"))
-            .to_vec()
+            .to_vec();
+        // The world's own dimensions (`data_dimensions`), after the vanilla three.
+        keys.extend(
+            crate::data_dimensions::all()
+                .iter()
+                .map(|d| d.id.to_owned()),
+        );
+        keys
     }
 
     /// PlayerList.placeNewPlayer for a guest whose saved state is loaded.
@@ -3470,9 +3480,13 @@ impl Hub {
         (self.last_clock, self.last_rate, self.weather) =
             (entering.last_clock, entering.last_rate, entering.weather);
         self.config.dimension = dimension.to_owned();
+        // A data dimension names its own type; the vanilla levels' have their names.
         self.dimension_type = self
             .sync
-            .id("minecraft:dimension_type", dimension)
+            .id(
+                "minecraft:dimension_type",
+                &crate::data_dimensions::type_of(dimension),
+            )
             .unwrap_or(0);
         self.encoder
             .set_dimension(self.config.levels.get(dimension));

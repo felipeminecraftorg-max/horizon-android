@@ -90,7 +90,7 @@ pub fn upgrade_pack(files: &BTreeMap<String, Vec<u8>>) -> (BTreeMap<String, Vec<
             "worldgen/biome" => Some(biome(v, &mut report)),
             "worldgen/structure" => Some(structure(v)),
             "worldgen/world_preset" => Some(ctx.world_preset(v, &mut report)),
-            "dimension" => Some(ctx.dimension(v, &mut report)),
+            "dimension" => Some(ctx.dimension(&file.id(), v, &mut report)),
             "dimension_type" => Some(dimension_type(v)),
             "worldgen/template_pool" | "worldgen/processor_list" => {
                 let mut v = v.clone();

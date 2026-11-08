@@ -192,6 +192,7 @@ impl WorldRequest {
             level.dimension = d.clone();
             level.position = None;
         }
+        register_data_dimensions(&save_root, &options.resources, &level.enabled_features);
         let dim = Dim::from_id(&level.dimension);
         let shapes = level_shapes(&save_root, res.biomes());
         let shape = shapes.get(dim.id());
@@ -209,7 +210,7 @@ impl WorldRequest {
         streaming.radius = settings.render_distance;
         let mut world = World::new(res.facts().air, level.seed);
         world.shape = shape;
-        world.fast_lava = dim == Dim::Nether;
+        world.fast_lava = dim.like() == Dim::Nether;
         world.game_time = level.time;
         world.day_time = options.time.unwrap_or(level.day_time);
         world.weather = level.weather;
@@ -500,10 +501,9 @@ pub(super) fn packed_biomes(
 ) -> Arc<horizon_client::biome::Biomes> {
     let packs = horizon_client::datapack::discover_with_features(world_root, resources);
     let enabled = horizon_client::datapack::enabled_ids(world_root, &packs, enabled_features);
-    let enabled: Vec<_> = enabled
-        .iter()
-        .filter_map(|id| packs.iter().find(|p| &p.id == id))
-        .collect();
+    // The mods' own biomes (`datapack::mod_pack`) below the world's packs'.
+    let mods = horizon_client::datapack::mod_pack(resources);
+    let enabled = horizon_client::datapack::with_mod_pack(mods.as_ref(), &packs, &enabled);
     let (overrides, _) = horizon_client::datapack::worldgen_overrides(&enabled, |_| true);
     let packed: Vec<(String, serde_json::Value)> = overrides
         .entries("biomes")
@@ -564,11 +564,24 @@ fn worldgen_overrides_of(
 ) {
     let packs = horizon_client::datapack::discover_with_features(world_root, resources);
     let enabled = horizon_client::datapack::enabled_ids(world_root, &packs, enabled_features);
-    let enabled: Vec<_> = enabled
-        .iter()
-        .filter_map(|id| packs.iter().find(|p| &p.id == id))
-        .collect();
+    // The mods' own dimensions, biomes and noise (`datapack::mod_pack`) below the world's packs'.
+    let mods = horizon_client::datapack::mod_pack(resources);
+    let enabled = horizon_client::datapack::with_mod_pack(mods.as_ref(), &packs, &enabled);
     horizon_client::datapack::worldgen_overrides(&enabled, |b| biomes.contains(b))
+}
+
+/// The world's own dimensions, the mods' (`datapack::mod_pack`) and its enabled data packs',
+/// registered for its levels, chunk layout and network (`data_dimensions`) as it opens.
+pub(super) fn register_data_dimensions(
+    world_root: &std::path::Path,
+    resources: &std::path::Path,
+    enabled_features: &[String],
+) {
+    let packs = horizon_client::datapack::discover_with_features(world_root, resources);
+    let enabled = horizon_client::datapack::enabled_ids(world_root, &packs, enabled_features);
+    let mods = horizon_client::datapack::mod_pack(resources);
+    let enabled = horizon_client::datapack::with_mod_pack(mods.as_ref(), &packs, &enabled);
+    horizon_client::data_dimensions::set(horizon_client::data_dimensions::load(&enabled));
 }
 
 /// The shapes of the world's levels: their dimension types, the world's
@@ -814,8 +827,12 @@ pub(super) fn make_streaming(
     streaming.smooth_lighting = settings.smooth_lighting;
     streaming.cutout_leaves = settings.cutout_leaves;
     streaming.biome_zoom = BiomeZoom::new(obfuscate_seed(seed));
-    streaming.sky_light = dim != Dim::Nether;
-    streaming.nether_shading = dim == Dim::Nether;
+    // A data dimension's type says whether it has a sky (`has_skylight`).
+    streaming.sky_light = dim.data().map_or(dim != Dim::Nether, |d| d.shape.sky_light);
+    streaming.nether_shading = dim == Dim::Nether
+        || dim
+            .data()
+            .is_some_and(|d| d.sky == horizon_client::data_dimensions::Sky::Nether);
     // A server draws nothing: neither the integrated server nor the
     // dedicated one meshes sections.
     streaming.mesh = options.execution_role.is_client();

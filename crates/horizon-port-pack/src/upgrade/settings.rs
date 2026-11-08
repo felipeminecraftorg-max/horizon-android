@@ -166,15 +166,17 @@ impl Context<'_> {
     }
 
     /// A dimension (`dimension/<id>.json` or a world preset's entry): an
-    /// inline noise settings object in its generator is upgraded.
-    pub(super) fn dimension(&mut self, v: &Value, report: &mut Report) -> Value {
+    /// inline noise settings object in its generator is upgraded. What it
+    /// names (density functions, the material rule) goes under `id`'s
+    /// `upgraded/`, so two dimensions' inline settings keep their own.
+    pub(super) fn dimension(&mut self, id: &str, v: &Value, report: &mut Report) -> Value {
         let mut v = v.clone();
         let noise = v.get("generator").and_then(kind) == Some("noise");
         if let Some(settings) = v.pointer("/generator/settings").cloned()
             && settings.is_object()
             && noise
         {
-            v["generator"]["settings"] = self.settings("minecraft:inline", &settings, report);
+            v["generator"]["settings"] = self.settings(id, &settings, report);
         }
         v
     }
@@ -183,7 +185,7 @@ impl Context<'_> {
         let mut v = v.clone();
         if let Some(dims) = v.get_mut("dimensions").and_then(Value::as_object_mut) {
             for d in dims.values_mut() {
-                *d = self.dimension(d, report);
+                *d = self.dimension("minecraft:inline", d, report);
             }
         }
         v

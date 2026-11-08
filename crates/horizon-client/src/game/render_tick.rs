@@ -121,7 +121,7 @@ impl Game<'_> {
             forward: forward.map(|c| c as f32),
             rain,
             thunder,
-            skybox: self.dim == Dim::Overworld,
+            skybox: self.dim.like() == Dim::Overworld,
             blindness: self
                 .potions
                 .effects

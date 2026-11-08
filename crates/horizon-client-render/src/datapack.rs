@@ -40,7 +40,7 @@ impl DataPack {
     /// The files of `data/<namespace>/<kind>/` for each kind, in the order
     /// `list("data/")` gives them. A folder pack walks only those folders:
     /// the built-in pack holds about 10,000 other data files.
-    fn list_kinds(&self, kinds: &[&str]) -> Vec<String> {
+    pub(crate) fn list_kinds(&self, kinds: &[&str]) -> Vec<String> {
         debug_assert!(kinds.is_sorted(), "kinds in walk order");
         let Source::Dir(root) = &self.source else {
             return self.list("data/");
@@ -168,6 +168,38 @@ pub fn feature_packs(resources: &Path) -> Vec<DataPack> {
     packs.sort_by(|a, b| a.id.cmp(&b.id));
     packs
 }
+/// The folder of a content root (`mod_content`) that holds the mods' own worldgen as a data pack:
+/// their dimensions, dimension types, biomes and the noise those use.
+pub const MOD_PACK: &str = "horizon-mod-worldgen";
+/// The pack id of [`mod_pack`], NeoForge's for the mods' data.
+pub const MOD_PACK_ID: &str = "mod_resources";
+
+/// The mods' own worldgen as a data pack ([`MOD_PACK`] of the content root `resources`): always
+/// on and below a world's packs, as NeoForge's `mod_resources` pack is. `None` when no mod
+/// brings any.
+pub fn mod_pack(resources: &Path) -> Option<DataPack> {
+    let root = resources.join(MOD_PACK);
+    root.join("pack.mcmeta").is_file().then(|| DataPack {
+        id: MOD_PACK_ID.into(),
+        source: Source::Dir(root),
+    })
+}
+
+/// `enabled` (ids of `packs`, lowest first) as packs, with the mods' pack `mods` below them.
+pub fn with_mod_pack<'a>(
+    mods: Option<&'a DataPack>,
+    packs: &'a [DataPack],
+    enabled: &[String],
+) -> Vec<&'a DataPack> {
+    mods.into_iter()
+        .chain(
+            enabled
+                .iter()
+                .filter_map(|id| packs.iter().find(|p| &p.id == id)),
+        )
+        .collect()
+}
+
 /// The packs of `<world>/datapacks` plus the resources root's feature packs:
 /// the world's whole repository, as `PackRepository.reload` sees it.
 pub fn discover_with_features(world_root: &Path, resources: &Path) -> Vec<DataPack> {

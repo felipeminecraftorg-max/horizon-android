@@ -292,10 +292,11 @@ impl EyeOfEnder {
 impl Game<'_> {
     /// The environment attributes of the current dimension.
     pub(super) fn dim_environment(&self) -> &Environment {
-        match self.dim {
-            Dim::Overworld => self.res.environment(),
+        // A data dimension looks like the vanilla level its sky names.
+        match self.dim.like() {
             Dim::Nether => self.res.nether_environment(),
             Dim::End => self.res.end_environment(),
+            _ => self.res.environment(),
         }
     }
 

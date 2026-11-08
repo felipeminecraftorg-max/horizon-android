@@ -139,6 +139,8 @@ pub fn apply(guest: &mut Guest, level: &Level) {
     guest.recipe_book = level.recipe_book.clone();
     guest.dimension = match level.dimension.as_str() {
         d @ ("minecraft:the_nether" | "minecraft:the_end") => d.to_owned(),
+        // A level of the world's own (a mod's or a data pack's) it still has.
+        d if crate::data_dimensions::index(d).is_some() => d.to_owned(),
         _ => "minecraft:overworld".to_owned(),
     };
     if level.ender_items.len() == 27 {

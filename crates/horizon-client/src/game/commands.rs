@@ -812,6 +812,7 @@ impl Game<'_> {
             Dim::Overworld => 0,
             Dim::Nether => 1,
             Dim::End => 2,
+            Dim::Data(i) => 3 + u32::from(*i),
         });
         dims
     }

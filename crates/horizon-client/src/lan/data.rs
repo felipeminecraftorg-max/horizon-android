@@ -57,6 +57,41 @@ pub const CORE_PACK: (&str, &str, &str) = ("minecraft", "core", horizon_protocol
 /// from the prepared resources only.
 const PACK_REGISTRIES: &[&str] = &["minecraft:dialog"];
 
+/// Synchronized registries the mods' own worldgen pack adds entries to
+/// (`datapack::mod_pack`): the biomes and dimension types of their dimensions.
+const MOD_REGISTRIES: &[&str] = &["minecraft:worldgen/biome", "minecraft:dimension_type"];
+
+/// The mods' own entries of the synchronized registry folder `dir` (`worldgen/biome`,
+/// `dimension_type`), from the content root's `datapack::MOD_PACK`: no client knows them, so
+/// their data is always sent. The vanilla namespace is left to the game's own files.
+fn mod_entries(resources: &Path, dir: &str, entries: &mut Vec<((String, String), Value, bool)>) {
+    let data = resources.join(crate::datapack::MOD_PACK).join("data");
+    let Ok(read) = std::fs::read_dir(&data) else {
+        return;
+    };
+    let mut namespaces: Vec<String> = read
+        .flatten()
+        .filter(|e| e.path().is_dir())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|ns| ns != "minecraft")
+        .collect();
+    namespaces.sort();
+    for ns in namespaces {
+        let mut found = BTreeMap::new();
+        walk(&data.join(&ns).join(dir), "", &mut found);
+        for (path, value) in found {
+            let key = (ns.clone(), path);
+            match entries.iter_mut().find(|(k, ..)| *k == key) {
+                Some(entry) => {
+                    entry.1 = value;
+                    entry.2 = true;
+                }
+                None => entries.push((key, value, true)),
+            }
+        }
+    }
+}
+
 /// A data-driven registry: entry names in network order and their JSON.
 #[derive(Clone)]
 struct Entries {
@@ -223,6 +258,9 @@ impl SyncData {
                 .into_iter()
                 .map(|(p, v)| (("minecraft".to_owned(), p), v, false))
                 .collect();
+            if MOD_REGISTRIES.contains(key) {
+                mod_entries(resources, path, &mut entries);
+            }
             if PACK_REGISTRIES.contains(key) {
                 pack_entries(path, overlay, &mut entries);
             }

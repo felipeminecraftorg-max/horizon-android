@@ -180,7 +180,7 @@ impl Game<'_> {
         )?;
         let mut world = World::new(self.res.facts().air, self.level.seed);
         world.shape = self.level_shapes.get(dim.id());
-        world.fast_lava = dim == Dim::Nether;
+        world.fast_lava = dim.like() == Dim::Nether;
         Ok(Parked {
             world,
             streaming,
@@ -548,7 +548,7 @@ impl Game<'_> {
             .lan
             .as_ref()
             .map_or(&[][..], |h| h.hub.guests.as_slice());
-        let mut dims: Vec<Dim> = [Dim::Overworld, Dim::Nether, Dim::End]
+        let mut dims: Vec<Dim> = Dim::all()
             .into_iter()
             .filter(|d| {
                 let forced = if *d == self.dim {

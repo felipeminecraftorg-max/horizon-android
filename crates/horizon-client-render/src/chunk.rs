@@ -100,13 +100,14 @@ impl LevelShapes {
         end: LevelShape::END,
     };
     /// The shape of the level `id` (`minecraft:overworld`,
-    /// `minecraft:the_nether`, `minecraft:the_end`); others get the
-    /// Overworld's.
+    /// `minecraft:the_nether`, `minecraft:the_end`, or a data dimension's,
+    /// `crate::data_dimensions`); others get the Overworld's.
     pub fn get(&self, id: &str) -> LevelShape {
         match id {
+            "minecraft:overworld" => self.overworld,
             "minecraft:the_nether" => self.nether,
             "minecraft:the_end" => self.end,
-            _ => self.overworld,
+            _ => crate::data_dimensions::shape(id).unwrap_or(self.overworld),
         }
     }
     pub fn get_mut(&mut self, id: &str) -> &mut LevelShape {

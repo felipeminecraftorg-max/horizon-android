@@ -2885,6 +2885,9 @@ enum Dim {
     Overworld,
     Nether,
     End,
+    /// A level of the world's own, a mod's or a data pack's: its place in
+    /// `horizon_client::data_dimensions::all()`.
+    Data(u16),
 }
 impl Dim {
     fn id(self) -> &'static str {
@@ -2892,13 +2895,40 @@ impl Dim {
             Self::Overworld => "minecraft:overworld",
             Self::Nether => "minecraft:the_nether",
             Self::End => "minecraft:the_end",
+            Self::Data(i) => {
+                horizon_client::data_dimensions::id_at(i).unwrap_or("minecraft:overworld")
+            }
         }
     }
     fn from_id(id: &str) -> Self {
         match id {
+            "minecraft:overworld" => Self::Overworld,
             "minecraft:the_nether" => Self::Nether,
             "minecraft:the_end" => Self::End,
-            _ => Self::Overworld,
+            _ => horizon_client::data_dimensions::index(id).map_or(Self::Overworld, Self::Data),
+        }
+    }
+    /// Whether `id` names a level this world has.
+    fn exists(id: &str) -> bool {
+        horizon_client::data_dimensions::VANILLA.contains(&id)
+            || horizon_client::data_dimensions::index(id).is_some()
+    }
+    /// Every level of the world, in `MinecraftServer.levels` order: the
+    /// vanilla three, then the world's own.
+    fn all() -> Vec<Self> {
+        let own = horizon_client::data_dimensions::all()
+            .len()
+            .min(usize::from(u16::MAX));
+        [Self::Overworld, Self::Nether, Self::End]
+            .into_iter()
+            .chain((0..own as u16).map(Self::Data))
+            .collect()
+    }
+    /// A data dimension's definition.
+    fn data(self) -> Option<horizon_client::data_dimensions::DataDimension> {
+        match self {
+            Self::Data(i) => horizon_client::data_dimensions::get(i),
+            _ => None,
         }
     }
     /// The level's shape in a world of vanilla's dimension types.
@@ -2908,6 +2938,27 @@ impl Dim {
             Self::Overworld => LevelShape::OVERWORLD,
             Self::Nether => LevelShape::NETHER,
             Self::End => LevelShape::END,
+            Self::Data(_) => self.data().map_or(LevelShape::OVERWORLD, |d| d.shape),
+        }
+    }
+    /// `DimensionType.ambientLight`: the_nether 0.1, the_end 0.25.
+    fn ambient_light(self) -> f32 {
+        match self {
+            Self::Overworld => 0.0,
+            Self::Nether => 0.1,
+            Self::End => 0.25,
+            Self::Data(_) => self.data().map_or(0.0, |d| d.ambient_light),
+        }
+    }
+    /// The vanilla level a data dimension looks and behaves like (its sky and
+    /// `ultrawarm`), the level itself otherwise.
+    fn like(self) -> Self {
+        use horizon_client::data_dimensions::Sky;
+        match self.data() {
+            Some(d) if d.ultrawarm || d.sky == Sky::Nether => Self::Nether,
+            Some(d) if d.sky == Sky::End => Self::End,
+            Some(_) => Self::Overworld,
+            None => self,
         }
     }
 }
@@ -4013,10 +4064,10 @@ impl Game<'_> {
             })
             .collect();
         let guest_boxes = self.lan_block_trigger_boxes();
-        let dimension = match self.dim {
-            Dim::Overworld => LevelDimension::Overworld,
+        let dimension = match self.dim.like() {
             Dim::Nether => LevelDimension::Nether,
             Dim::End => LevelDimension::End,
+            _ => LevelDimension::Overworld,
         };
         let rules = self.level_rules();
         let fire_players: Vec<[f64; 3]> = self
@@ -10578,11 +10629,7 @@ impl Game<'_> {
             .flatten();
         if let Some(sprite) = shadow_sprite {
             // DimensionType.ambientLight: the_nether 0.1, the_end 0.25.
-            let ambient = match self.dim {
-                Dim::Nether => 0.1,
-                Dim::End => 0.25,
-                Dim::Overworld => 0.0,
-            };
+            let ambient = self.dim.ambient_light();
             let darken = self.sky_darken();
             let a = alpha;
             let lerp = |p: Vec3, q: Vec3| {
@@ -15323,7 +15370,7 @@ impl Game<'_> {
         }
         let (celestial, stars) = if skip_world {
             (Vec::new(), None)
-        } else if self.dim == Dim::Overworld
+        } else if self.dim.like() == Dim::Overworld
             && self.potions.effects.get("darkness").is_none()
             && self.potions.effects.get("blindness").is_none()
         {
@@ -15430,8 +15477,9 @@ impl Game<'_> {
                     ),
                     horizon_client::fog::FogType::Lava | horizon_client::fog::FogType::PowderSnow
                 ),
-            skybox: self.dim == Dim::Overworld && self.settings.horizon.sky,
-            end_sky: self.dim == Dim::End && self.settings.horizon.sky,
+            // A data dimension draws the sky its type names (`Dim::like`).
+            skybox: self.dim.like() == Dim::Overworld && self.settings.horizon.sky,
+            end_sky: self.dim.like() == Dim::End && self.settings.horizon.sky,
             end_sky_sprite: self
                 .gui
                 .atlas
@@ -15453,7 +15501,7 @@ impl Game<'_> {
             glint_alpha: self.glint_frame.alpha,
             glint_ticks: self.glint_frame.scroll_ticks(),
             clouds: (!title
-                && self.dim == Dim::Overworld
+                && self.dim.like() == Dim::Overworld
                 && horizon_client::clouds::visible(&self.settings.clouds, sky.cloud_color[3]))
             .then(|| self.gui.atlas.sprites.get("horizon/white"))
             .flatten()
