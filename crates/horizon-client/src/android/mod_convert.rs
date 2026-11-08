@@ -1115,6 +1115,43 @@ pub fn convert_modrinth_pack(
 }
 
 /// Writes the report and prompt beside the mods and returns the launcher's line.
+/// The mods a conversion couldn't turn on, kept beside the mods so the launcher's Installed
+/// lists them too (with why), not only the report: `key\tname\tversion\tstatus\twhy\treport`.
+pub const CONVERTED: &str = ".converted.tsv";
+
+fn record_not_running(dir: &Path, report: &str, entries: &[Entry]) {
+    let path = dir.join(CONVERTED);
+    let clean = |s: &str| s.replace(['\t', '\n'], " ");
+    let mut lines: Vec<String> = fs::read_to_string(&path)
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    for e in entries {
+        let key = if e.mod_id.is_empty() {
+            &e.file
+        } else {
+            &e.mod_id
+        };
+        let prefix = format!("{}\t", clean(key));
+        lines.retain(|l| !l.starts_with(&prefix));
+        let status = match e.status {
+            Status::NotYet => "not yet",
+            Status::Off => "not turned on",
+            Status::NotDownloaded => "not downloaded",
+            _ => continue,
+        };
+        lines.push(format!(
+            "{}\t{}\t{}\t{status}\t{}\t{report}",
+            clean(key),
+            clean(&e.name),
+            clean(&e.version),
+            clean(&e.reason)
+        ));
+    }
+    let _ = fs::write(&path, lines.join("\n") + "\n");
+}
+
 fn finish(
     game: &Path,
     stem: &str,
@@ -1127,6 +1164,7 @@ fn finish(
     let name = format!("{stem}-para-o-Claude.txt");
     let path = dir.join(&name);
     fs::write(&path, document(title, entries, notes)).map_err(|e| e.to_string())?;
+    record_not_running(&dir, &name, entries);
     let count = |s: Status| entries.iter().filter(|e| e.status == s).count();
     let missing = entries.iter().filter(|e| e.status.missing()).count();
     let java = entries

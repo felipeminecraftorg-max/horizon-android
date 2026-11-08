@@ -852,6 +852,35 @@ impl Catalog {
                 });
             }
         }
+        // Converted mods that don't run yet: listed with why, so an import never looks lost.
+        let converted = mods_dir.join(crate::mod_convert::CONVERTED);
+        for line in std::fs::read_to_string(&converted)
+            .unwrap_or_default()
+            .lines()
+        {
+            let p: Vec<&str> = line.split('\t').collect();
+            let &[key, name, version, status, why, report] = p.as_slice() else {
+                continue;
+            };
+            if self.local.iter().any(|item| {
+                item.file == format!("horizon-mods/{key}") || item.file == format!("lane3/{key}")
+            }) {
+                continue;
+            }
+            self.local.push(LocalItem {
+                kind: horizon_client::content_files::Kind::Mods,
+                enabled: false,
+                subtitle: format!("Java mod, {status}: {why}  •  report: Files > Mods > {report}"),
+                file: format!("converted:{key}"),
+                title: if version.is_empty() {
+                    name.to_owned()
+                } else {
+                    format!("{name} ({version})")
+                },
+                size_bytes: 0,
+                badge: "MOD",
+            });
+        }
         // Java mods whose code runs in lane 3 (`lane3/<id>/`), the ones with no folder mod.
         for entry in std::fs::read_dir(game.join(crate::lane3::DIR))
             .into_iter()
@@ -1893,6 +1922,13 @@ impl Catalog {
             return;
         };
         let game = self.config.game_home(home);
+        if item.file.starts_with("converted:") {
+            self.status = format!(
+                "{} doesn't run yet: its report (Files > Mods) says what it needs.",
+                item.title
+            );
+            return;
+        }
         let path = game.join("options.txt");
         let mut settings = horizon_client::settings::Settings::load(&path);
         match item.kind {
@@ -1960,6 +1996,17 @@ impl Catalog {
         };
         let game = self.config.game_home(home);
         let result = (|| -> Result<(), String> {
+            if let Some(key) = item.file.strip_prefix("converted:") {
+                // Forget the converted mod that doesn't run: its line goes.
+                let path = game
+                    .join("horizon-mods")
+                    .join(crate::mod_convert::CONVERTED);
+                let text = std::fs::read_to_string(&path).unwrap_or_default();
+                let prefix = format!("{key}\t");
+                let kept: Vec<&str> = text.lines().filter(|l| !l.starts_with(&prefix)).collect();
+                std::fs::write(&path, kept.join("\n") + "\n").map_err(|e| e.to_string())?;
+                return Ok(());
+            }
             if let Some(bid) = item.file.strip_prefix("builtin:") {
                 let mut on = horizon_client::mod_list::ModList::load(&game);
                 on.enabled.remove(bid);

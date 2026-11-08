@@ -28,6 +28,7 @@ dimensions); each report's prompt names what its mods miss.
 | W5 | Biome additions (Fabric `BiomeModifications` in code, NeoForge `biome_modifier` data) | partly | 1, 3 | Data ones carry. |
 | W6 | Fluids of their own | no | 2 | |
 | W7 | Painting variants, jukebox songs, enchantments, damage types (data) | yes | 1 | |
+| W8 | Mods made for Minecraft 1.20 and older (`recipes/`, `loot_tables/`, `tags/blocks/` folders, older recipe and loot formats) | no | 1 | Refused today ("Made for 1.20 or older"): TerraFirmaCraft 3.2. An upgrade from 1.20 to 1.21 data would let them carry. |
 
 ## Blocks
 
