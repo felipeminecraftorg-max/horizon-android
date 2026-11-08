@@ -85,6 +85,7 @@ pub mod transport_items;
 pub mod trial_spawner;
 pub mod turtle;
 pub mod undead;
+pub mod variants;
 pub mod vex;
 pub mod villager;
 pub mod villager_brain;

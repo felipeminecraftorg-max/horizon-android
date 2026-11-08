@@ -195,8 +195,15 @@ fn climate(m: &Mob) -> &'static str {
 fn avatar(m: &Mob) -> bool {
     matches!(&*m.kind.id, "minecraft:player" | "minecraft:mannequin")
 }
-/// The model layer key and texture for the mob's body.
+/// The model layer key and texture for the mob's body: a converted Java mod's look for it
+/// (`variants`, the mod converter's lane 2) in place of the vanilla texture.
 pub fn body(m: &Mob) -> (String, String) {
+    let (model, texture) = vanilla_body(m);
+    let texture = super::variants::pick(m.id, &model, texture);
+    (model, texture)
+}
+/// The model layer key and texture for the mob's body, as vanilla draws it.
+fn vanilla_body(m: &Mob) -> (String, String) {
     use Species as S;
     let baby = m.is_baby();
     let b = |s: &str| {

@@ -240,6 +240,8 @@ struct Entry {
     events: Vec<String>,
     /// What its code does, for the lanes the prompt names.
     features: Vec<horizon_port_pack::classes::Feature>,
+    /// What lane 2 (its behaviour as data) made of it.
+    lane2: Option<String>,
     /// What lane 3 (its Java code, run by Android's runtime) made of it.
     lane3: Option<String>,
     /// The class or member of Minecraft's or Fabric's API its code stopped at.
@@ -264,6 +266,7 @@ impl Entry {
             examples: Vec::new(),
             events: Vec::new(),
             features: Vec::new(),
+            lane2: None,
             lane3: None,
             missing_api: None,
             sha1: None,
@@ -396,6 +399,150 @@ fn installed(file: &str, check: &Check, install: Result<String, String>) -> Entr
     }
 }
 
+/// A PNG's width and height, from its header.
+fn png_size(path: &Path) -> Option<(u32, u32)> {
+    use std::io::Read;
+    let mut head = [0u8; 24];
+    fs::File::open(path).ok()?.read_exact(&mut head).ok()?;
+    if &head[..8] != b"\x89PNG\r\n\x1a\n" || &head[12..16] != b"IHDR" {
+        return None;
+    }
+    let n = |at: usize| u32::from_be_bytes([head[at], head[at + 1], head[at + 2], head[at + 3]]);
+    Some((n(16), n(20)))
+}
+
+fn pngs(dir: &Path) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_file() && p.extension().is_some_and(|e| e == "png"))
+        .collect();
+    out.sort();
+    out
+}
+
+/// Lane 2, mob looks: the textures a carried-over mod gives vanilla mobs (`assets/<ns>/textures/
+/// entity/<vanilla folder>/<name>.png` the size of that folder's vanilla textures, so made for
+/// the vanilla model), as `(folder, texture)`. Layers (eyes, overlays, saddles) and babies'
+/// textures stay out.
+fn mob_looks(carry: &Path, resources: Option<&Path>) -> Vec<(String, String)> {
+    const LAYERS: [&str; 10] = [
+        "eyes", "overlay", "glow", "emissive", "saddle", "collar", "armor", "baby", "layer",
+        "outer",
+    ];
+    let Some(resources) = resources else {
+        return Vec::new();
+    };
+    let vanilla = resources.join("assets/minecraft/textures/entity");
+    let mut out = Vec::new();
+    for ns in fs::read_dir(carry.join("assets"))
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let namespace = ns.file_name().to_string_lossy().into_owned();
+        if namespace == "minecraft" {
+            continue;
+        }
+        let entity = ns.path().join("textures/entity");
+        for dir in fs::read_dir(&entity).into_iter().flatten().flatten() {
+            let folder = dir.file_name().to_string_lossy().into_owned();
+            if folder == "player" || !dir.path().is_dir() {
+                continue;
+            }
+            let sizes: BTreeSet<(u32, u32)> = pngs(&vanilla.join(&folder))
+                .iter()
+                .filter_map(|p| png_size(p))
+                .collect();
+            if sizes.is_empty() {
+                continue;
+            }
+            for png in pngs(&dir.path()) {
+                let stem = png
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_ascii_lowercase())
+                    .unwrap_or_default();
+                if LAYERS.iter().any(|l| stem.contains(l))
+                    || !png_size(&png).is_some_and(|s| sizes.contains(&s))
+                {
+                    continue;
+                }
+                out.push((
+                    folder.clone(),
+                    format!("{namespace}:entity/{folder}/{stem}"),
+                ));
+            }
+        }
+    }
+    out
+}
+
+/// Keeps mod `id`'s mob looks in the game's table (`mobs/variants.rs`), in place of its old ones.
+fn record_looks(game: &Path, id: &str, looks: &[(String, String)]) -> Result<(), String> {
+    let path = game.join(horizon_client::mobs::variants::FILE);
+    let old = fs::read_to_string(&path).unwrap_or_default();
+    let prefix = format!("{id}\t");
+    let mut lines: Vec<String> = old
+        .lines()
+        .filter(|l| !l.starts_with(&prefix))
+        .map(str::to_owned)
+        .collect();
+    lines.extend(
+        looks
+            .iter()
+            .map(|(folder, texture)| format!("{id}\t{folder}\t{texture}")),
+    );
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    fs::write(&path, lines.join("\n") + "\n").map_err(|e| e.to_string())
+}
+
+/// Lane 2 for a carried-over mod with no entities of its own: its looks for vanilla mobs. A mod
+/// with nothing else to run (`Doesn't run`) is installed for them. Returns the entry as it
+/// comes out.
+fn lane2(game: &Path, carry: &Path, check: &Check, mods: &mut Mods, entry: Entry) -> Entry {
+    use horizon_port_pack::classes::Feature as F;
+    if check.code.features.contains_key(&F::Entity)
+        || check.code.features.contains_key(&F::Renderer)
+    {
+        return entry;
+    }
+    let looks = mob_looks(carry, resources().as_deref());
+    if looks.is_empty() {
+        return entry;
+    }
+    let mut entry = entry;
+    if entry.status == Status::NotYet {
+        match mods.install(carry) {
+            Ok(_) => {
+                entry.status = Status::Partly;
+                entry.reason = "its looks for vanilla mobs run (lane 2)".into();
+            }
+            Err(why) => {
+                entry.lane2 = Some(format!(
+                    "{} looks for vanilla mobs, not installed: {why}",
+                    looks.len()
+                ));
+                return entry;
+            }
+        }
+    }
+    let folders: BTreeSet<&str> = looks.iter().map(|(f, _)| f.as_str()).collect();
+    let folders: Vec<&str> = folders.into_iter().collect();
+    entry.lane2 = Some(match record_looks(game, &check.mod_id, &looks) {
+        Ok(()) => format!(
+            "{} looks for vanilla mobs ({}), on: each mob takes one or the vanilla look",
+            looks.len(),
+            folders.join(", ")
+        ),
+        Err(e) => format!("{} looks for vanilla mobs, not recorded: {e}", looks.len()),
+    });
+    entry
+}
+
 /// One jar on its own (a pack's own jar, or one the player imported): checked, converted,
 /// and turned on when anything of it runs.
 fn convert_one(file: &str, jar: &Path, scratch: &Path, mods: &mut Mods) -> Entry {
@@ -404,9 +551,15 @@ fn convert_one(file: &str, jar: &Path, scratch: &Path, mods: &mut Mods) -> Entry
     let mut entry = match check::check(jar, &out) {
         Err(why) => Entry::plain(file, Status::NotYet, format!("can't be read: {why}")),
         Ok(c) if c.verdict == Verdict::No => {
-            Entry::checked(file, &c, Status::NotYet, c.summary.clone())
+            let e = Entry::checked(file, &c, Status::NotYet, c.summary.clone());
+            let game = mods.game;
+            lane2(game, &out.join("carry"), &c, mods, e)
         }
-        Ok(c) => installed(file, &c, mods.install(&out.join("carry"))),
+        Ok(c) => {
+            let e = installed(file, &c, mods.install(&out.join("carry")));
+            let game = mods.game;
+            lane2(game, &out.join("carry"), &c, mods, e)
+        }
     };
     let _ = fs::remove_dir_all(&out);
     let names = [entry.mod_id.clone(), entry.name.clone()];
@@ -681,9 +834,13 @@ pub fn convert_pack(
                 |report: horizon_port_pack::carry::Report| check::assess(jar, info, &report),
             ) {
                 Ok(c) if c.verdict == Verdict::No => {
-                    Entry::checked(file, &c, Status::NotYet, c.summary.clone())
+                    let e = Entry::checked(file, &c, Status::NotYet, c.summary.clone());
+                    lane2(game, &out.join("carry"), &c, &mut mods, e)
                 }
-                Ok(c) => installed(file, &c, mods.install(&out.join("carry"))),
+                Ok(c) => {
+                    let e = installed(file, &c, mods.install(&out.join("carry")));
+                    lane2(game, &out.join("carry"), &c, &mut mods, e)
+                }
                 Err(why) => Entry::plain(
                     file,
                     Status::NotYet,
@@ -971,6 +1128,9 @@ fn document(title: &str, entries: &[Entry], notes: &[String]) -> String {
             for l in &e.left {
                 out.push_str(&format!("    falta: {l}\n"));
             }
+            if let Some(l2) = &e.lane2 {
+                out.push_str(&format!("    comportamento como dado (faixa 2): {l2}\n"));
+            }
             if let Some(l3) = &e.lane3 {
                 out.push_str(&format!("    código Java (faixa 3): {l3}\n"));
             }
@@ -1056,6 +1216,9 @@ fn document(title: &str, entries: &[Entry], notes: &[String]) -> String {
         }
         for lane in lanes(e) {
             out.push_str(&format!("- lane: {lane}\n"));
+        }
+        if let Some(l2) = &e.lane2 {
+            out.push_str(&format!("- lane 2 (behaviour as data): {l2}\n"));
         }
         if let Some(l3) = &e.lane3 {
             out.push_str(&format!("- lane 3 (its Java code on ART): {l3}\n"));

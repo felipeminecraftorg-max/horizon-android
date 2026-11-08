@@ -2690,6 +2690,7 @@ impl Game<'_> {
         self.remove_remote_object(id as u32);
         self.remove_remote_projectile(id as u32);
         self.persist.uuids.remove(&(id as u32));
+        horizon_client::mobs::variants::forget(id as u32);
         if let Some(r) = self.remote.as_mut() {
             r.glowing.remove(&id);
             r.entities.remove(&id);
@@ -3169,6 +3170,7 @@ impl Game<'_> {
                     p.id as u32,
                     horizon_client::lan::playerdata::uuid_ints(p.uuid),
                 );
+                horizon_client::mobs::variants::remember(p.id as u32, p.uuid);
                 self.spawn_entity(p.id, &kind, p.position, rotation);
                 // Entity.recreateFromPacket: setDeltaMovement(packet.getMovement()).
                 self.remote_motion(p.id, p.velocity);
