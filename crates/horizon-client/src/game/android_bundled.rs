@@ -114,6 +114,10 @@ pub(super) mod compat;
 #[path = "android_bundled/lane3.rs"]
 pub(super) mod lane3;
 
+#[cfg(target_os = "android")]
+#[path = "android_bundled/sound_physics.rs"]
+pub(super) mod sound_physics;
+
 /// A player breaks a block (`native_destroy_block`): a lane 3 mod may keep it; otherwise a chop
 /// or a vein takes the rest.
 pub(super) fn native_destroy_block(
@@ -160,6 +164,15 @@ pub(super) fn native_right_click_block(
 }
 
 /// The server's tick starts or ends: lane 3 mods start with the first and hear each.
+/// Every frame, once the listener is placed: sound physics measures the new sounds.
+pub(super) fn native_sound_physics(game: &mut Game<'_>, listener: [f64; 3], underwater: bool) {
+    let _ = (&game, &listener, &underwater);
+    #[cfg(target_os = "android")]
+    {
+        sound_physics::run(&mut *game, listener, underwater);
+    }
+}
+
 pub(super) fn native_server_tick(game: &mut Game<'_>, end: bool) {
     let _ = (&game, &end);
     #[cfg(target_os = "android")]

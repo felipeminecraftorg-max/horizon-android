@@ -42,7 +42,7 @@ const WORK: &str = "modpacks";
 /// Java mods whose code Horizon runs in a version of its own (`game/android_bundled/compat.rs`):
 /// the mod ids and Modrinth slugs that ask for it, the built-in mod it turns on, its title, and
 /// how Horizon's version plays.
-static KNOWN: [(&[&str], &str, &str, &str); 3] = [
+static KNOWN: [(&[&str], &str, &str, &str); 4] = [
     (
         &["rightclickharvest", "right-click-harvest"],
         "rightclickharvest",
@@ -75,6 +75,18 @@ static KNOWN: [(&[&str], &str, &str, &str); 3] = [
         "Veinminer",
         "sneak while mining an ore with the right tool to mine its vein, up to 64 blocks (the \
          Java mod's key is sneak here); it stops before the tool breaks",
+    ),
+    (
+        &[
+            "sound_physics_remastered",
+            "sound-physics-remastered",
+            "soundphysics",
+            "sound-physics",
+        ],
+        "sound_physics_remastered",
+        "Sound Physics",
+        "sounds are muffled by the blocks between you and them, echo in rooms and caves (longer \
+         in bigger ones) and are dulled while your head is under water",
     ),
 ];
 

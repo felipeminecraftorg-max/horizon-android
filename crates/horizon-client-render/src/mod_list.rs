@@ -11,7 +11,7 @@ use std::{
 
 pub const FILE: &str = "horizon-mods.txt";
 /// Fixed native modules compiled into Android APKs, all opt-in.
-pub const ANDROID_BUNDLED: [(&str, &str, &str); 7] = [
+pub const ANDROID_BUNDLED: [(&str, &str, &str); 8] = [
     (
         "zoom",
         "Zoom",
@@ -48,6 +48,11 @@ pub const ANDROID_BUNDLED: [(&str, &str, &str); 7] = [
         "veinminer",
         "Veinminer",
         "Sneak while mining an ore with the right tool to mine its whole vein",
+    ),
+    (
+        "sound_physics_remastered",
+        "Sound Physics",
+        "Sounds muffled behind walls, echoing in caves and dulled under water",
     ),
 ];
 

@@ -6,6 +6,7 @@
 //! - Right Click Harvest: right-clicking a grown crop picks it and replants it.
 //! - Tree Harvester: breaking a natural tree's log with an axe fells the tree (not sneaking).
 //! - Veinminer: sneaking while mining an ore with the right tool mines its vein.
+//! - Sound Physics (Sound Physics Remastered): `sound_physics.rs`, on the window's side.
 //!
 //! They run where the world runs (the server thread, a LAN host, a dedicated server), for every
 //! player, through the game's own block breaking: drops, experience, tool wear, hunger and
@@ -19,7 +20,7 @@ pub(crate) const TREE_HARVESTER: &str = "treeharvester";
 pub(crate) const VEINMINER: &str = "veinminer";
 
 /// The bundled versions: id, title, description (Options > Mods and the launcher).
-pub(crate) const MODS: [(&str, &str, &str); 3] = [
+pub(crate) const MODS: [(&str, &str, &str); 4] = [
     (
         RIGHT_CLICK_HARVEST,
         "Right Click Harvest",
@@ -34,6 +35,11 @@ pub(crate) const MODS: [(&str, &str, &str); 3] = [
         VEINMINER,
         "Veinminer",
         "Sneak while mining an ore with the right tool to mine its whole vein",
+    ),
+    (
+        super::sound_physics::SOUND_PHYSICS,
+        "Sound Physics",
+        "Sounds muffled behind walls, echoing in caves and dulled under water",
     ),
 ];
 

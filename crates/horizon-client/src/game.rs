@@ -14945,6 +14945,7 @@ impl Game<'_> {
         let (view_yaw, view_pitch) = self.shaken_view(view_yaw, view_pitch);
         self.audio
             .set_listener([camera.x, camera.y, camera.z], view_yaw, view_pitch);
+        android_bundled::native_sound_physics(self, [camera.x, camera.y, camera.z], underwater);
         let block = [
             camera.x.floor() as i32,
             camera.y.floor() as i32,

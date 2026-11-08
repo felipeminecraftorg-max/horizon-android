@@ -19,6 +19,13 @@ Veinminer), written from their behaviour. The mod converter
 (`android/mod_convert.rs`, `KNOWN`) turns one on when a converted pack has the
 Java mod; like the others, each is off until turned on.
 
+`sound_physics.rs` is Horizon Android's own version of Sound Physics Remastered,
+written from what the mod does, not from its code: the window measures each new
+world sound against its copy of the world (the blocks between the sound and the
+listener, rays bounced around the sound) and the mixer
+(`horizon_client::audio::Physics`) muffles it and feeds four echoes. Converting
+the mod's jar turns it on.
+
 `lane3.rs` starts the Java mods the converter made ready (lane 3: their own
 code, run by Android's runtime; the Java half is
 `packaging/android/java/dev/horizon/android/lane3/`), fires the Fabric events

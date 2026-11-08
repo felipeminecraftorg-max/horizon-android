@@ -50,6 +50,23 @@ struct Channel {
     started: Option<(String, std::time::Instant)>,
     /// Directional Audio's ears for it.
     ears: Ears,
+    /// Sound physics' last word on it (`Audio::set_physics`), and when.
+    physics: Option<(Physics, std::time::Instant)>,
+    /// The muffling filter's last output.
+    muffled: f32,
+}
+
+/// What the blocks around a world sound do to it (sound physics, Sound Physics Remastered's
+/// port): measured by the game from the world (`game/android_bundled/sound_physics.rs`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Physics {
+    /// The gain of the sound heard directly, through what's between.
+    pub gain: f32,
+    /// How much of its highs get through (the gain at 5 kHz, as OpenAL's EFX low-pass).
+    pub highs: f32,
+    /// How much feeds each echo of the space around it, shortest first
+    /// (`REVERB_DECAYS`).
+    pub sends: [f32; 4],
 }
 #[derive(Default)]
 struct Mixer {
@@ -69,6 +86,11 @@ struct Mixer {
     limiter_peak: f32,
     /// `options.directionalAudio`: mono sources rendered for headphones.
     directional: bool,
+    /// Sound physics on (`Audio::set_sound_physics`), and the listener under water.
+    physics: bool,
+    underwater: bool,
+    /// The echoes of sound physics, made when first needed, and their input this buffer.
+    reverb: Option<Box<Reverb>>,
     /// The output device the stream was opened on (`Library.currentDeviceName`).
     #[cfg(feature = "audio")]
     device_name: String,
@@ -404,6 +426,8 @@ impl Backend for MixerBackend {
                 world: self.world,
                 started: None,
                 ears: Ears::default(),
+                physics: None,
+                muffled: 0.0,
             },
         );
         Some(id)
@@ -668,6 +692,87 @@ fn hear(ears: &mut Ears, s: f32, delay: [f32; 2], set: &EarSettings) -> [f32; 2]
     ears.at = (ears.at + 1) % EAR_RING;
     out
 }
+/// The echoes' decay times in seconds, short room to great cave: a sound's `Physics::sends`
+/// feed each.
+pub const REVERB_DECAYS: [f32; 4] = [0.15, 0.55, 1.68, 4.14];
+/// Each echo's four delay lines, in milliseconds (no two share a factor).
+const REVERB_LINES: [[f32; 4]; 4] = [
+    [7.3, 9.1, 11.3, 13.7],
+    [23.1, 29.3, 31.7, 37.9],
+    [41.1, 47.3, 53.3, 61.7],
+    [67.1, 73.3, 79.7, 89.3],
+];
+/// How loud the echoes come back.
+const REVERB_LEVEL: f32 = 0.35;
+
+/// One echo: a four-line feedback delay network, its lines mixed by a Householder reflection
+/// (lossless) and each line's gain set for the decay time, highs damped on every pass.
+struct Echo {
+    lines: [Vec<f32>; 4],
+    at: [usize; 4],
+    gain: [f32; 4],
+    damped: [f32; 4],
+    damping: f32,
+}
+impl Echo {
+    fn new(decay: f32, lines_ms: [f32; 4], rate: u32) -> Self {
+        let fs = rate.max(1) as f32;
+        let lengths = lines_ms.map(|ms| ((ms / 1000.0 * fs) as usize).max(1));
+        Self {
+            lines: lengths.map(|n| vec![0.0; n]),
+            at: [0; 4],
+            gain: lengths.map(|n| 10f32.powf(-3.0 * n as f32 / fs / decay)),
+            damped: [0.0; 4],
+            damping: 1.0 - (-2.0 * std::f32::consts::PI * 6_000.0 / fs).exp(),
+        }
+    }
+    fn step(&mut self, input: f32) -> [f32; 2] {
+        let mut out = [0.0f32; 4];
+        for i in 0..4 {
+            let read = self.lines[i][self.at[i]];
+            self.damped[i] += self.damping * (read - self.damped[i]);
+            if self.damped[i].abs() < 1e-20 {
+                self.damped[i] = 0.0;
+            }
+            out[i] = self.damped[i] * self.gain[i];
+        }
+        let half = (out[0] + out[1] + out[2] + out[3]) * 0.5;
+        for i in 0..4 {
+            let n = self.lines[i].len();
+            self.lines[i][self.at[i]] = out[i] - half + input * 0.5;
+            self.at[i] = (self.at[i] + 1) % n;
+        }
+        [out[0] + out[2], out[1] + out[3]]
+    }
+}
+/// Sound physics' echoes and what the sources sent them this buffer.
+struct Reverb {
+    rate: u32,
+    echoes: [Echo; 4],
+    input: [Vec<f32>; 4],
+}
+impl Reverb {
+    fn new(rate: u32) -> Self {
+        Self {
+            rate,
+            echoes: std::array::from_fn(|i| Echo::new(REVERB_DECAYS[i], REVERB_LINES[i], rate)),
+            input: std::array::from_fn(|_| Vec::new()),
+        }
+    }
+}
+/// The one-pole low-pass coefficient that leaves `highs` of a 5 kHz tone (OpenAL EFX's
+/// low-pass `GAINHF`); 1 passes everything.
+fn muffle_coefficient(highs: f32, rate: u32) -> f32 {
+    let highs = highs.clamp(1e-4, 1.0);
+    if highs >= 0.999 {
+        return 1.0;
+    }
+    let cutoff = 5_000.0 / (1.0 / (highs * highs) - 1.0).sqrt();
+    1.0 - (-2.0 * std::f32::consts::PI * cutoff / rate.max(1) as f32).exp()
+}
+/// How much under water dulls every world sound.
+const UNDERWATER_HIGHS: f32 = 0.2;
+
 /// How one source is mixed into this buffer.
 enum Voice {
     /// A stereo buffer, as OpenAL renders one: its channels as they are, at its gain
@@ -730,7 +835,9 @@ fn mix(mixer: &mut Mixer, data: &mut [f32], channels: usize, rate: u32) {
     let binaural = mixer.directional && !shared && channels >= 2;
     let dot = |a: [f64; 3], b: [f64; 3]| (a[0] * b[0] + a[1] * b[1] + a[2] * b[2]) as f32;
     // Gains and pans per source for this buffer.
-    let mut voices: Vec<(ChannelId, Voice, f64)> = Vec::new();
+    let mut voices: Vec<(ChannelId, Voice, f64, f32, [f32; 4])> = Vec::new();
+    let physics_on = mixer.physics;
+    let underwater = mixer.underwater && physics_on;
     for (id, c) in &mixer.channels {
         let Some((_, source_rate, width)) = &c.samples else {
             continue;
@@ -788,14 +895,49 @@ fn mix(mixer: &mut Mixer, data: &mut [f32], channels: usize, rate: u32) {
             Voice::Panned([left, right].map(|pan| gain * pan), gain)
         };
         let step = f64::from(*source_rate) / f64::from(rate) * f64::from(c.pitch.max(0.0));
-        voices.push((*id, voice, step));
+        // Sound physics: a world sound muffled by what's between, and its echoes.
+        let world_sound = physics_on && *width == 1 && !c.relative && c.linear.is_some();
+        let (mut muffle, mut sends) = (1.0, [0.0; 4]);
+        if world_sound {
+            let mut highs = 1.0;
+            if let Some((p, _)) = &c.physics {
+                highs = p.highs;
+                sends = p.sends.map(|g| g * gain);
+            }
+            if underwater {
+                highs *= UNDERWATER_HIGHS;
+                sends = sends.map(|g| g * 0.5);
+            }
+            muffle = muffle_coefficient(highs, rate);
+        }
+        let voice = match (voice, c.physics.as_ref().filter(|_| world_sound)) {
+            (Voice::Panned(lr, g), Some((p, _))) => {
+                Voice::Panned(lr.map(|x| x * p.gain), g * p.gain)
+            }
+            (Voice::Binaural(g, set), Some((p, _))) => Voice::Binaural(g * p.gain, set),
+            (v, _) => v,
+        };
+        voices.push((*id, voice, step, muffle, sends));
+    }
+    let frames_out_count = data.len() / channels.max(1);
+    let any_send = voices.iter().any(|v| v.4.iter().any(|g| *g > 0.0));
+    if any_send && mixer.reverb.as_ref().is_none_or(|r| r.rate != rate) {
+        mixer.reverb = Some(Box::new(Reverb::new(rate)));
+    }
+    if let Some(r) = &mut mixer.reverb {
+        for input in &mut r.input {
+            input.clear();
+            input.resize(frames_out_count, 0.0);
+        }
     }
     mixer.cameras = cameras;
     let frames_out = (data.len() / channels.max(1)).max(1);
-    for (id, voice, step) in voices {
+    let mut reverb = mixer.reverb.take();
+    for (id, voice, step, muffle, sends) in voices {
         let Some(c) = mixer.channels.get_mut(&id) else {
             continue;
         };
+        let sending = sends.iter().any(|g| *g > 0.0);
         let Some((samples, _, width)) = c.samples.clone() else {
             continue;
         };
@@ -832,7 +974,16 @@ fn mix(mixer: &mut Mixer, data: &mut [f32], channels: usize, rate: u32) {
                     }
                 }
                 Voice::Panned([left, right], gain) => {
-                    let s = sample(0);
+                    let mut s = sample(0);
+                    if sending && let Some(r) = &mut reverb {
+                        for (k, g) in sends.iter().enumerate() {
+                            r.input[k][f] += s * g;
+                        }
+                    }
+                    if muffle < 1.0 {
+                        c.muffled += muffle * (s - c.muffled);
+                        s = c.muffled;
+                    }
                     if channels >= 2 {
                         frame[0] += s * left;
                         frame[1] += s * right;
@@ -844,7 +995,17 @@ fn mix(mixer: &mut Mixer, data: &mut [f32], channels: usize, rate: u32) {
                 Voice::Binaural(gain, set) => {
                     let along = (f + 1) as f32 / frames_out as f32;
                     let delay = [0, 1].map(|e| from[e] + (to[e] - from[e]) * along);
-                    let s = sample(0) * gain * BINAURAL_LEVEL;
+                    let mut s = sample(0);
+                    if sending && let Some(r) = &mut reverb {
+                        for (k, g) in sends.iter().enumerate() {
+                            r.input[k][f] += s * g;
+                        }
+                    }
+                    if muffle < 1.0 {
+                        c.muffled += muffle * (s - c.muffled);
+                        s = c.muffled;
+                    }
+                    let s = s * gain * BINAURAL_LEVEL;
                     let [l, r] = hear(&mut c.ears, s, delay, set);
                     frame[0] += l;
                     frame[1] += r;
@@ -855,6 +1016,26 @@ fn mix(mixer: &mut Mixer, data: &mut [f32], channels: usize, rate: u32) {
         if let Voice::Binaural(_, set) = &voice {
             c.ears.delay = Some(set.delay);
         }
+    }
+    // The echoes, every buffer while they ring (a tail keeps going after its sound stops).
+    if let Some(r) = &mut reverb {
+        for (f, frame) in data.chunks_mut(channels).enumerate() {
+            let mut out = [0.0f32; 2];
+            for (k, echo) in r.echoes.iter_mut().enumerate() {
+                let [l, rr] = echo.step(r.input[k].get(f).copied().unwrap_or(0.0));
+                out[0] += l;
+                out[1] += rr;
+            }
+            if channels >= 2 {
+                frame[0] += out[0] * REVERB_LEVEL;
+                frame[1] += out[1] * REVERB_LEVEL;
+            } else {
+                frame[0] += (out[0] + out[1]) * 0.5 * REVERB_LEVEL;
+            }
+        }
+    }
+    if physics_on {
+        mixer.reverb = reverb;
     }
     // Limit the whole buffer together, preserving waveform and stereo balance
     // instead of flattening each overloaded sample; release over 200 ms
@@ -1228,6 +1409,60 @@ impl Audio {
         Bound {
             engine: &mut self.engine,
             backend: &mut self.backend,
+        }
+    }
+    /// Sound physics on or off, and whether the listener is under water. Off, the echoes go and
+    /// every sound plays as vanilla's.
+    pub fn set_sound_physics(&self, on: bool, underwater: bool) {
+        if let Ok(mut m) = self.backend.mixer.lock() {
+            if !on && m.physics {
+                m.reverb = None;
+                for c in m.channels.values_mut() {
+                    c.physics = None;
+                }
+            }
+            m.physics = on;
+            m.underwater = underwater;
+        }
+    }
+    /// World sounds sound physics hasn't measured yet, or measured longer than `again` ago
+    /// and still playing on a loop: their channels and where they are.
+    pub fn physics_wanted(&self, again: std::time::Duration) -> Vec<(ChannelId, [f64; 3])> {
+        let Ok(m) = self.backend.mixer.lock() else {
+            return Vec::new();
+        };
+        if !m.physics {
+            return Vec::new();
+        }
+        let now = std::time::Instant::now();
+        m.channels
+            .iter()
+            .filter(|(_, c)| {
+                !c.relative
+                    && c.linear.is_some()
+                    && matches!(c.state, State::Initial | State::Playing)
+                    && match &c.physics {
+                        None => true,
+                        Some((_, at)) => c.looping && now.duration_since(*at) >= again,
+                    }
+            })
+            .map(|(id, c)| {
+                (
+                    *id,
+                    [f64::from(c.at[0]), f64::from(c.at[1]), f64::from(c.at[2])],
+                )
+            })
+            .collect()
+    }
+    /// What sound physics measured for each channel.
+    pub fn set_physics(&self, measured: Vec<(ChannelId, Physics)>) {
+        if let Ok(mut m) = self.backend.mixer.lock() {
+            let now = std::time::Instant::now();
+            for (id, p) in measured {
+                if let Some(c) = m.channels.get_mut(&id) {
+                    c.physics = Some((p, now));
+                }
+            }
         }
     }
     /// `options.directionalAudio`: render mono sources for headphones (`ear_settings`).
@@ -1732,6 +1967,8 @@ mod tests {
             world: 0,
             started: None,
             ears: Ears::default(),
+            physics: None,
+            muffled: 0.0,
         }
     }
 
@@ -2149,6 +2386,63 @@ mod tests {
         let behind = ear_settings([0.0, 0.0, -3.0], 48_000);
         assert_eq!(behind.delay, ahead.delay);
         assert!(behind.back < 0.6, "{behind:?}");
+    }
+
+    #[test]
+    fn sound_physics_muffles_what_is_behind_walls_and_echoes_in_caves() {
+        assert_eq!(muffle_coefficient(1.0, 48_000), 1.0);
+        // Five percent of a 5 kHz tone left: a 250 Hz one-pole low-pass.
+        let k = muffle_coefficient(0.05, 48_000);
+        assert!((k - 0.0322).abs() < 1e-3, "{k}");
+        // The highest tone a buffer can hold, behind a wall and in the open.
+        let hum: Vec<f32> = (0..256)
+            .map(|i| if i % 2 == 0 { 0.5 } else { -0.5 })
+            .collect();
+        let loudness = |physics: Option<Physics>| {
+            let mut m = Mixer {
+                physics: true,
+                ..Mixer::default()
+            };
+            let mut c = channel(hum.clone(), Some(64.0), [0.0, 0.0, 4.0], false);
+            c.physics = physics.map(|p| (p, std::time::Instant::now()));
+            m.channels.insert(1, c);
+            let mut data = [0.0f32; 2 * 200];
+            mix(&mut m, &mut data, 2, 48_000);
+            data[200..].iter().map(|s| s.abs()).sum::<f32>()
+        };
+        let open = loudness(None);
+        let walled = loudness(Some(Physics {
+            gain: 0.8,
+            highs: 0.05,
+            sends: [0.0; 4],
+        }));
+        assert!(walled < open * 0.1, "{walled} {open}");
+        // A click in a cave rings on after it stops; in the open it doesn't.
+        let ring = |sends: [f32; 4]| {
+            let mut m = Mixer {
+                physics: true,
+                ..Mixer::default()
+            };
+            let mut click = vec![0.0f32; 64];
+            click[0] = 1.0;
+            let mut c = channel(click, Some(64.0), [0.0, 0.0, 4.0], false);
+            c.physics = Some((
+                Physics {
+                    gain: 1.0,
+                    highs: 1.0,
+                    sends,
+                },
+                std::time::Instant::now(),
+            ));
+            m.channels.insert(1, c);
+            let mut first = vec![0.0f32; 2 * 4800];
+            mix(&mut m, &mut first, 2, 48_000);
+            let mut later = vec![0.0f32; 2 * 4800];
+            mix(&mut m, &mut later, 2, 48_000);
+            later.iter().map(|s| s * s).sum::<f32>()
+        };
+        assert_eq!(ring([0.0; 4]), 0.0);
+        assert!(ring([0.0, 0.0, 0.5, 0.5]) > 1e-4);
     }
 
     #[test]
