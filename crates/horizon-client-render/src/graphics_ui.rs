@@ -54,6 +54,9 @@ pub enum H {
     HdrPaperWhite,
     HdrUiBrightness,
     BatteryMode,
+    /// Adaptive frame generation (`Graphics::frame_gen`).
+    AdaptiveFrameGen,
+    FrameGenTarget,
     ShadowCache,
     GraphicsApi,
 }
@@ -287,6 +290,16 @@ pub fn rows(level: Level) -> Vec<Row> {
                 "Renders the world smaller and rebuilds it with TAA. Faster, softer.",
             ),
             h(
+                H::AdaptiveFrameGen,
+                Saves,
+                "Below the target frame rate, fills in only the missing frames. Off by default.",
+            ),
+            h(
+                H::FrameGenTarget,
+                None,
+                "The frame rate Adaptive Frame Gen keeps. Auto: the display's refresh rate.",
+            ),
+            h(
                 H::ScreenshotQuality,
                 None,
                 "F2 screenshots at this many times the game's resolution. Higher takes longer.",
@@ -479,6 +492,7 @@ impl H {
                 Some(i as f32 / (LOD_STEPS.len() - 1) as f32)
             }
             H::Workers => Some(g.workers as f32 / max_workers() as f32),
+            H::FrameGenTarget => Some(frame_gen_step(g.frame_gen_target) as f32 / FRAME_GEN_STEPS as f32),
             H::ResolutionScale => Some((g.resolution_scale as f32 - 50.0) / 150.0),
             // Auto, then 10..480 by 10.
             H::HdrPaperWhite => Some(g.hdr_paper_white as f32 / 480.0),
@@ -497,6 +511,7 @@ impl H {
             H::ChunkUpdates => Some(64),
             H::UploadBudget => Some((UPLOAD_STEPS.len() - 1) as u32),
             H::Workers => Some(max_workers()),
+            H::FrameGenTarget => Some(FRAME_GEN_STEPS),
             H::ResolutionScale => Some(30),
             H::HdrPaperWhite => Some(41),
             H::HdrPeak => Some(37),
@@ -593,6 +608,11 @@ impl H {
                 Text::literal("Shortcut: ").append(crate::keybinds::display_name(&g.hdr_key))
             }
             H::BatteryMode => labelled("Battery Mode", on_off(g.battery)),
+            H::AdaptiveFrameGen => labelled("Adaptive Frame Gen", on_off(g.frame_gen)),
+            H::FrameGenTarget => match g.frame_gen_target {
+                0 => labelled("Frame Gen Target", "Auto (display)"),
+                n => labelled("Frame Gen Target", lang::tr("%s FPS", &[&n])),
+            },
             H::ShadowCache => labelled("Shadow Cache", on_off(g.shadow_cache)),
             H::GraphicsApi => labelled("Graphics API", g.api.label()),
             H::Overlay => labelled(
@@ -617,6 +637,9 @@ impl H {
                 g.lod_distance = LOD_STEPS[(v * (LOD_STEPS.len() - 1) as f32).round() as usize]
             }
             H::Workers => g.workers = (v * max_workers() as f32).round() as u32,
+            H::FrameGenTarget => {
+                g.frame_gen_target = frame_gen_target((v * FRAME_GEN_STEPS as f32).round() as u32)
+            }
             H::ResolutionScale => g.resolution_scale = (50.0 + (v * 30.0).round() * 5.0) as u32,
             H::HdrPaperWhite => g.hdr_paper_white = (v * 48.0).round() as u32 * 10,
             H::HdrPeak => {
@@ -680,6 +703,7 @@ impl H {
             }
             H::Hdr => g.hdr = !g.hdr,
             H::BatteryMode => g.battery = !g.battery,
+            H::AdaptiveFrameGen => g.frame_gen = !g.frame_gen,
             H::ShadowCache => g.shadow_cache = !g.shadow_cache,
             H::GraphicsApi => {
                 // Android selects the backend before creating the renderer in
@@ -704,6 +728,20 @@ impl H {
             }
             _ => {}
         }
+    }
+}
+/// Adaptive Frame Gen's target: Auto, then 30..=240 frames per second by 5.
+const FRAME_GEN_STEPS: u32 = 43;
+fn frame_gen_target(step: u32) -> u32 {
+    match step.min(FRAME_GEN_STEPS) {
+        0 => 0,
+        n => 30 + (n - 1) * 5,
+    }
+}
+fn frame_gen_step(target: u32) -> u32 {
+    match target {
+        0 => 0,
+        n => (n.clamp(30, 240) - 30) / 5 + 1,
     }
 }
 fn max_workers() -> u32 {
@@ -735,6 +773,12 @@ impl Item {
                 | H::HdrPaperWhite
                 | H::HdrUiBrightness,
             ) if !s.horizon.hdr => Some("Turn HDR on to use it."),
+            Item::Horizon(H::AdaptiveFrameGen | H::FrameGenTarget) if s.horizon.hdr => {
+                Some("Adaptive Frame Gen does not run with HDR output.")
+            }
+            Item::Horizon(H::FrameGenTarget) if !s.horizon.frame_gen => {
+                Some("Turn Adaptive Frame Gen on to use it.")
+            }
             _ => None,
         }
     }
@@ -751,6 +795,7 @@ impl Item {
             Item::Horizon(H::DitherCutoutMips) => g.dither_cutout_mips,
             Item::Horizon(H::Hdr) => g.hdr,
             Item::Horizon(H::BatteryMode) => g.battery,
+            Item::Horizon(H::AdaptiveFrameGen) => g.frame_gen,
             Item::Horizon(H::ShadowCache) => g.shadow_cache,
             Item::Vanilla(Opt::ViewBobbing) => s.view_bobbing,
             Item::Vanilla(Opt::Vsync) => s.vsync,
@@ -812,6 +857,8 @@ impl Item {
                     | H::PresentMode
                     | H::Workers
                     | H::BatteryMode
+                    | H::AdaptiveFrameGen
+                    | H::FrameGenTarget
                     | H::ShadowCache
                     | H::GraphicsApi
             ) | Item::Vanilla(

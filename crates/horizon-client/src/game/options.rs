@@ -484,6 +484,7 @@ impl Game<'_> {
                 s.horizon.taa,
                 s.horizon.upscaling.ratio(),
             );
+            r.set_adaptive_frame_gen(s.horizon.frame_gen, s.horizon.frame_gen_target);
             r.set_hdr(
                 s.horizon.hdr,
                 s.horizon.paper_white_nits() as f32,

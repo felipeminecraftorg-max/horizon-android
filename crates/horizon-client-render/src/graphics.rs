@@ -413,6 +413,11 @@ pub struct Graphics {
     /// pack uniforms still match. Off by default: vanilla loaders redraw every frame
     /// (or every `shadowInterval`), and a hit with a stale key shows old shadows.
     pub shadow_cache: bool,
+    /// Adaptive frame generation: made frames fill in the frames missing below
+    /// `frame_gen_target`, never more (`gfx::frame_warp`). Off by default.
+    pub frame_gen: bool,
+    /// Adaptive frame generation's target frame rate; 0 is the display's refresh rate.
+    pub frame_gen_target: u32,
     /// The graphics API (Windows only; see `GraphicsApi`).
     pub api: GraphicsApi,
     /// The shader pack picked in `shaderpacks/` (`shader_pack_list`); empty: none. Its key is
@@ -453,6 +458,8 @@ impl Default for Graphics {
             hdr_key: "key.keyboard.unknown".into(),
             battery: false,
             shadow_cache: false,
+            frame_gen: false,
+            frame_gen_target: 0,
             api: GraphicsApi::Auto,
             shader_pack: String::new(),
         }
@@ -556,6 +563,13 @@ impl Graphics {
                 "hdrKey" if value.starts_with("key.") => g.hdr_key = value.to_owned(),
                 "batteryMode" => g.battery = flag(g.battery),
                 "shadowCache" => g.shadow_cache = flag(g.shadow_cache),
+                "adaptiveFrameGen" => g.frame_gen = flag(g.frame_gen),
+                "frameGenTarget" => {
+                    g.frame_gen_target = match number(g.frame_gen_target) {
+                        0 => 0,
+                        n => n.clamp(30, 240),
+                    }
+                }
                 "graphicsApi" => g.api = GraphicsApi::from_name(value).unwrap_or_default(),
                 "pickedShaderPack" => g.shader_pack = value.to_owned(),
                 "overlay" => {
@@ -572,7 +586,7 @@ impl Graphics {
     }
     pub fn serialize(&self) -> String {
         format!(
-            "preset:{}\nlodDistance:{}\nfarDetail:{}\ncaveCulling:{}\nentityCulling:{}\nchunkUpdates:{}\nuploadBudgetKiB:{}\ntextureBudgetMiB:{}\nsky:{}\nfog:{}\nweather:{}\nanimatedTextures:{}\nditherCutoutMips:{}\npresentMode:{}\nframePacing:{}\nworkers:{}\noverlay:{}\nresolutionScale:{}\nfxaa:{}\ntaa:{}\nupscaling:{}\nscreenshotQuality:{}\nhdr:{}\nhdrPaperWhite:{}\nhdrPeak:{}\nhdrBlackLevel:{}\nhdrUiBrightness:{}\nhdrKey:{}\nbatteryMode:{}\nshadowCache:{}\ngraphicsApi:{}\npickedShaderPack:{}\n",
+            "preset:{}\nlodDistance:{}\nfarDetail:{}\ncaveCulling:{}\nentityCulling:{}\nchunkUpdates:{}\nuploadBudgetKiB:{}\ntextureBudgetMiB:{}\nsky:{}\nfog:{}\nweather:{}\nanimatedTextures:{}\nditherCutoutMips:{}\npresentMode:{}\nframePacing:{}\nworkers:{}\noverlay:{}\nresolutionScale:{}\nfxaa:{}\ntaa:{}\nupscaling:{}\nscreenshotQuality:{}\nhdr:{}\nhdrPaperWhite:{}\nhdrPeak:{}\nhdrBlackLevel:{}\nhdrUiBrightness:{}\nhdrKey:{}\nbatteryMode:{}\nshadowCache:{}\nadaptiveFrameGen:{}\nframeGenTarget:{}\ngraphicsApi:{}\npickedShaderPack:{}\n",
             self.preset.name(),
             self.lod_distance,
             self.far_detail.name(),
@@ -610,6 +624,8 @@ impl Graphics {
             self.hdr_key,
             bool_text(self.battery),
             bool_text(self.shadow_cache),
+            bool_text(self.frame_gen),
+            self.frame_gen_target,
             self.api.name(),
             self.shader_pack,
         )

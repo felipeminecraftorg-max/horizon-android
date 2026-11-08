@@ -256,6 +256,7 @@ pub(crate) mod upload;
 mod view;
 mod wgsl_prefix;
 mod world_post;
+mod frame_warp;
 
 /// A section's instance: its camera-relative origin and, in `w`, the step of
 /// its fixed-point UVs (`terrain.wgsl`'s `terrain_uv`).
@@ -448,6 +449,8 @@ pub mod upload_budget;
 /// Section copies are submitted early past this many staged bytes, which
 /// bounds the staging memory frames that are not drawn can hold.
 const SECTION_COPY_LIMIT: u64 = 64 << 20;
+/// Android: world frames drawn before a present mode other than Fifo is asked for.
+const WORLD_FRAMES_BEFORE_PRESENT_MODE: u32 = 120;
 pub struct Frame<'a> {
     pub camera: DVec3,
     pub yaw: f32,
@@ -891,6 +894,13 @@ pub struct Renderer {
     layout: crate::chunk::ColumnLayout,
     /// Resolution scale, FXAA and TAA (Horizon settings).
     world_post: world_post::Post,
+    /// Adaptive frame generation (`frame_warp`): made frames fill in the frames missing
+    /// below the target frame rate.
+    frame_warp: frame_warp::FrameWarp,
+    /// Android: a present mode other than Fifo waits until a world has been drawn for a
+    /// moment (`set_present_mode`), and the world frames drawn so far.
+    deferred_present: Option<(bool, crate::graphics::PresentMode)>,
+    world_frames: u32,
     #[cfg(target_os = "android")]
     frame_scale: Option<frame_scale::FrameScale>,
     #[cfg(target_os = "android")]
@@ -3640,6 +3650,7 @@ impl Renderer {
             });
         let depth = Self::depth(&device, &config);
         let world_post = world_post::Post::new(&device, config.format.remove_srgb_suffix());
+        let frame_warp = frame_warp::FrameWarp::new(&device, config.format);
         let uploads = upload::Uploads::new(&device);
         let section_uploads = upload::Uploads::with_chunk(&device, SECTION_UPLOAD_CHUNK);
         let stars = stars::Stars::new(
@@ -3844,6 +3855,9 @@ impl Renderer {
             occlusion: occlusion::Occlusion::new(crate::chunk::MIN_Y, crate::chunk::HEIGHT / 16),
             layout: crate::chunk::ColumnLayout::VANILLA,
             world_post,
+            frame_warp,
+            deferred_present: None,
+            world_frames: 0,
             #[cfg(target_os = "android")]
             frame_scale: None,
             #[cfg(target_os = "android")]
@@ -4489,6 +4503,13 @@ impl Renderer {
     /// window and in fullscreen alike; Horizon's present-mode setting applies
     /// only with VSync off (`window::chosen_present_mode`).
     pub fn set_present_mode(&mut self, vsync: bool, mode: crate::graphics::PresentMode) {
+        // Android: Fifo until a world has been shown for a moment, since a Mailbox present
+        // can stall a loading screen into an ANR on some drivers
+        // (`window::android_present_mode`); `draw_frame` applies the choice then.
+        if cfg!(target_os = "android") && self.world_frames < WORLD_FRAMES_BEFORE_PRESENT_MODE {
+            self.deferred_present = Some((vsync, mode));
+            return;
+        }
         use crate::graphics::PresentMode as P;
         use crate::window::{PresentMode, chosen_present_mode};
         let supported: Vec<PresentMode> = self
@@ -5357,6 +5378,41 @@ impl Renderer {
         self.world_post.taa = taa;
         self.world_post.upscale = if taa { upscale.clamp(1.0, 4.0) } else { 1.0 };
     }
+    /// Adaptive frame generation (`frame_warp`): on or off, and the target frame rate
+    /// (0: the display's refresh rate).
+    pub fn set_adaptive_frame_gen(&mut self, on: bool, target_fps: u32) {
+        self.frame_warp.enabled = on;
+        self.frame_warp.target_fps = target_fps;
+        self.world_post.keep_target = self.frame_warp.wants_world_target();
+    }
+    /// Whether this device can make frames (the setting is greyed out otherwise).
+    pub fn adaptive_frame_gen_supported(&self) -> bool {
+        self.frame_warp.supported()
+    }
+    /// Called once at the start of every frame, before the game builds it: whether this
+    /// frame is a made one, which then needs only the camera and the HUD. `allowed`: the
+    /// game shows a world with nothing over it a made frame would get wrong.
+    pub fn adaptive_frame_gen_next(&mut self, allowed: bool, refresh_hz: Option<u32>) -> bool {
+        let allowed = allowed
+            && !self.suspended
+            && self.hdr.is_none()
+            && self.screenshot.is_none()
+            && self.pack_post.as_ref().is_none_or(|p| p.1.is_none())
+            && self.native.as_ref().is_none_or(|n| n.post.is_none());
+        // The display's rate when the game does not know it (Auto).
+        let refresh_hz = refresh_hz.or_else(|| {
+            self.window
+                .current_monitor()
+                .and_then(|m| m.refresh_rate_millihertz())
+                .map(|r| r.div_ceil(1000))
+        });
+        self.frame_warp
+            .next_frame(allowed, refresh_hz, [self.config.width, self.config.height])
+    }
+    /// Made and real frames shown over the last second, while the setting is on.
+    pub fn adaptive_frame_gen_stats(&self) -> Option<(u32, u32)> {
+        self.frame_warp.stats()
+    }
     pub fn world_render_size(&self) -> [u32; 2] {
         [self.config.width, self.config.height]
             .map(|v| ((v as f32 * self.world_post.scale).round() as u32).clamp(1, 8192))
@@ -5920,8 +5976,19 @@ impl Renderer {
         if let Some(flat) = &mut self.flat {
             flat.trim(|page| self.arena.has_page(page));
         }
+        // A made frame (`frame_warp`) is this frame's alone: whatever ends it early, the
+        // next frame (a loading screen, say) is real unless the game asks again.
+        let made_frame = std::mem::take(&mut self.frame_warp.generate);
         if self.suspended {
             return Ok(false);
+        }
+        if !frame.title {
+            self.world_frames = self.world_frames.saturating_add(1);
+            if self.world_frames == WORLD_FRAMES_BEFORE_PRESENT_MODE
+                && let Some((vsync, mode)) = self.deferred_present.take()
+            {
+                self.set_present_mode(vsync, mode);
+            }
         }
         let started = Instant::now();
         if self.first_frame == FirstFrame::Acquire {
@@ -6129,6 +6196,90 @@ impl Renderer {
             self.last_wait += present.elapsed();
             self.last_encode = started.elapsed().saturating_sub(self.last_wait);
             return Ok(true);
+        }
+        // A made frame (`frame_warp`): the last real frame moved to this frame's camera,
+        // and this frame's HUD over it. The game built only the camera and the HUD.
+        if made_frame {
+            let view_proj = self
+                .views(frame)
+                .primary()
+                .view_proj(frame.bob * frame.spin)
+                .as_dmat4();
+            let view_target = target_texture.create_view(&wgpu::TextureViewDescriptor {
+                format: Some(self.config.format.remove_srgb_suffix()),
+                ..Default::default()
+            });
+            self.hud.prepare(
+                &self.device,
+                &mut self.uploads,
+                &mut encoder,
+                frame.hud,
+                [self.config.width, self.config.height],
+            );
+            if self.frame_warp.draw(
+                &self.queue,
+                &mut encoder,
+                &view_target,
+                view_proj,
+                frame.camera,
+            ) {
+                self.hud.draw_range(
+                    &mut encoder,
+                    &view_target,
+                    &self.depth,
+                    frame.hud,
+                    [self.config.width, self.config.height],
+                    0..frame.hud.vertices.len() as u32,
+                );
+                self.uploads.finish(&encoder);
+                if has_section_copies {
+                    self.section_copy_bytes = 0;
+                    self.section_uploads.finish(&encoder);
+                }
+                if let Some(f) = &surface_frame {
+                    self.readback
+                        .present(&self.device, &mut encoder, &f.texture);
+                }
+                #[cfg(target_os = "android")]
+                if let (Some(scale), Some(frame)) = (&self.frame_scale, &surface_frame) {
+                    scale.present(&mut encoder, &frame.texture);
+                }
+                #[cfg(target_os = "android")]
+                if self.config.alpha_mode != wgpu::CompositeAlphaMode::Opaque
+                    && let Some(surface) = &surface_frame
+                {
+                    let format = self.surface_config().format.remove_srgb_suffix();
+                    let output = self.opaque_output.get_or_insert_with(|| {
+                        opaque_output::OpaqueOutput::new(&self.device, format)
+                    });
+                    if output.format != format {
+                        *output = opaque_output::OpaqueOutput::new(&self.device, format);
+                    }
+                    output.present(&mut encoder, &surface.texture);
+                }
+                let commands = crate::spans::time("encode", || encoder.finish());
+                let submission = crate::spans::time("submit", || self.queue.submit([commands]));
+                let present = Instant::now();
+                if let Some(surface_frame) = surface_frame {
+                    if self.config.present_mode == wgpu::PresentMode::Fifo {
+                        self.window.pre_present_notify();
+                    }
+                    self.queue.present(surface_frame);
+                    if reconfigure {
+                        self.configure_surface();
+                    }
+                } else {
+                    self.in_flight.push_back(submission);
+                    if !self.paced_elsewhere {
+                        self.wait_in_flight();
+                    }
+                }
+                self.last_wait += present.elapsed();
+                self.last_encode = started.elapsed().saturating_sub(self.last_wait);
+                return Ok(true);
+            }
+            // Nothing kept for this frame after all: it is drawn as a real one.
+            self.frame_warp.unmade();
         }
         #[cfg(target_os = "android")]
         if let Some(timer) = &mut self.gpu_timer {
@@ -8537,6 +8688,18 @@ impl Renderer {
                 quad_indices: &self.indices,
             });
         }
+        // Adaptive frame generation keeps the world as shown, before the hand.
+        let warp_capture = !frame.title
+            && frame.post_effects.effects.is_empty()
+            && scaled.is_some()
+            && !pack_post
+            && !native_post;
+        if warp_capture {
+            self.frame_warp
+                .keep_world(&self.device, &mut encoder, &target_texture, size);
+        } else {
+            self.frame_warp.discard();
+        }
         if let Some(hdr) = &self.hdr {
             hdr.keep_world(&mut encoder);
         }
@@ -8670,6 +8833,19 @@ impl Renderer {
             pass.set_vertex_buffer(0, self.debug_line_buffer.slice(..));
             let first = debug_depth + debug_top;
             pass.draw(0..4, first..first + crosshair);
+        }
+        // ... and the frame with the hand and the screen effects, before the HUD.
+        if warp_capture && let Some((_, depth)) = &scaled {
+            self.frame_warp.keep_overlay(
+                &self.device,
+                &mut encoder,
+                &target_texture,
+                size,
+                view_proj.as_dmat4(),
+                frame.camera,
+                depth,
+                self.world_post.generation(),
+            );
         }
         let blur_at = menu_blur.map_or(0, |_| frame.hud.blur_at);
         self.hud.draw_range(

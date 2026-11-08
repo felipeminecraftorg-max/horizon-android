@@ -137,17 +137,35 @@ pub fn chosen_present_mode(
     vsync: bool,
     setting: Option<PresentMode>,
 ) -> Option<PresentMode> {
-    // A Mailbox present can block for seconds in Android's GLES/Vulkan
-    // drivers (seen on Mali) and ANR the activity during loading. The
-    // Android surface stays on vsync; desktop keeps the setting.
     if cfg!(target_os = "android") {
-        return [PresentMode::Fifo, PresentMode::Immediate]
-            .into_iter()
-            .find(|mode| supported.contains(mode));
+        return android_present_mode(supported, vsync, setting);
     }
     setting
         .filter(|m| !vsync && supported.contains(m))
         .or_else(|| vsync_present_mode(supported, vsync))
+}
+
+/// Android's choice. VSync on is Fifo, capped to the display's refresh rate. With VSync
+/// off the setting applies where the surface has it, and Auto takes Mailbox: frames are
+/// no longer held to the refresh rate, and the newest one is shown. A Mailbox present can
+/// block for seconds in some drivers (seen on Mali) and ANR the activity while a world
+/// loads, so the renderer asks for anything but Fifo only once a world has been shown
+/// for a moment (`Renderer::set_present_mode`).
+pub fn android_present_mode(
+    supported: &[PresentMode],
+    vsync: bool,
+    setting: Option<PresentMode>,
+) -> Option<PresentMode> {
+    if vsync {
+        return [PresentMode::Fifo, PresentMode::Mailbox, PresentMode::Immediate]
+            .into_iter()
+            .find(|mode| supported.contains(mode));
+    }
+    setting.filter(|m| supported.contains(m)).or_else(|| {
+        [PresentMode::Mailbox, PresentMode::Fifo, PresentMode::Immediate]
+            .into_iter()
+            .find(|mode| supported.contains(mode))
+    })
 }
 
 /// `FramerateLimiter.limitDisplayFPS` with an injectable clock so the sleep
@@ -566,6 +584,27 @@ pub fn icon() -> Option<winit::window::Icon> {
     }
     bytes.truncate(info.buffer_size());
     winit::window::Icon::from_rgba(bytes, info.width, info.height).ok()
+}
+
+#[cfg(test)]
+mod android_present_tests {
+    use super::*;
+
+    #[test]
+    fn android_vsync_off_takes_mailbox_and_vsync_on_fifo() {
+        let all = [PresentMode::Fifo, PresentMode::Mailbox];
+        assert_eq!(android_present_mode(&all, true, None), Some(PresentMode::Fifo));
+        assert_eq!(android_present_mode(&all, false, None), Some(PresentMode::Mailbox));
+        assert_eq!(
+            android_present_mode(&all, false, Some(PresentMode::Fifo)),
+            Some(PresentMode::Fifo)
+        );
+        // A mode the surface lacks falls back to Auto's choice.
+        assert_eq!(
+            android_present_mode(&[PresentMode::Fifo], false, Some(PresentMode::Mailbox)),
+            Some(PresentMode::Fifo)
+        );
+    }
 }
 
 #[cfg(test)]

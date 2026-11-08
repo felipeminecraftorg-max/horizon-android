@@ -14857,6 +14857,25 @@ impl Game<'_> {
             }
         }
         self.was_menu_blurred = menu_blur_cache;
+        // Adaptive frame generation: a made frame is the last real one moved to this
+        // frame's camera, so it needs only the camera and the HUD built.
+        let made_frame = {
+            let allowed = !self.shows_panorama()
+                && self.player.is_some()
+                && self.screen == Screen::Playing
+                && !self.singleplayer_paused()
+                && !menu_blur_cache;
+            #[cfg(target_os = "android")]
+            let allowed = allowed && self.pad.touch.editor.is_none();
+            #[cfg(target_os = "android")]
+            let refresh = (device_preferences.display_hz > 0)
+                .then_some(u32::from(device_preferences.display_hz));
+            #[cfg(not(target_os = "android"))]
+            let refresh = None;
+            self.renderer
+                .as_mut()
+                .is_some_and(|r| r.adaptive_frame_gen_next(allowed, refresh))
+        };
         let skip_world_for_blur = menu_blur_cache
             && menu_blur.is_some_and(|r| {
                 self.renderer
@@ -14906,6 +14925,7 @@ impl Game<'_> {
         // The cave culling search runs on its worker while the frame is prepared.
         if cave_culling
             && !skip_world_for_blur
+            && !made_frame
             && self.title.is_none()
             && let Some(renderer) = self.renderer.as_mut()
         {
@@ -15022,6 +15042,7 @@ impl Game<'_> {
         // screen does not hide it: vanilla checks the HUD and the game mode, not the screen.
         let adventure = self.mode == horizon_client::command::args::GameMode::Adventure;
         let outline = if !skip_world_for_blur
+            && !made_frame
             && touch_target_visible
             && !self.ui.hide_gui
             && (self.may_build() || adventure)
@@ -15235,7 +15256,7 @@ impl Game<'_> {
         self.see_through_vertices.clear();
         self.glowing_vertices.get_mut().clear();
         self.shadow_only_vertices.get_mut().clear();
-        let skip_world = title || skip_world_for_blur;
+        let skip_world = title || skip_world_for_blur || made_frame;
         if !skip_world {
             entities = horizon_client::spans::time("entity_geometry", || {
                 self.entity_geometry(camera, alpha, entities)
