@@ -56,6 +56,9 @@ pub fn menu_types(mods: &[ContentMod]) -> Vec<&MenuType> {
     menus
 }
 
+/// A block's `shapes` with no property: every state takes the value `""`.
+static NO_PROPERTY: J = J::Str(String::new());
+
 /// JSON with its object keys in file order, so a rewritten table differs
 /// from the original only by what was added.
 #[derive(Clone, Debug, PartialEq)]
@@ -690,11 +693,15 @@ impl<'a> Plan<'a> {
                         let J::Arr(row) = &rows[id as usize] else {
                             unreachable!()
                         };
-                        let Some(J::Str(value)) = row
-                            .get(4)
-                            .and_then(|x| x.get("properties"))
-                            .and_then(|x| x.get(&spec.property))
-                        else {
+                        // No property: the one shape, `""`, for every state.
+                        let found = if spec.property.is_empty() {
+                            Some(&NO_PROPERTY)
+                        } else {
+                            row.get(4)
+                                .and_then(|x| x.get("properties"))
+                                .and_then(|x| x.get(&spec.property))
+                        };
+                        let Some(J::Str(value)) = found else {
                             return Err(format!(
                                 "{}: template state lacks property {}",
                                 decl.id, spec.property

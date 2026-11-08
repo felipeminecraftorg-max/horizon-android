@@ -691,8 +691,14 @@ fn check_block(file: &BlockFile) -> Result<(), String> {
         ));
     }
     if let Some(shapes) = &file.shapes {
-        if shapes.property.is_empty() || shapes.values.is_empty() {
-            return Err("shapes needs a property and values".into());
+        // No property: one shape, `""`, for every state (a template with one state's shape).
+        let one = shapes.property.is_empty()
+            && shapes.values.len() == 1
+            && shapes.values.contains_key("");
+        if (shapes.property.is_empty() && !one) || shapes.values.is_empty() {
+            return Err(
+                "shapes needs a property and values, or property \"\" and one value \"\"".into(),
+            );
         }
         for boxes in shapes.values.values() {
             if boxes.len() > 16
@@ -1254,6 +1260,14 @@ capabilities = ["registries"]
             &[(
                 "data/ruby/horizon/block/a.json",
                 br#"{"template":"minecraft:stone","shapes":{"property":"axis","values":{}}}"#,
+            )],
+        );
+        // No property: exactly one shape, "", for every state.
+        refused(
+            "shape-no-property-two-values",
+            &[(
+                "data/ruby/horizon/block/a.json",
+                br#"{"template":"minecraft:stone","shapes":{"property":"","values":{"":[],"x":[]}}}"#,
             )],
         );
         let e = refused(

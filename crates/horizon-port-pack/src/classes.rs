@@ -340,6 +340,10 @@ pub struct Code {
     pub events: BTreeSet<String>,
     /// Blocks and items with behaviour, and the methods they override.
     pub examples: BTreeMap<String, Vec<String>>,
+    /// Block classes (simple names) that make their own shape (`getShape`, MCreator's
+    /// `makeShapes`): the carry gives those blocks their models' shapes (`shapes`).
+    #[serde(default)]
+    pub shaped: BTreeSet<String>,
 }
 
 impl Code {
@@ -393,10 +397,19 @@ pub fn census<'a>(classes: impl IntoIterator<Item = &'a [u8]>) -> Code {
         };
         let feature = match kind {
             Feature::BlockBehaviour => {
+                if methods
+                    .iter()
+                    .any(|m| BLOCK_SHAPES.contains(m) || *m == "makeShapes")
+                {
+                    code.shaped
+                        .insert(c.name.rsplit('/').next().unwrap_or("").to_owned());
+                }
                 let behaviour: Vec<&str> = methods
                     .iter()
                     .copied()
-                    .filter(|m| !BLOCK_LOOKS.contains(m) && !BLOCK_SHAPES.contains(m))
+                    .filter(|m| {
+                        !BLOCK_LOOKS.contains(m) && !BLOCK_SHAPES.contains(m) && *m != "makeShapes"
+                    })
                     .collect();
                 if !behaviour.is_empty() {
                     code.examples.insert(
@@ -408,7 +421,10 @@ pub fn census<'a>(classes: impl IntoIterator<Item = &'a [u8]>) -> Code {
                     } else {
                         Some(Feature::BlockBehaviour)
                     }
-                } else if methods.iter().any(|m| BLOCK_SHAPES.contains(m)) {
+                } else if methods
+                    .iter()
+                    .any(|m| BLOCK_SHAPES.contains(m) || *m == "makeShapes")
+                {
                     Some(Feature::BlockShape)
                 } else {
                     None

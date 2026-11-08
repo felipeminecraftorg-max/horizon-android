@@ -23,6 +23,7 @@ pub mod processors;
 pub mod remap;
 pub mod report;
 pub mod resourcepacks;
+pub mod shapes;
 pub mod upgrade;
 pub mod worldgen;
 mod yung;

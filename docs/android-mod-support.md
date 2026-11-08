@@ -35,7 +35,7 @@ dimensions); each report's prompt names what its mods miss.
 | # | What mods use | Status | Lane | Notes |
 |---|---|---|---|---|
 | B1 | Blocks on a vanilla template (full, slabs, stairs, walls, fences, doors, trapdoors, panes) | yes | 1 | Shape, hardness and sounds from the closest vanilla block. |
-| B2 | Shapes defined in code (`makeShapes`, `Block.box`) | no | 2 | The content API has per-state shapes; the converter must read the constants. Places: 21. |
+| B2 | Shapes defined in code (`makeShapes`, `Block.box`) | partly | 2 | 2026-11-08: a block whose class makes its shape takes its model's boxes, turned as its blockstate turns the model (`horizon_port_pack::shapes`), on full-cube and facing templates. Places: 21. |
 | B3 | Blocks with no vanilla template | partly | 2 | Places: 24 left out. |
 | B4 | Use (right-click), random ticks, step on, entity inside, destroyed, exploded | no | 2, 3 | Native hook points exist for all of these. Places: 725 blocks. |
 | B5 | Block entities: containers, machines, animated blocks | no | 3 | Mod API 0.4. Places: 15. |
@@ -96,8 +96,8 @@ dimensions); each report's prompt names what its mods miss.
 
 ## Order of work
 
-1. The report says plainly when a mod has dimensions or portals (W1, W2).
-2. Block shapes from code (B2).
+1. The report says plainly when a mod has dimensions or portals (W1, W2). Done 2026-11-08.
+2. Block shapes from code (B2). Done 2026-11-08 for full-cube and facing templates.
 3. Dimensions and portals (W1, W2).
 4. MCreator procedures (J7) and block behaviour (B4).
 5. Mod entity types and mobs (E1, E2), then GeckoLib (E4, I5).

@@ -467,6 +467,23 @@ fn creative_tab(carry: &Path, id: &str, name: &str) {
     }
 }
 
+/// Lane 2, block shapes: the carried blocks whose classes make their own shape take their
+/// models' (`horizon_port_pack::shapes`). Returns how many did.
+fn model_shapes(carry: &Path, check: &Check) -> usize {
+    horizon_port_pack::shapes::add_model_shapes(carry, &check.mod_id, &check.code.shaped)
+}
+
+fn with_shapes(mut entry: Entry, shaped: usize) -> Entry {
+    if shaped > 0 {
+        let line = format!("{shaped} blocks take their shape from their models");
+        entry.lane2 = Some(match entry.lane2.take() {
+            Some(other) => format!("{line}; {other}"),
+            None => line,
+        });
+    }
+    entry
+}
+
 /// A PNG's width and height, from its header.
 fn png_size(path: &Path) -> Option<(u32, u32)> {
     use std::io::Read;
@@ -625,9 +642,10 @@ fn convert_one(file: &str, jar: &Path, scratch: &Path, mods: &mut Mods) -> Entry
         }
         Ok(c) => {
             creative_tab(&out.join("carry"), &c.mod_id, &c.name);
+            let shaped = model_shapes(&out.join("carry"), &c);
             let e = installed(file, &c, mods.install(&out.join("carry")));
             let game = mods.game;
-            lane2(game, &out.join("carry"), &c, mods, e)
+            with_shapes(lane2(game, &out.join("carry"), &c, mods, e), shaped)
         }
     };
     let _ = fs::remove_dir_all(&out);
@@ -908,8 +926,9 @@ pub fn convert_pack(
                 }
                 Ok(c) => {
                     creative_tab(&out.join("carry"), &c.mod_id, &c.name);
+                    let shaped = model_shapes(&out.join("carry"), &c);
                     let e = installed(file, &c, mods.install(&out.join("carry")));
-                    lane2(game, &out.join("carry"), &c, &mut mods, e)
+                    with_shapes(lane2(game, &out.join("carry"), &c, &mut mods, e), shaped)
                 }
                 Err(why) => Entry::plain(
                     file,
