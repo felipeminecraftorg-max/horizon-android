@@ -30,6 +30,9 @@ pub struct Census {
     pub sounds: usize,
     pub classes: usize,
     pub mixin_configs: usize,
+    /// Dimensions of its own (`data/<ns>/dimension/*.json`): Horizon has the vanilla three.
+    #[serde(default)]
+    pub dimensions: usize,
 }
 
 const NOT_MODS: [&str; 5] = ["minecraft", "neoforge", "forge", "fabricloader", "java"];
@@ -211,6 +214,7 @@ pub fn census(names: &[String]) -> Census {
             ("data", "tags") if json => c.tags += 1,
             ("data", "worldgen") if json => c.worldgen += 1,
             ("data", "structure" | "structures") if n.ends_with(".nbt") => c.structures += 1,
+            ("data", "dimension") if json => c.dimensions += 1,
             _ => {}
         }
     }

@@ -248,6 +248,15 @@ fn judge(check: &mut Check, info: &jar::JarInfo, report: &carry::Report) {
             "files the game can't read",
         ));
     }
+    if c.dimensions > 0 {
+        skipped.push(plural(
+            c.dimensions,
+            "dimension of its own, and the portal into it: Horizon has the vanilla three \
+             (lane 2)",
+            "dimensions of its own, and the portals into them: Horizon has the vanilla three \
+             (lane 2)",
+        ));
+    }
     let wg = &report.worldgen_types;
     let dropped = wg.processors_dropped.values().sum::<usize>();
     if dropped > 0 {
