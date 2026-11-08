@@ -18372,6 +18372,8 @@ impl Game<'_> {
                         }
                         self.frames += 1;
                         self.fps_frames += 1;
+                        // EMF animations (horizon_client::emf) run once a frame.
+                        horizon_client::emf::next_frame(self.singleplayer_paused());
                         horizon_client::crash::debug_crash_tick();
                         if self.fps_at.elapsed() >= Duration::from_secs(1) {
                             self.fps = self.fps_frames as f32 / self.fps_at.elapsed().as_secs_f32();

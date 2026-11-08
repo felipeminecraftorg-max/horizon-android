@@ -656,8 +656,18 @@ fn swim(p: &mut Poses, pos: f32, h: &Hum) {
         lerp(amount, x, 0.3 * (pos * 0.333_333_34).mcos()),
     );
 }
-/// Apply the mob's model animation to `p`.
+/// Apply the mob's model animation to `p`, then a resource pack's (`crate::emf`) over it.
 pub fn setup(
+    m: &Mob,
+    s: &State,
+    p: &mut Poses,
+    w_anims: &HashMap<String, super::keyframes::Animation>,
+) {
+    vanilla_setup(m, s, p, w_anims);
+    crate::emf::animate(m, s, p);
+}
+/// The model's own animation (`EntityModel.setupAnim`).
+fn vanilla_setup(
     m: &Mob,
     s: &State,
     p: &mut Poses,

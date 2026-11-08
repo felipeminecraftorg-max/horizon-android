@@ -434,6 +434,8 @@ pub(super) fn stage_pack(
         sounds: Some(horizon_client::sound_events::SoundRegistry::load(&root)),
     };
     progress.set(2);
+    // A pack's EMF animations of the player's model (`horizon_client::emf`).
+    horizon_client::emf::load(&root);
     let pack = PackResources::load(
         &root,
         assets.clone(),
