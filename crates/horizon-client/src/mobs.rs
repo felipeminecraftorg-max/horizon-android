@@ -808,6 +808,9 @@ pub struct Extra {
     /// A player's or mannequin's synced pose (`Entity.DATA_POSE`), which
     /// sets its box (`Avatar.POSES`).
     pub avatar_pose: crate::pose::Pose,
+    /// The player's own body seen from its eyes (FirstPerson, the mod's port): no head, and
+    /// the hands are the first-person view's.
+    pub first_person_body: bool,
     /// `Entity.isSprinting` (`Entity.DATA_SHARED_FLAGS_ID`'s flag 3): the dust a
     /// player raises; a cat or ocelot dashing (`Cat/Ocelot.customServerAiStep`),
     /// which `LivingEntity.setSprinting`'s speed modifier makes faster.

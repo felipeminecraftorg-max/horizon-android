@@ -11,7 +11,7 @@ use std::{
 
 pub const FILE: &str = "horizon-mods.txt";
 /// Fixed native modules compiled into Android APKs, all opt-in.
-pub const ANDROID_BUNDLED: [(&str, &str, &str); 8] = [
+pub const ANDROID_BUNDLED: [(&str, &str, &str); 9] = [
     (
         "zoom",
         "Zoom",
@@ -53,6 +53,11 @@ pub const ANDROID_BUNDLED: [(&str, &str, &str); 8] = [
         "sound_physics_remastered",
         "Sound Physics",
         "Sounds muffled behind walls, echoing in caves and dulled under water",
+    ),
+    (
+        "firstperson",
+        "First-person Model",
+        "See your own body and legs when you look down in first person",
     ),
 ];
 

@@ -857,6 +857,18 @@ pub fn setup(
             humanoid(p, s, &h);
             if player {
                 player_model_visibility(p, m.extra.hidden_model_parts, m.extra.spectator);
+                if m.extra.first_person_body {
+                    for part in [
+                        "head",
+                        "hat",
+                        "right_arm",
+                        "left_arm",
+                        "right_sleeve",
+                        "left_sleeve",
+                    ] {
+                        p.visible(part, false);
+                    }
+                }
             }
             if m.ai.aggressive && !bow {
                 // SkeletonModel melee pose.

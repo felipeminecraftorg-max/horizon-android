@@ -10541,13 +10541,15 @@ impl Game<'_> {
         self.ominous_item_spawner_geometry(camera, alpha, &mut out);
         // Mobs and their projectiles (a span each).
         self.mob_geometry(camera, alpha, &mut out);
-        // In first person only a shader pack's shadow pass draws the player.
-        self.mark_player(out.len(), !self.own_body_in_view());
+        // In first person only a shader pack's shadow pass draws the player (or FirstPerson's
+        // port its body, `first_person_body_shown`).
+        let body_seen = self.own_body_in_view() || self.first_person_body_shown();
+        self.mark_player(out.len(), !body_seen);
         let player_start = out.len();
         self.player_model_geometry(camera, self.clock.camera_fraction(), &mut out);
         // A native pack has no per-entity draws to hide it with: its shadow pass alone gets
         // the first-person model.
-        if self.pack_ids.is_none() && !self.own_body_in_view() {
+        if self.pack_ids.is_none() && !body_seen {
             self.shadow_only_vertices
                 .borrow_mut()
                 .extend(out.drain(player_start..));

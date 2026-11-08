@@ -164,6 +164,19 @@ pub(super) fn native_right_click_block(
 }
 
 /// The server's tick starts or ends: lane 3 mods start with the first and hear each.
+/// FirstPerson's body in first person (`perspective.rs`): on when its port is.
+pub(super) fn first_person_body_on(game: &Game<'_>) -> bool {
+    let _ = &game;
+    #[cfg(target_os = "android")]
+    {
+        game.native_on(compat::FIRST_PERSON)
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        false
+    }
+}
+
 /// Every frame, once the listener is placed: sound physics measures the new sounds.
 pub(super) fn native_sound_physics(game: &mut Game<'_>, listener: [f64; 3], underwater: bool) {
     let _ = (&game, &listener, &underwater);

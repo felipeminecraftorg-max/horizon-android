@@ -7,6 +7,7 @@
 //! - Tree Harvester: breaking a natural tree's log with an axe fells the tree (not sneaking).
 //! - Veinminer: sneaking while mining an ore with the right tool mines its vein.
 //! - Sound Physics (Sound Physics Remastered): `sound_physics.rs`, on the window's side.
+//! - First-person Model: the body in first person (`game/perspective.rs`), on the window's side.
 //!
 //! They run where the world runs (the server thread, a LAN host, a dedicated server), for every
 //! player, through the game's own block breaking: drops, experience, tool wear, hunger and
@@ -18,9 +19,11 @@ use std::{cell::Cell, collections::HashSet};
 pub(crate) const RIGHT_CLICK_HARVEST: &str = "rightclickharvest";
 pub(crate) const TREE_HARVESTER: &str = "treeharvester";
 pub(crate) const VEINMINER: &str = "veinminer";
+/// FirstPerson (First-person Model): the body drawn in first person (`perspective.rs`).
+pub(crate) const FIRST_PERSON: &str = "firstperson";
 
 /// The bundled versions: id, title, description (Options > Mods and the launcher).
-pub(crate) const MODS: [(&str, &str, &str); 4] = [
+pub(crate) const MODS: [(&str, &str, &str); 5] = [
     (
         RIGHT_CLICK_HARVEST,
         "Right Click Harvest",
@@ -40,6 +43,11 @@ pub(crate) const MODS: [(&str, &str, &str); 4] = [
         super::sound_physics::SOUND_PHYSICS,
         "Sound Physics",
         "Sounds muffled behind walls, echoing in caves and dulled under water",
+    ),
+    (
+        FIRST_PERSON,
+        "First-person Model",
+        "See your own body and legs when you look down in first person",
     ),
 ];
 

@@ -42,7 +42,7 @@ const WORK: &str = "modpacks";
 /// Java mods whose code Horizon runs in a version of its own (`game/android_bundled/compat.rs`):
 /// the mod ids and Modrinth slugs that ask for it, the built-in mod it turns on, its title, and
 /// how Horizon's version plays.
-static KNOWN: [(&[&str], &str, &str, &str); 4] = [
+static KNOWN: [(&[&str], &str, &str, &str); 5] = [
     (
         &["rightclickharvest", "right-click-harvest"],
         "rightclickharvest",
@@ -87,6 +87,18 @@ static KNOWN: [(&[&str], &str, &str, &str); 4] = [
         "Sound Physics",
         "sounds are muffled by the blocks between you and them, echo in rooms and caves (longer \
          in bigger ones) and are dulled while your head is under water",
+    ),
+    (
+        &[
+            "firstperson",
+            "first-person-model",
+            "firstpersonmod",
+            "first-person",
+        ],
+        "firstperson",
+        "First-person Model",
+        "in first person, look down to see your body and legs (no head, so nothing blocks the \
+         view; your hands are the usual first-person ones)",
     ),
 ];
 

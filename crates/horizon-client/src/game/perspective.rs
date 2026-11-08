@@ -599,6 +599,7 @@ impl Game<'_> {
         out: &mut Vec<horizon_client::mesher::Vertex>,
     ) {
         if !self.player_model_shown() {
+            self.first_person_body_geometry(camera, alpha, out);
             return;
         }
         let Some(m) = self.player_model.as_ref() else {
@@ -674,6 +675,67 @@ impl Game<'_> {
             }
             self.mark_outline(&out[start..], color);
         }
+    }
+    /// FirstPerson (the converter's known-mod lane, `android_bundled`): in first person, the
+    /// player's own body below the camera, set back so the view sees past it, without its
+    /// head; the hands stay the first-person view's ("Vanilla Hands: Always").
+    pub(super) fn first_person_body_shown(&self) -> bool {
+        use horizon_client::pose::Pose;
+        super::android_bundled::first_person_body_on(self)
+            && self.camera_type.first_person()
+            && self.sleeping.is_none()
+            && !self.pack_shadow_casters.0
+            && !self.spectator()
+            && self.own_body_visible()
+            && self
+                .player
+                .as_ref()
+                .is_some_and(|p| !p.health.dead_or_dying())
+            && self
+                .player_model
+                .as_ref()
+                .is_some_and(|m| matches!(m.extra.avatar_pose, Pose::Standing | Pose::Crouching))
+    }
+    fn first_person_body_geometry(
+        &self,
+        camera: glam::DVec3,
+        alpha: f64,
+        out: &mut Vec<horizon_client::mesher::Vertex>,
+    ) {
+        if !self.first_person_body_shown() {
+            return;
+        }
+        let (Some(p), Some(m)) = (self.player.as_ref(), self.player_model.as_ref()) else {
+            return;
+        };
+        let mut m = m.clone();
+        m.extra.first_person_body = true;
+        let probe = entity_light_block(
+            m.position,
+            m.extra.crouching,
+            f64::from(p.dimensions.eye_height),
+        );
+        let light = self.world.light(probe[0], probe[1], probe[2]);
+        let packed = (u32::from(light >> 4) * 16) | ((u32::from(light & 15) * 16) << 8);
+        let atlas = &self.gui.atlas;
+        let lookup = |name: &str| atlas.sprites.get(name).map(|r| [r.u0, r.v0, r.u1, r.v1]);
+        // Back along the view's level facing, more while sneaking: the chest stays below the
+        // eyes whatever the body's turn.
+        let back = if m.extra.crouching { 0.45 } else { 0.3 };
+        let yaw = f64::from(self.yaw).to_radians();
+        let forward = glam::DVec3::new(-yaw.sin(), 0.0, yaw.cos());
+        let mut worn = self.armor.clone();
+        worn[0] = None;
+        horizon_client::mobs::render::render_with(
+            &m,
+            alpha as f32,
+            camera + forward * back,
+            &lookup,
+            packed,
+            self.res.mob_data(),
+            &self.stack_armor_layers(&worn),
+            out,
+        );
     }
     /// `extractEntityInInventoryFollowsMouse`: the player in the box
     /// `[x0, x1) x [y0, y1)`, `size` pixels per block, turned toward the
