@@ -184,6 +184,10 @@ class PublicationTests(unittest.TestCase):
             self.assertFalse(check_public_tree.prohibited(path), path)
         for path in ["tools/Minecraft.java", "tests/java/Client.java", ".local/tools/JfrSummary.java"]:
             self.assertTrue(check_public_tree.prohibited(path), path)
+        # Lane 3's own Java (its API slice has Mojang's names); no other Java under packaging/.
+        self.assertFalse(check_public_tree.prohibited(
+            "packaging/android/java/net/minecraft/world/level/Level.java"))
+        self.assertTrue(check_public_tree.prohibited("packaging/android/java/com/mojang/Thing.java"))
 
     def test_force_added_ignored_file_is_detected_in_index_and_history(self):
         with tempfile.TemporaryDirectory() as temp:
