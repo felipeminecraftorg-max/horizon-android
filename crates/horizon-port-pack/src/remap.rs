@@ -394,9 +394,44 @@ pub fn tiny_from_jar(bytes: &[u8]) -> Result<String, String> {
 #[derive(Debug, Default)]
 pub struct Unpacked {
     pub fabric: Option<FabricMod>,
+    /// A NeoForge mod's own description and the classes the loader starts.
+    pub neoforge: Option<NeoForgeMod>,
     /// The jars it carries in `META-INF/jars/` (libraries), as bytes.
     pub nested: Vec<(String, Vec<u8>)>,
     pub classes: usize,
+}
+
+/// A NeoForge mod (`META-INF/neoforge.mods.toml`): its id, its `@Mod` classes (the loader
+/// constructs them with the mod's event bus) and its `@EventBusSubscriber` classes (whose
+/// `@SubscribeEvent` static methods hear the game's events). NeoForge mods have Mojang's names.
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NeoForgeMod {
+    pub id: String,
+    pub mods: Vec<String>,
+    pub subscribers: Vec<String>,
+}
+
+impl NeoForgeMod {
+    /// The first `modId = "..."` of a `neoforge.mods.toml`.
+    pub fn id_of(toml: &str) -> Option<String> {
+        toml.lines().find_map(|l| {
+            let (k, v) = l.split_once('=')?;
+            (k.trim() == "modId").then(|| v.trim().trim_matches('"').to_owned())
+        })
+    }
+    /// Notes the class `name` (`a/b/C.class`) by the annotations its constant pool names.
+    pub fn add_class(&mut self, name: &str, bytes: &[u8]) {
+        let class = name.trim_end_matches(".class").replace('/', ".");
+        let names = |needle: &[u8]| bytes.windows(needle.len()).any(|w| w == needle);
+        if names(b"Lnet/neoforged/fml/common/Mod;") {
+            self.mods.push(class.clone());
+        }
+        if names(b"Lnet/neoforged/fml/common/EventBusSubscriber;")
+            || names(b"Lnet/neoforged/fml/common/Mod$EventBusSubscriber;")
+        {
+            self.subscribers.push(class);
+        }
+    }
 }
 
 /// No class or nested jar is this large; a bigger one is left out.
@@ -420,6 +455,8 @@ pub fn remap_jar(
     let options = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated);
     let mut found = Unpacked::default();
+    // The classes' NeoForge annotations, kept until the jar's mods.toml says it is one.
+    let mut annotated = NeoForgeMod::default();
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
         let name = entry.name().map_err(|e| e.to_string())?.into_owned();
@@ -445,8 +482,16 @@ pub fn remap_jar(
         if name == "fabric.mod.json" {
             found.fabric = FabricMod::parse(&String::from_utf8_lossy(&bytes)).ok();
         }
+        if name == "META-INF/neoforge.mods.toml"
+            && let Some(id) = NeoForgeMod::id_of(&String::from_utf8_lossy(&bytes))
+        {
+            found.neoforge.get_or_insert_with(NeoForgeMod::default).id = id;
+        }
         if name.ends_with(".class") {
             found.classes += 1;
+            if mappings.is_none() {
+                annotated.add_class(&name, &bytes);
+            }
             if let Some(m) = mappings {
                 bytes = remap_class(&bytes, m).map_err(|e| format!("{name}: {e}"))?;
             }
@@ -459,6 +504,10 @@ pub fn remap_jar(
             .map_err(|e| format!("{name}: {e}"))?;
     }
     writer.finish().map_err(|e| e.to_string())?;
+    if let Some(n) = found.neoforge.as_mut() {
+        n.mods = annotated.mods;
+        n.subscribers = annotated.subscribers;
+    }
     Ok(found)
 }
 
@@ -485,6 +534,23 @@ c\tji$a\tnet/minecraft/class_2338$class_2339\n";
         "net.minecraft.core.BlockPos -> ji:\n",
         "net.minecraft.core.BlockPos$MutableBlockPos -> ji$a:\n",
     );
+
+    #[test]
+    fn a_neoforge_mod_is_known_by_its_toml_and_its_annotations() {
+        assert_eq!(
+            NeoForgeMod::id_of("modLoader=\"javafml\"\n[[mods]]\nmodId = \"places\"\n").as_deref(),
+            Some("places")
+        );
+        let mut n = NeoForgeMod::default();
+        n.add_class("a/Main.class", b"..Lnet/neoforged/fml/common/Mod;..");
+        n.add_class(
+            "a/Events.class",
+            b"..Lnet/neoforged/fml/common/EventBusSubscriber;..",
+        );
+        n.add_class("a/Other.class", b"..Lnet/neoforged/fml/common/ModList;..");
+        assert_eq!(n.mods, ["a.Main"]);
+        assert_eq!(n.subscribers, ["a.Events"]);
+    }
 
     #[test]
     fn intermediary_names_become_mojang_s() {

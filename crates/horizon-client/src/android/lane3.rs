@@ -411,9 +411,14 @@ fn prepare_in(jar: &Path, file: &str, dir: &Path, scratch: &Path, mappings: &mut
         Ok(u) => u,
         Err(e) => return Outcome::Failed(e),
     };
+    if look.fabric.is_none()
+        && let Some(neo) = look.neoforge.clone()
+    {
+        return prepare_neoforge(&first, file, dir, &neo, look.classes);
+    }
     let Some(fabric) = look.fabric.clone() else {
         return Outcome::Skipped(
-            "lane 3 runs Fabric mods so far (NeoForge's and Forge's API are not in it yet)".into(),
+            "lane 3 runs Fabric and NeoForge mods (Forge's API is not in it yet)".into(),
         );
     };
     if look.classes == 0 {
@@ -522,6 +527,69 @@ fn prepare_in(jar: &Path, file: &str, dir: &Path, scratch: &Path, mappings: &mut
     })
 }
 
+/// A NeoForge mod (already in Mojang's names, `jar` its copy without signatures) made ready
+/// for lane 3: its `@Mod` classes start it, its `@EventBusSubscriber` classes hear events.
+fn prepare_neoforge(
+    jar: &Path,
+    file: &str,
+    dir: &Path,
+    neo: &remap::NeoForgeMod,
+    classes: usize,
+) -> Outcome {
+    if classes == 0 {
+        return Outcome::Skipped("no Java code".into());
+    }
+    if matches!(neo.id.as_str(), "neoforge" | "minecraft") {
+        return Outcome::Skipped(
+            "part of NeoForge itself: Horizon's API slice stands for it".into(),
+        );
+    }
+    let id: String = neo
+        .id
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if id.is_empty() {
+        return Outcome::Failed("no mod id".into());
+    }
+    let target = dir.join(&id);
+    let part = dir.join(format!(".{id}.part"));
+    let _ = fs::remove_dir_all(&part);
+    if let Err(e) = fs::create_dir_all(&part) {
+        return Outcome::Failed(e.to_string());
+    }
+    if let Err(e) = dex(&[jar.to_path_buf()], &part.join("classes.jar")) {
+        let _ = fs::remove_dir_all(&part);
+        return Outcome::Failed(format!("D8 could not make DEX: {e}"));
+    }
+    let mut entry = format!("file\t{file}\nloader\tneoforge\n");
+    for class in &neo.mods {
+        entry.push_str(&format!("neoforge\t{class}\n"));
+    }
+    for class in &neo.subscribers {
+        entry.push_str(&format!("subscriber\t{class}\n"));
+    }
+    if let Err(e) = fs::write(part.join("entry.txt"), entry) {
+        return Outcome::Failed(e.to_string());
+    }
+    let _ = fs::remove_dir_all(&target);
+    if let Err(e) = fs::rename(&part, &target) {
+        return Outcome::Failed(e.to_string());
+    }
+    Outcome::Ready(Prepared {
+        id,
+        file: file.to_owned(),
+        entrypoints: neo.mods.clone(),
+        mixins: 0,
+    })
+}
+
 /// The mods kept in `lane3/` that `on` accepts, in the order given by `order` (libraries
 /// first), as `start` takes them.
 pub fn installed(game: &Path, on: &dyn Fn(&str) -> bool) -> (Vec<PathBuf>, Vec<(String, String)>) {
@@ -549,6 +617,11 @@ pub fn installed(game: &Path, on: &dyn Fn(&str) -> bool) -> (Vec<PathBuf>, Vec<(
         {
             if let Some(class) = line.strip_prefix("main\t") {
                 entries.push((id.clone(), class.to_owned()));
+            } else if let Some(class) = line.strip_prefix("neoforge\t") {
+                // NeoForge's: Lane3.start constructs them with the mod's event bus.
+                entries.push((id.clone(), format!("neoforge:{class}")));
+            } else if let Some(class) = line.strip_prefix("subscriber\t") {
+                entries.push((id.clone(), format!("subscriber:{class}")));
             }
         }
     }
