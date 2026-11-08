@@ -240,6 +240,10 @@ struct Entry {
     events: Vec<String>,
     /// What its code does, for the lanes the prompt names.
     features: Vec<horizon_port_pack::classes::Feature>,
+    /// What lane 3 (its Java code, run by Android's runtime) made of it.
+    lane3: Option<String>,
+    /// The class or member of Minecraft's or Fabric's API its code stopped at.
+    missing_api: Option<String>,
     sha1: Option<String>,
     links: Vec<String>,
 }
@@ -260,6 +264,8 @@ impl Entry {
             examples: Vec::new(),
             events: Vec::new(),
             features: Vec::new(),
+            lane3: None,
+            missing_api: None,
             sha1: None,
             links: Vec::new(),
         }
@@ -422,8 +428,14 @@ pub fn convert_jar(
     progress(&format!("Converting {name}"), 0.3);
     let scratch = game.join(WORK).join(".mod");
     let mut mods = Mods::load(game);
-    let mut entry = convert_one(name, jar, &scratch, &mut mods);
+    let entry = convert_one(name, jar, &scratch, &mut mods);
     let _ = fs::remove_dir_all(&scratch);
+    let mut entries = [entry];
+    if entries[0].status != Status::Works {
+        let lane3 = [(0, name.to_owned(), jar.to_path_buf())];
+        run_lane3(game, "", &lane3, &mut entries, progress, 0.5, 0.95);
+    }
+    let [mut entry] = entries;
     if let Ok(bytes) = fs::read(jar) {
         entry.sha1 = Some(import::sha1_hex(&bytes));
     }
@@ -437,11 +449,129 @@ pub fn convert_jar(
     finish(game, &slug(stem), &title, &[entry], &[])
 }
 
-/// Which records of a pack the converter downloads and carries: every mod and data pack that
+/// Which records of a pack the converter carries over (lane 1): every mod and data pack that
 /// has content, or may (one Modrinth didn't classify), whatever its code tier.
 fn wanted(r: &inventory::Record) -> bool {
     (r.path.starts_with("mods/") || r.path.starts_with("datapacks/"))
         && matches!(r.class.as_str(), "content" | "unknown")
+}
+
+/// Which it downloads: those, and the mods whose Java code lane 3 may run (libraries other
+/// mods' code needs, game-mechanics and server mods). Performance and client-interface mods
+/// stay out: Horizon has its own.
+fn downloaded(r: &inventory::Record) -> bool {
+    wanted(r)
+        || (r.path.starts_with("mods/")
+            && matches!(r.class.as_str(), "library" | "other" | "server-only"))
+}
+
+/// Lane 3 for the jars of a conversion (`(entry index, file, jar)`): each made ready, then all
+/// started together once; the entries get what came of it.
+fn run_lane3(
+    game: &Path,
+    minecraft: &str,
+    jars: &[(usize, String, PathBuf)],
+    entries: &mut [Entry],
+    progress: Progress,
+    from: f32,
+    to: f32,
+) {
+    if jars.is_empty() {
+        return;
+    }
+    if !crate::lane3::ready() {
+        for (i, ..) in jars {
+            entries[*i].lane3 = Some("not available in this app".into());
+        }
+        return;
+    }
+    let mut lazy = crate::lane3::Lazy::new(game, minecraft);
+    let mut prepared: Vec<(usize, crate::lane3::Prepared)> = Vec::new();
+    for (k, (i, file, jar)) in jars.iter().enumerate() {
+        progress(
+            &format!("Java code (lane 3): {file} ({}/{})", k + 1, jars.len()),
+            from + (to - from) * (k as f32 / jars.len() as f32),
+        );
+        match crate::lane3::prepare(jar, file, game, &mut lazy) {
+            crate::lane3::Outcome::Ready(p) => prepared.push((*i, p)),
+            crate::lane3::Outcome::Skipped(why) => {
+                entries[*i].lane3 = Some(format!("not run: {why}"))
+            }
+            crate::lane3::Outcome::Failed(why) => {
+                entries[*i].lane3 = Some(format!("not run: {why}"))
+            }
+        }
+    }
+    if prepared.is_empty() {
+        return;
+    }
+    progress("Java code (lane 3): starting it", to);
+    let all: Vec<crate::lane3::Prepared> = prepared.iter().map(|(_, p)| p.clone()).collect();
+    match crate::lane3::check(game, &all) {
+        Ok(results) => {
+            for (i, p) in &prepared {
+                let started = results
+                    .iter()
+                    .find(|(id, _)| *id == p.id)
+                    .map(|(_, s)| s.clone());
+                lane3_outcome(game, &mut entries[*i], p, started);
+            }
+        }
+        Err(why) => {
+            // Kept and on: the game starts and checks them when a world opens.
+            for (i, p) in &prepared {
+                let _ = browser::java::set_enabled(game, &p.id, true);
+                entries[*i].lane3 = Some(format!("made ready, not checked ({why})"));
+            }
+        }
+    }
+}
+
+/// An entry once lane 3 started its code: a mod whose code runs is turned on; one that stopped
+/// is taken out again (converting it after an update tries again).
+fn lane3_outcome(
+    game: &Path,
+    entry: &mut Entry,
+    p: &crate::lane3::Prepared,
+    started: Option<crate::lane3::Started>,
+) {
+    use crate::lane3::Started;
+    let mixins = if p.mixins > 0 {
+        format!(
+            "; {} Mixin config(s) not applied: they patch vanilla's own code (lane 4)",
+            p.mixins
+        )
+    } else {
+        String::new()
+    };
+    let remove = || {
+        let _ = fs::remove_dir_all(game.join(crate::lane3::DIR).join(&p.id));
+    };
+    match started {
+        Some(Started::Ran(events)) => {
+            let _ = browser::java::set_enabled(game, &p.id, true);
+            entry.lane3 = Some(format!("its Java code runs and is on: {events}{mixins}"));
+            if entry.status == Status::NotYet {
+                entry.status = Status::Partly;
+                entry.reason = format!("its Java code runs in lane 3 ({events})");
+            }
+        }
+        Some(Started::Missing(api)) => {
+            remove();
+            entry.lane3 = Some(format!(
+                "its code stopped at {api}, which Horizon's Java API doesn't have yet{mixins}"
+            ));
+            entry.missing_api = Some(api);
+        }
+        Some(Started::Failed(why)) => {
+            remove();
+            entry.lane3 = Some(format!("its code threw: {why}{mixins}"));
+        }
+        None => {
+            remove();
+            entry.lane3 = Some("its code didn't start".into());
+        }
+    }
 }
 
 /// Converts a modpack file (`.mrpack`, a CurseForge zip): its mods downloaded and carried over
@@ -508,7 +638,7 @@ pub fn convert_pack(
         &work,
         &records,
         None,
-        &|r: &inventory::Record| wanted(r) || shaders(r),
+        &|r: &inventory::Record| downloaded(r) || shaders(r),
         &log,
     )?;
     // With the jars here, they tell classes and tiers better than Modrinth alone.
@@ -536,6 +666,7 @@ pub fn convert_pack(
         fetched.files.iter().map(|o| (o.key.as_str(), o)).collect();
     let mut mods = Mods::load(game);
     let mut entries = Vec::new();
+    let mut lane3_jars: Vec<(usize, String, PathBuf)> = Vec::new();
     for r in &records {
         let kind = r.path.split('/').next().unwrap_or("");
         let file = r.path.rsplit('/').next().unwrap_or(&r.path);
@@ -598,6 +729,12 @@ pub fn convert_pack(
             game,
             &[names[0].as_str(), names[1].as_str(), names[2].as_str()],
         );
+        if kind == "mods"
+            && entry.status != Status::Works
+            && let Some(jar) = r.jar.clone().filter(|j| j.is_file())
+        {
+            lane3_jars.push((entries.len(), file.to_owned(), jar));
+        }
         entries.push(entry);
     }
     // The jars a pack ships itself (not downloads), each converted on its own.
@@ -614,6 +751,9 @@ pub fn convert_pack(
                 entry.file = format!("{file} (shipped in the pack)");
                 if let Ok(bytes) = fs::read(jar) {
                     entry.sha1 = Some(import::sha1_hex(&bytes));
+                }
+                if entry.status != Status::Works {
+                    lane3_jars.push((entries.len(), file.to_string(), jar.clone()));
                 }
                 entries.push(entry);
             }
@@ -635,6 +775,15 @@ pub fn convert_pack(
         }
         Err(e) => notes.push(format!("The pack's own shader packs not read: {e}")),
     }
+    run_lane3(
+        game,
+        &pack.minecraft,
+        &lane3_jars,
+        &mut entries,
+        progress,
+        0.93,
+        0.96,
+    );
     progress("Copying the resource packs", 0.96);
     match resourcepacks::install(&work, game) {
         Ok(report) => {
@@ -753,8 +902,17 @@ fn finish(
     fs::write(&path, document(title, entries, notes)).map_err(|e| e.to_string())?;
     let count = |s: Status| entries.iter().filter(|e| e.status == s).count();
     let missing = entries.iter().filter(|e| e.status.missing()).count();
+    let java = entries
+        .iter()
+        .filter(|e| {
+            e.lane3
+                .as_deref()
+                .is_some_and(|l| l.starts_with("its Java code runs"))
+        })
+        .count();
     Ok(format!(
-        "{title}: {} work, {} partly, {} not yet, {} not needed. {} Open Play to load them.",
+        "{title}: {} work, {} partly ({java} with their Java code running), {} not yet, {} not \
+         needed. {} Open Play to load them.",
         count(Status::Works),
         count(Status::Partly),
         count(Status::NotYet) + count(Status::Off) + count(Status::NotDownloaded),
@@ -812,6 +970,9 @@ fn document(title: &str, entries: &[Entry], notes: &[String]) -> String {
             }
             for l in &e.left {
                 out.push_str(&format!("    falta: {l}\n"));
+            }
+            if let Some(l3) = &e.lane3 {
+                out.push_str(&format!("    código Java (faixa 3): {l3}\n"));
             }
         }
     }
@@ -895,6 +1056,28 @@ fn document(title: &str, entries: &[Entry], notes: &[String]) -> String {
         }
         for lane in lanes(e) {
             out.push_str(&format!("- lane: {lane}\n"));
+        }
+        if let Some(l3) = &e.lane3 {
+            out.push_str(&format!("- lane 3 (its Java code on ART): {l3}\n"));
+        }
+    }
+    let mut apis: BTreeMap<&str, usize> = BTreeMap::new();
+    for e in entries {
+        if let Some(api) = &e.missing_api {
+            *apis.entry(api.as_str()).or_default() += 1;
+        }
+    }
+    if !apis.is_empty() {
+        let mut ranked: Vec<(&str, usize)> = apis.into_iter().collect();
+        ranked.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
+        out.push_str(
+            "\n### Lane 3: what Horizon's Java API lacks, most needed first\n\
+             Add each to the API slice (packaging/android/java: net/minecraft, net/fabricmc), \
+             backed by the game through dev.horizon.android.lane3.Native \
+             (game/android_bundled/lane3.rs); then converting again runs those mods further.\n",
+        );
+        for (api, n) in ranked {
+            out.push_str(&format!("- {api}: {n} mod(s) stop there\n"));
         }
     }
     if !notes.is_empty() {

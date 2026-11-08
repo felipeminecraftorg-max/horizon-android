@@ -852,6 +852,38 @@ impl Catalog {
                 });
             }
         }
+        // Java mods whose code runs in lane 3 (`lane3/<id>/`), the ones with no folder mod.
+        for entry in std::fs::read_dir(game.join(crate::lane3::DIR))
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') || !entry.path().join("entry.txt").is_file() {
+                continue;
+            }
+            if self
+                .local
+                .iter()
+                .any(|item| item.file == format!("horizon-mods/{name}"))
+            {
+                continue;
+            }
+            let file = std::fs::read_to_string(entry.path().join("entry.txt"))
+                .unwrap_or_default()
+                .lines()
+                .find_map(|l| l.strip_prefix("file\t").map(str::to_owned))
+                .unwrap_or_else(|| name.clone());
+            self.local.push(LocalItem {
+                kind: horizon_client::content_files::Kind::Mods,
+                enabled: on.enabled.contains(&name) && !on.disabled.contains(&name),
+                subtitle: format!("Java mod's code (lane 3)  •  {file}"),
+                file: format!("{}/{name}", crate::lane3::DIR),
+                title: name,
+                size_bytes: 0,
+                badge: "MOD",
+            });
+        }
         // Also scan horizon-native-mods/ for any .hnmod or .hmod files on disk.
         let native_dir = game.join("horizon-native-mods");
         if std::fs::symlink_metadata(&native_dir).is_ok_and(|m| !m.file_type().is_symlink()) {
@@ -1887,6 +1919,7 @@ impl Catalog {
                     .file
                     .strip_prefix("horizon-native-mods/")
                     .or_else(|| item.file.strip_prefix("horizon-mods/"))
+                    .or_else(|| item.file.strip_prefix("lane3/"))
                     .unwrap_or(&item.file);
                 let id = id
                     .strip_suffix(".hmod")
@@ -1936,6 +1969,7 @@ impl Catalog {
             }
             if item.file.starts_with("horizon-mods/")
                 || item.file.starts_with("horizon-native-mods/")
+                || item.file.starts_with("lane3/")
             {
                 let target = game.join(&item.file);
                 let meta = std::fs::symlink_metadata(&target).map_err(|e| e.to_string())?;
@@ -1955,6 +1989,7 @@ impl Catalog {
                     .file
                     .strip_prefix("horizon-native-mods/")
                     .or_else(|| item.file.strip_prefix("horizon-mods/"))
+                    .or_else(|| item.file.strip_prefix("lane3/"))
                     .unwrap_or(&item.file);
                 let id = id
                     .strip_suffix(".hmod")

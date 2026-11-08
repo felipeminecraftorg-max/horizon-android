@@ -20,6 +20,7 @@ pub mod net;
 pub mod oracle;
 pub mod pipeline;
 pub mod processors;
+pub mod remap;
 pub mod report;
 pub mod resourcepacks;
 pub mod upgrade;

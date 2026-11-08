@@ -1203,6 +1203,7 @@ impl Game<'_> {
     /// fails stops without this (`WorldCloseFailed` reports it). API 44.
     pub(super) fn native_server_stopping(&mut self, dedicated: bool) {
         let _ = dedicated;
+        super::android_bundled::native_server_stopping();
     }
     /// The authoritative server tick's phases: `ServerTickStart` before any
     /// level is ticked (NeoForge's `ServerTickEvent.Pre`), `ServerTickEnd`
@@ -1215,7 +1216,9 @@ impl Game<'_> {
         context: &NativeLifecycleContext,
         phase: ServerTickPhase,
     ) {
-        let _ = (context, phase);
+        let _ = context;
+        let end = matches!(phase, ServerTickPhase::ServerTickEnd { .. });
+        super::android_bundled::native_server_tick(self, end);
     }
     /// Before an authoritative server level's tick pass. `dimension` is its ID.
     pub(super) fn native_level_tick_pre(&mut self, dimension: &str) {
@@ -2156,8 +2159,7 @@ impl Game<'_> {
         state: BlockStateId,
         canceled: &mut bool,
     ) {
-        let _ = canceled;
-        super::android_bundled::native_destroy_block(self, pos, state);
+        super::android_bundled::native_destroy_block(self, pos, state, canceled);
     }
     /// A player placed `stack` as the block `state` at `pos`: where
     /// `BlockItem.place` set it, before the stack shrinks. It only hears; a
@@ -2184,8 +2186,7 @@ impl Game<'_> {
         face: [i32; 3],
         canceled: &mut bool,
     ) {
-        let _ = face;
-        super::android_bundled::native_right_click_block(self, pos, canceled);
+        super::android_bundled::native_right_click_block(self, pos, face, canceled);
     }
     /// An explosion at `center` in `dimension` (`minecraft:overworld`) is
     /// about to break `blocks`: `ServerExplosion.explode` with its `toBlow`,

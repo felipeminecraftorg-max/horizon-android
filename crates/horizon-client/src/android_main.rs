@@ -43,6 +43,8 @@ mod documents;
 mod exit_reports;
 #[path = "android/gallery.rs"]
 mod gallery;
+#[path = "android/lane3.rs"]
+mod lane3;
 #[path = "android/mod_convert.rs"]
 mod mod_convert;
 #[path = "android/native_ime.rs"]
@@ -131,6 +133,11 @@ fn android_on_create(state: &winit::platform::android::activity::OnCreateState<'
         unsafe { native_ime::initialize(state.vm_as_ptr().cast(), state.activity_as_ptr().cast()) }
     {
         log::error!("Android system keyboard initialization: {error}");
+    }
+    if let Err(error) =
+        unsafe { lane3::initialize(state.vm_as_ptr().cast(), state.activity_as_ptr().cast()) }
+    {
+        log::error!("Mod converter lane 3 (Java code) unavailable: {error}");
     }
 }
 use winit::{

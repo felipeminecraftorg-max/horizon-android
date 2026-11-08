@@ -19,6 +19,10 @@ static GAME_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBoo
 pub fn set_game_active(active: bool) {
     GAME_ACTIVE.store(active, std::sync::atomic::Ordering::Release);
 }
+/// Whether a game runs in this process now.
+pub fn game_active() -> bool {
+    GAME_ACTIVE.load(std::sync::atomic::Ordering::Acquire)
+}
 fn world_access(id: &str) -> io::Result<()> {
     if matches!(id.split('/').nth(1), Some("worlds" | "configuration"))
         && GAME_ACTIVE.load(std::sync::atomic::Ordering::Acquire)

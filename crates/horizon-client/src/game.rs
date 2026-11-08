@@ -5520,6 +5520,7 @@ impl Game<'_> {
         });
         if removed {
             self.mod_block_event(pos, broken, false);
+            android_bundled::native_block_broken(self, pos, broken);
         }
         if removed && !creative {
             let held = self.held().cloned();

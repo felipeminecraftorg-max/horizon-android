@@ -109,23 +109,70 @@ mod smartf3_click;
 #[path = "android_bundled/compat.rs"]
 pub(super) mod compat;
 
-/// A player breaks a block (`native_destroy_block`): a chop or a vein takes the rest.
-pub(super) fn native_destroy_block(game: &mut Game<'_>, pos: [i32; 3], state: BlockStateId) {
-    let _ = (&game, &pos, &state);
+/// Java mods' own code, run by Android's runtime (the mod converter's lane 3).
+#[cfg(target_os = "android")]
+#[path = "android_bundled/lane3.rs"]
+pub(super) mod lane3;
+
+/// A player breaks a block (`native_destroy_block`): a lane 3 mod may keep it; otherwise a chop
+/// or a vein takes the rest.
+pub(super) fn native_destroy_block(
+    game: &mut Game<'_>,
+    pos: [i32; 3],
+    state: BlockStateId,
+    canceled: &mut bool,
+) {
+    let _ = (&game, &pos, &state, &canceled);
     #[cfg(target_os = "android")]
     {
-        compat::destroy_block(&mut *game, pos, state);
+        lane3::destroy_block(&mut *game, pos, state, &mut *canceled);
+        if !*canceled {
+            compat::destroy_block(&mut *game, pos, state);
+        }
     }
 }
 
-/// A player right clicks a block (`native_right_click_block`): a grown crop is harvested.
-pub(super) fn native_right_click_block(game: &mut Game<'_>, pos: [i32; 3], canceled: &mut bool) {
-    let _ = (&game, &pos, &canceled);
+/// A player broke a block: lane 3 mods hear it.
+pub(super) fn native_block_broken(game: &mut Game<'_>, pos: [i32; 3], state: BlockStateId) {
+    let _ = (&game, &pos, &state);
     #[cfg(target_os = "android")]
     {
+        lane3::block_broken(&mut *game, pos, state);
+    }
+}
+
+/// A player right clicks a block (`native_right_click_block`): a lane 3 mod answers first,
+/// then a grown crop is harvested.
+pub(super) fn native_right_click_block(
+    game: &mut Game<'_>,
+    pos: [i32; 3],
+    face: [i32; 3],
+    canceled: &mut bool,
+) {
+    let _ = (&game, &pos, &face, &canceled);
+    #[cfg(target_os = "android")]
+    {
+        lane3::right_click_block(&mut *game, pos, face, &mut *canceled);
         if !*canceled && compat::right_click_block(&mut *game, pos) {
             *canceled = true;
         }
+    }
+}
+
+/// The server's tick starts or ends: lane 3 mods start with the first and hear each.
+pub(super) fn native_server_tick(game: &mut Game<'_>, end: bool) {
+    let _ = (&game, &end);
+    #[cfg(target_os = "android")]
+    {
+        lane3::server_tick(&mut *game, end);
+    }
+}
+
+/// The server stops.
+pub(super) fn native_server_stopping() {
+    #[cfg(target_os = "android")]
+    {
+        lane3::server_stopping();
     }
 }
 

@@ -41,6 +41,18 @@ android {
         assets.srcDirs = ['../../.local/android/gradle-assets']
         res.srcDirs = ['res']
     }
-    packaging { jniLibs { useLegacyPackaging = true; keepDebugSymbols += '**/*.so' } }
+    packaging {
+        jniLibs { useLegacyPackaging = true; keepDebugSymbols += '**/*.so' }
+        // R8 and Gson ship the same metadata files; the app needs none of them.
+        resources { excludes += ['META-INF/versions/**', 'META-INF/*.kotlin_module', 'META-INF/LICENSE*', 'META-INF/NOTICE*', 'META-INF/*.version', '**/module-info.class'] }
+    }
+    // The lane 3 runtime (java/dev/horizon/android/lane3/) uses Java 17's language.
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+dependencies {
+    // D8, to turn a Java mod's jar into DEX on the phone (mod converter lane 3). BSD-3-Clause.
+    implementation 'com.android.tools:r8:8.11.+'
+    // Gson, which Minecraft ships and many Java mods read their settings with. Apache-2.0.
+    implementation 'com.google.code.gson:gson:2.11.0'
 }
 layout.buildDirectory = file('../../.local/android/gradle-build')

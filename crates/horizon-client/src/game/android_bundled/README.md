@@ -18,3 +18,8 @@ what three Java mods' code does (Right Click Harvest, Tree Harvester,
 Veinminer), written from their behaviour. The mod converter
 (`android/mod_convert.rs`, `KNOWN`) turns one on when a converted pack has the
 Java mod; like the others, each is off until turned on.
+
+`lane3.rs` starts the Java mods the converter made ready (lane 3: their own
+code, run by Android's runtime; the Java half is
+`packaging/android/java/dev/horizon/android/lane3/`), fires the Fabric events
+Horizon has hooks for, and answers the `Native` methods of Horizon's Java API.
