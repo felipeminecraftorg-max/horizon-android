@@ -15333,7 +15333,10 @@ impl Game<'_> {
         let spin = if title {
             glam::Mat4::IDENTITY
         } else {
-            self.spinning_matrix(camera_alpha as f32)
+            // CameraOverhaul's roll (android_bundled::native_camera) tilts the world's view,
+            // as the nausea spin does.
+            glam::Mat4::from_rotation_z(view_roll.to_radians())
+                * self.spinning_matrix(camera_alpha as f32)
         };
         let requested_post_effects = self.requested_post_effects();
         let terrain_distance = self.terrain_distance();

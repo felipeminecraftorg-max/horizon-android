@@ -51,7 +51,7 @@ pub(crate) struct Motion {
     pub strafe: f32,
     pub forward: f32,
     pub up: f32,
-    /// How far the view turned, in degrees (right positive).
+    /// How fast the view turns, in degrees a second (right positive).
     pub turn: f32,
     pub seconds: f32,
 }
@@ -102,10 +102,11 @@ impl Effects {
         approach(&mut self.roll, roll_target, 8.0);
         approach(&mut self.pitch, pitch_target, 6.0);
         // Turning adds to a roll that dies away.
-        self.turn_roll = (self.turn_roll + m.turn * 0.06 * t.turning_roll).clamp(-8.0, 8.0);
-        approach(&mut self.turn_roll, 0.0, 4.0);
+        // Turning rolls the view into the turn, as fast as it turns, and lets go when it stops.
+        let turn_target = (m.turn * 0.025 * t.turning_roll).clamp(-8.0, 8.0);
+        approach(&mut self.turn_roll, turn_target, 6.0);
         // Idle a few seconds and the view starts to sway; any move fades it out quickly.
-        let still = m.strafe.abs() + m.forward.abs() + m.up.abs() < 0.05 && m.turn.abs() < 0.05;
+        let still = m.strafe.abs() + m.forward.abs() + m.up.abs() < 0.05 && m.turn.abs() < 1.0;
         if still {
             self.idle += dt;
         } else {
@@ -203,7 +204,7 @@ pub(super) fn run(game: &Game<'_>, camera: [f64; 3], yaw: f32, pitch: f32) -> (f
             strafe: v[0] * right[0] + v[2] * right[1],
             forward: v[0] * forward[0] + v[2] * forward[1],
             up: v[1],
-            turn: (yaw - yaw_before + 540.0).rem_euclid(360.0) - 180.0,
+            turn: ((yaw - yaw_before + 540.0).rem_euclid(360.0) - 180.0) / seconds,
             seconds,
         }
     };
