@@ -94,6 +94,19 @@ fn known(
     })
 }
 
+/// A known mod one of `names` asks for (the Mods page's Install): Horizon's own version turned
+/// on in its place, and the launcher's line. None for any other mod.
+pub fn turn_on_known(game: &Path, names: &[&str]) -> Option<String> {
+    let (_, id, title, how) = known(names)?;
+    Some(match browser::java::set_enabled(game, id, true) {
+        Ok(()) => format!(
+            "{title} needs no download: Horizon runs its own version, now on (Installed > \
+             {title}). In game, {how}."
+        ),
+        Err(e) => format!("{title}: Horizon's own version could not be turned on: {e}"),
+    })
+}
+
 /// A known mod's entry: Horizon's version turned on, what it does in place of the Java code.
 fn cover(entry: &mut Entry, game: &Path, names: &[&str]) {
     let Some((_, id, title, how)) = known(names) else {

@@ -1622,7 +1622,7 @@ impl Catalog {
             && self.config.mod_source == crate::shader_catalog::Origin::Modrinth
         {
             format!(
-                "{} Java mods - browsing only; this Rust client cannot run Java loaders",
+                "{} Java mods - Install converts one: what runs goes on, a report lists the rest",
                 items.len()
             )
         } else if self.page == Page::Mods {
@@ -1803,6 +1803,14 @@ impl Catalog {
         };
         self.job(status, move || {
             std::fs::create_dir_all(&game).map_err(|e| e.to_string())?;
+            // A Java mod Horizon has its own version of: that is turned on instead.
+            if project.kind == Kind::Mod
+                && project.source == browser::SourceId::Modrinth
+                && let Some(line) =
+                    crate::mod_convert::turn_on_known(&game, &[&project.slug, &project.title])
+            {
+                return Ok(Reply::Done(line, horizon_client::content_files::Kind::Mods));
+            }
             let report = |stage: &str, p: f32| {
                 while paused.load(Ordering::Relaxed) && !cancelled.load(Ordering::Relaxed) {
                     std::thread::sleep(Duration::from_millis(50));
@@ -1826,10 +1834,11 @@ impl Catalog {
                         if project.kind == Kind::Mod
                             && project.source == browser::SourceId::Modrinth =>
                     {
-                        // Fallback for Modrinth Java mods without port-pack content: download the
-                        // primary .jar into horizon-mods/ and register it in Installed.
-                        install_modrinth_jar_fallback(source.as_ref(), &project, &game, &report)
-                            .map_err(|_| first_err)?
+                        // A Java mod the browser's port refused: the converter reports what of
+                        // it runs and writes the prompt for the rest.
+                        let line = convert_modrinth_jar(source.as_ref(), &project, &game, &report)
+                            .map_err(|e| format!("{first_err}; {e}"))?;
+                        return Ok(Reply::Done(line, horizon_client::content_files::Kind::Mods));
                     }
                     Err(e) => return Err(e),
                 }
@@ -2172,12 +2181,14 @@ impl Catalog {
     }
 }
 
-fn install_modrinth_jar_fallback(
+/// A Modrinth Java mod's jar, downloaded and converted (`mod_convert::convert_jar`): what of it
+/// runs is installed, and the file for the rest written beside the mods.
+fn convert_modrinth_jar(
     source: &dyn Source,
     project: &Project,
     home: &Path,
     progress: &dyn Fn(&str, f32),
-) -> Result<usize, String> {
+) -> Result<String, String> {
     let versions = source.versions(project)?;
     let version = browser::pick(Kind::Mod, &versions, true)
         .or_else(|| versions.iter().find(|v| v.file().is_some()))
@@ -2188,53 +2199,13 @@ fn install_modrinth_jar_fallback(
     let staging = home.join("mod-browser/downloads");
     let title = format!("Downloading {} {}", project.title, version.number);
     let downloaded = source.fetch(file, &staging, &|f| progress(&title, f))?;
-    let slug: String = project
-        .slug
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let slug = if slug.is_empty() {
-        "mod".to_owned()
-    } else {
-        slug
-    };
-    let relative = format!("horizon-mods/{slug}.jar");
-    let target = home.join(&relative);
-    if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    std::fs::rename(&downloaded, &target).map_err(|e| e.to_string())?;
-    browser::java::set_enabled(home, &slug, true)?;
-    let (algo, hash) = file.checksum().unwrap_or(("SHA-1", ""));
-    let mut installed = Installed::load(home);
-    installed
-        .entries
-        .retain(|e| !(e.source == project.source && e.project == project.id));
-    installed.entries.push(browser::installed::Entry {
-        source: project.source,
-        project: project.id.clone(),
-        slug: slug.clone(),
-        title: project.title.clone(),
-        kind: Kind::Mod,
-        version: version.id.clone(),
-        number: version.number.clone(),
-        file: relative,
-        checksum: format!("{algo}:{hash}"),
-        page: project.page.clone(),
-        dependency: false,
-        verdict: Some("Downloaded".into()),
-        skipped: Vec::new(),
-        namespaces: vec![slug],
-    });
-    installed.save(home)?;
-    progress(&format!("Installed {}", project.title), 1.0);
-    Ok(1)
+    let name = downloaded
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| format!("{}.jar", project.slug));
+    let result = crate::mod_convert::convert_jar(&downloaded, &name, home, progress);
+    let _ = std::fs::remove_file(&downloaded);
+    result
 }
 
 fn lookup_modrinth_by_name(title: &str, kind: Kind) -> Option<Project> {
