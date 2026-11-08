@@ -13623,6 +13623,8 @@ impl Game<'_> {
             self.all_sections_changed();
         }
         self.audio.master = self.settings.master_volume;
+        self.audio
+            .set_directional(self.settings.file.bool("directionalAudio"));
         if self.settings.sound_device != self.audio.device() {
             let _ = self.audio.set_device(&self.settings.sound_device);
         }

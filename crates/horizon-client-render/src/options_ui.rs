@@ -138,11 +138,10 @@ impl Opt {
                 | Opt::SaveChatDrafts
                 | Opt::RotateWithMinecarts
                 // Saved, but no Horizon system reads them yet: no Realms, no
-                // friends list, no directional audio, no now-playing toast.
+                // friends list, no now-playing toast.
                 | Opt::RealmsNotifications
                 | Opt::InGameNotification
                 | Opt::SharePresence
-                | Opt::DirectionalAudio
                 | Opt::MusicToast
                 // Saved, but nothing in rendering reads them yet.
                 | Opt::ChunkFade

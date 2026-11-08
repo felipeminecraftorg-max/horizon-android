@@ -2,7 +2,9 @@
 //! small mixer standing in for OpenAL: one channel per source with its gain,
 //! pitch, linear distance attenuation (`AL_LINEAR_DISTANCE`, reference 0,
 //! rolloff 1), looping, relative flag and source state, Ogg/Vorbis decoding
-//! (streams on a worker thread) and OpenAL Soft's stereo panning.
+//! (streams on a worker thread) and OpenAL Soft's stereo panning. Stereo files play as they are,
+//! as OpenAL plays a stereo buffer, and Directional Audio renders mono sources for headphones
+//! (`ear_settings`).
 use crate::Result;
 use crate::sound_engine::{
     Attenuation, Backend, Bound, ChannelId, InstanceId, PlayResult, SoundEngine, SoundInstance,
@@ -29,7 +31,8 @@ enum State {
 }
 /// An OpenAL source.
 struct Channel {
-    samples: Option<(Arc<Vec<f32>>, u32)>,
+    /// Samples (a stereo file's interleaved), their rate and channel count (1 or 2).
+    samples: Option<(Arc<Vec<f32>>, u32, u16)>,
     position: f64,
     state: State,
     gain: f32,
@@ -45,6 +48,8 @@ struct Channel {
     world: u32,
     /// The sound file it started and when, to tell another player's copy of it.
     started: Option<(String, std::time::Instant)>,
+    /// Directional Audio's ears for it.
+    ears: Ears,
 }
 #[derive(Default)]
 struct Mixer {
@@ -62,6 +67,8 @@ struct Mixer {
     /// The callback's cameras (position, basis, world), kept to be refilled without allocating.
     cameras: Vec<([f64; 3], Basis, u32)>,
     limiter_peak: f32,
+    /// `options.directionalAudio`: mono sources rendered for headphones.
+    directional: bool,
     /// The output device the stream was opened on (`Library.currentDeviceName`).
     #[cfg(feature = "audio")]
     device_name: String,
@@ -136,8 +143,8 @@ impl Drop for MixerBackend {
 static SHARED_CHANNELS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// Two players' copies of one sound: started within this of each other.
 const SAME_SOUND: std::time::Duration = std::time::Duration::from_millis(150);
-/// Decoded samples and their rate (`None`: the file did not load).
-type Samples = Option<(Arc<Vec<f32>>, u32)>;
+/// Decoded samples, their rate and channel count (`None`: the file did not load).
+type Samples = Option<(Arc<Vec<f32>>, u32, u16)>;
 /// Decoded static sounds (`SoundBufferLibrary`'s buffers), dropped least
 /// recently used first past `CACHE_BYTES`: kept forever, every sound heard in
 /// a session stayed (up to 1.4 GiB of samples, villages playing hundreds).
@@ -188,7 +195,7 @@ impl SoundCache {
     fn size(samples: &Samples) -> usize {
         samples
             .as_ref()
-            .map_or(0, |(s, _)| s.len() * std::mem::size_of::<f32>())
+            .map_or(0, |(s, _, _)| s.len() * std::mem::size_of::<f32>())
     }
 }
 /// A static sound to decode for a channel waiting on it.
@@ -262,7 +269,9 @@ pub struct Audio {
     #[cfg(feature = "audio")]
     device_probe: Option<std::sync::mpsc::Receiver<DeviceProbe>>,
 }
-fn decode(path: &Path) -> Option<(Vec<f32>, u32)> {
+/// A sound file's samples, rate and channel count. A stereo file keeps its two channels
+/// interleaved (OpenAL plays a stereo buffer as it is); any other layout is mixed to mono.
+fn decode(path: &Path) -> Option<(Vec<f32>, u32, u16)> {
     use symphonia::core::{
         audio::SampleBuffer, codecs::DecoderOptions, formats::FormatOptions, io::MediaSourceStream,
         meta::MetadataOptions, probe::Hint,
@@ -286,7 +295,9 @@ fn decode(path: &Path) -> Option<(Vec<f32>, u32)> {
     let mut decoder = symphonia::default::get_codecs()
         .make(&track.codec_params, &DecoderOptions::default())
         .ok()?;
-    let mut mono = Vec::new();
+    let mut out = Vec::new();
+    // The first packet's layout: 2 stereo, 1 anything else.
+    let mut width = 0u16;
     while let Ok(packet) = format.next_packet() {
         if packet.track_id() != id {
             continue;
@@ -298,11 +309,19 @@ fn decode(path: &Path) -> Option<(Vec<f32>, u32)> {
         let channels = spec.channels.count().max(1);
         let mut samples = SampleBuffer::<f32>::new(buffer.capacity() as u64, spec);
         samples.copy_interleaved_ref(buffer);
+        if width == 0 {
+            width = if channels == 2 { 2 } else { 1 };
+        }
         for frame in samples.samples().chunks(channels) {
-            mono.push(frame.iter().sum::<f32>() / channels as f32);
+            if width == 2 && frame.len() == 2 {
+                out.extend_from_slice(frame);
+            } else {
+                let mono = frame.iter().sum::<f32>() / channels as f32;
+                out.extend(std::iter::repeat_n(mono, usize::from(width)));
+            }
         }
     }
-    Some((mono, rate))
+    Some((out, rate, width.max(1)))
 }
 /// A sound file without its variant number (`mob/creeper/say2.ogg` is `mob/creeper/say`): each
 /// player's game picks its own variant of the same event.
@@ -384,6 +403,7 @@ impl Backend for MixerBackend {
                 owner: self.owner,
                 world: self.world,
                 started: None,
+                ears: Ears::default(),
             },
         );
         Some(id)
@@ -429,7 +449,7 @@ impl Backend for MixerBackend {
             // A streamed sound loops by restarting its stream.
             let mixer = self.mixer.clone();
             std::thread::spawn(move || {
-                let samples = decode(&file).map(|(s, r)| (Arc::new(s), r));
+                let samples = decode(&file).map(|(s, r, w)| (Arc::new(s), r, w));
                 attach(&mixer, channel, samples, looping);
             });
             return;
@@ -450,7 +470,7 @@ impl Backend for MixerBackend {
                         // Queued twice before the first decode finished.
                         let cached = cache.lock().ok().and_then(|mut c| c.get(&job.key));
                         let samples = cached.unwrap_or_else(|| {
-                            let samples = decode(&job.file).map(|(s, r)| (Arc::new(s), r));
+                            let samples = decode(&job.file).map(|(s, r, w)| (Arc::new(s), r, w));
                             if let Ok(mut c) = cache.lock() {
                                 c.insert(job.key, samples.clone());
                             }
@@ -529,6 +549,135 @@ fn distance_gain(linear: Option<f32>, distance: f32) -> f32 {
         Some(_) => 0.0,
     }
 }
+/// Directional Audio's head (`options.directionalAudio`, OpenAL Soft's HRTF in
+/// vanilla): a sphere with an ear at each side, after Brown and Duda's structural
+/// model ("A Structural Model for Binaural Sound Synthesis", 1998). The ear away
+/// from a source hears it later (up to 0.66 ms) and duller (the head's shadow),
+/// the near one brighter, and a source behind loses its highs to the outer ears.
+/// It cues what a measured HRTF set cues, without being OpenAL Soft's set.
+const HEAD_RADIUS: f32 = 0.0875;
+const SPEED_OF_SOUND: f32 = 343.0;
+/// The ears' delay line in samples: the longest delay is 63 samples at 96 kHz.
+const EAR_RING: usize = 128;
+/// The binaural mix's level: a source ahead is about as loud as panned
+/// (`stereo_gains`: 0.596 a side).
+const BINAURAL_LEVEL: f32 = 0.6;
+
+/// A mono source's ears for Directional Audio: its last samples and each ear's
+/// delay and filters, kept from one buffer to the next.
+#[derive(Clone, Copy)]
+struct Ears {
+    ring: [f32; EAR_RING],
+    /// Where the newest sample goes.
+    at: usize,
+    /// Each ear's delay at the end of the last buffer (`[left, right]`), once started.
+    delay: Option<[f32; 2]>,
+    /// Each ear's head-shadow filter: its last input and output.
+    shadow: [[f32; 2]; 2],
+    /// Each ear's rear low-pass output.
+    back: [f32; 2],
+}
+impl Default for Ears {
+    fn default() -> Self {
+        Self {
+            ring: [0.0; EAR_RING],
+            at: 0,
+            delay: None,
+            shadow: [[0.0; 2]; 2],
+            back: [0.0; 2],
+        }
+    }
+}
+/// One buffer's ears for a source in direction `dir` (listener space: right, up,
+/// forward; any length).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct EarSettings {
+    /// Each ear's delay in samples (`[left, right]`).
+    delay: [f32; 2],
+    /// Each ear's head-shadow filter `[b0, b1, a1]`: one pole and one zero, unity
+    /// at low frequencies and `alpha` at high ones.
+    shadow: [[f32; 3]; 2],
+    /// The rear low-pass's coefficient: 1 passes everything (a source in front).
+    back: f32,
+}
+fn ear_settings(dir: [f32; 3], rate: u32) -> EarSettings {
+    use std::f32::consts::{FRAC_PI_2, PI};
+    let length = (dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]).sqrt();
+    let [right, _, forward] = if length <= f32::EPSILON {
+        [0.0, 0.0, 1.0]
+    } else {
+        dir.map(|d| d / length)
+    };
+    let fs = rate.max(1) as f32;
+    let k = 2.0 * fs;
+    let beta = 2.0 * SPEED_OF_SOUND / HEAD_RADIUS;
+    let head = HEAD_RADIUS / SPEED_OF_SOUND;
+    // `side`: the cosine of the angle between the source and this ear's side.
+    let ear = |side: f32| {
+        let theta = side.clamp(-1.0, 1.0).acos();
+        let delay = if theta < FRAC_PI_2 {
+            head * (1.0 - theta.cos())
+        } else {
+            head * (1.0 + theta - FRAC_PI_2)
+        };
+        // 6 dB brighter facing the source, 20 dB duller at 150 degrees.
+        let alpha = 1.05 + 0.95 * (theta / 150f32.to_radians() * PI).cos();
+        // The bilinear transform of (alpha s + beta) / (s + beta).
+        let shadow = [
+            (alpha * k + beta) / (k + beta),
+            (beta - alpha * k) / (k + beta),
+            (beta - k) / (k + beta),
+        ];
+        (delay * fs, shadow)
+    };
+    let (left_delay, left) = ear(-right);
+    let (right_delay, right_shadow) = ear(right);
+    // Behind: a low-pass from no filter (ahead or level) to 5 kHz (straight behind).
+    let behind = (-forward).max(0.0);
+    let full = 1.0 - (-2.0 * PI * 5_000.0 / fs).exp();
+    EarSettings {
+        delay: [left_delay, right_delay],
+        shadow: [left, right_shadow],
+        back: 1.0 - behind * (1.0 - full),
+    }
+}
+/// One sample `s` of a mono source through its ears, each delayed `delay` samples.
+fn hear(ears: &mut Ears, s: f32, delay: [f32; 2], set: &EarSettings) -> [f32; 2] {
+    ears.ring[ears.at] = s;
+    let mut out = [0.0; 2];
+    for e in 0..2 {
+        let d = delay[e].clamp(0.0, (EAR_RING - 2) as f32);
+        let whole = d.floor();
+        let t = d - whole;
+        let newer = (ears.at + EAR_RING - whole as usize) % EAR_RING;
+        let older = (newer + EAR_RING - 1) % EAR_RING;
+        let x = ears.ring[newer] * (1.0 - t) + ears.ring[older] * t;
+        let [b0, b1, a1] = set.shadow[e];
+        let [x1, y1] = ears.shadow[e];
+        let mut y = b0 * x + b1 * x1 - a1 * y1;
+        if y.abs() < 1e-20 {
+            y = 0.0;
+        }
+        ears.shadow[e] = [x, y];
+        ears.back[e] += set.back * (y - ears.back[e]);
+        if ears.back[e].abs() < 1e-20 {
+            ears.back[e] = 0.0;
+        }
+        out[e] = ears.back[e];
+    }
+    ears.at = (ears.at + 1) % EAR_RING;
+    out
+}
+/// How one source is mixed into this buffer.
+enum Voice {
+    /// A stereo buffer, as OpenAL renders one: its channels as they are, at its gain
+    /// (no panning, no distance attenuation).
+    Stereo(f32),
+    /// A mono source panned: `[left, right]` gains, and the gain alone for a mono output.
+    Panned([f32; 2], f32),
+    /// A mono source through Directional Audio's ears, at its gain.
+    Binaural(f32, EarSettings),
+}
 // Only the output stream mixes; a build without one (no `audio` feature) never does.
 #[cfg_attr(not(feature = "audio"), allow(dead_code))]
 fn mix(mixer: &mut Mixer, data: &mut [f32], channels: usize, rate: u32) {
@@ -577,11 +726,13 @@ fn mix(mixer: &mut Mixer, data: &mut [f32], channels: usize, rate: u32) {
         }),
     );
     let shared = cameras.len() > 1;
+    // Several players on the speakers have no one head to render for.
+    let binaural = mixer.directional && !shared && channels >= 2;
     let dot = |a: [f64; 3], b: [f64; 3]| (a[0] * b[0] + a[1] * b[1] + a[2] * b[2]) as f32;
     // Gains and pans per source for this buffer.
-    let mut voices: Vec<(ChannelId, [f32; 3], f64)> = Vec::new();
+    let mut voices: Vec<(ChannelId, Voice, f64)> = Vec::new();
     for (id, c) in &mixer.channels {
-        let Some((_, source_rate)) = &c.samples else {
+        let Some((_, source_rate, width)) = &c.samples else {
             continue;
         };
         if c.state != State::Playing {
@@ -612,34 +763,54 @@ fn mix(mixer: &mut Mixer, data: &mut [f32], channels: usize, rate: u32) {
             0.0
         };
         // Relative sources are already in OpenAL's listener space (-Z ahead).
-        let [mut left, mut right] = if c.relative {
-            stereo_gains(d[0] as f32, d[1] as f32, -d[2] as f32)
+        let direction = if c.relative {
+            [d[0] as f32, d[1] as f32, -d[2] as f32]
         } else {
-            stereo_gains(dot(d, right), dot(d, up), dot(d, forward))
+            [dot(d, right), dot(d, up), dot(d, forward)]
         };
-        if shared {
-            // Several players on the speakers: half the stereo width, as left and right are
-            // nobody's in particular.
-            let middle = (left + right) / 2.0;
-            left = middle + (left - middle) / 2.0;
-            right = middle + (right - middle) / 2.0;
-        }
-        let [left, right] = [left, right].map(|pan| gain * pan);
+        let voice = if *width == 2 {
+            Voice::Stereo(if camera.is_some() {
+                c.gain.clamp(0.0, 1.0)
+            } else {
+                0.0
+            })
+        } else if binaural {
+            Voice::Binaural(gain, ear_settings(direction, rate))
+        } else {
+            let [mut left, mut right] = stereo_gains(direction[0], direction[1], direction[2]);
+            if shared {
+                // Several players on the speakers: half the stereo width, as left and right
+                // are nobody's in particular.
+                let middle = (left + right) / 2.0;
+                left = middle + (left - middle) / 2.0;
+                right = middle + (right - middle) / 2.0;
+            }
+            Voice::Panned([left, right].map(|pan| gain * pan), gain)
+        };
         let step = f64::from(*source_rate) / f64::from(rate) * f64::from(c.pitch.max(0.0));
-        voices.push((*id, [left, right, gain], step));
+        voices.push((*id, voice, step));
     }
     mixer.cameras = cameras;
-    for (id, [left, right, gain], step) in voices {
+    let frames_out = (data.len() / channels.max(1)).max(1);
+    for (id, voice, step) in voices {
         let Some(c) = mixer.channels.get_mut(&id) else {
             continue;
         };
-        let Some((samples, _)) = c.samples.clone() else {
+        let Some((samples, _, width)) = c.samples.clone() else {
             continue;
         };
-        for frame in data.chunks_mut(channels) {
+        let width = usize::from(width.max(1));
+        let frames = samples.len() / width;
+        // Directional Audio glides each ear's delay across the buffer, so a moving
+        // source doesn't click.
+        let (from, to) = match &voice {
+            Voice::Binaural(_, set) => (c.ears.delay.unwrap_or(set.delay), set.delay),
+            _ => ([0.0; 2], [0.0; 2]),
+        };
+        for (f, frame) in data.chunks_mut(channels).enumerate() {
             let mut i = c.position as usize;
-            if i + 1 >= samples.len() {
-                if c.looping && samples.len() > 1 {
+            if i + 1 >= frames {
+                if c.looping && frames > 1 {
                     c.position = 0.0;
                     i = 0;
                 } else {
@@ -648,15 +819,41 @@ fn mix(mixer: &mut Mixer, data: &mut [f32], channels: usize, rate: u32) {
                 }
             }
             let t = (c.position - i as f64) as f32;
-            let s = samples[i] * (1.0 - t) + samples[i + 1] * t;
-            if channels >= 2 {
-                frame[0] += s * left;
-                frame[1] += s * right;
-            } else {
-                // A mono output has no panning: the source's own gain.
-                frame[0] += s * gain;
+            let sample =
+                |ch: usize| samples[i * width + ch] * (1.0 - t) + samples[(i + 1) * width + ch] * t;
+            match &voice {
+                Voice::Stereo(gain) => {
+                    let (l, r) = (sample(0), sample(width - 1));
+                    if channels >= 2 {
+                        frame[0] += l * gain;
+                        frame[1] += r * gain;
+                    } else {
+                        frame[0] += (l + r) / 2.0 * gain;
+                    }
+                }
+                Voice::Panned([left, right], gain) => {
+                    let s = sample(0);
+                    if channels >= 2 {
+                        frame[0] += s * left;
+                        frame[1] += s * right;
+                    } else {
+                        // A mono output has no panning: the source's own gain.
+                        frame[0] += s * gain;
+                    }
+                }
+                Voice::Binaural(gain, set) => {
+                    let along = (f + 1) as f32 / frames_out as f32;
+                    let delay = [0, 1].map(|e| from[e] + (to[e] - from[e]) * along);
+                    let s = sample(0) * gain * BINAURAL_LEVEL;
+                    let [l, r] = hear(&mut c.ears, s, delay, set);
+                    frame[0] += l;
+                    frame[1] += r;
+                }
             }
             c.position += step;
+        }
+        if let Voice::Binaural(_, set) = &voice {
+            c.ears.delay = Some(set.delay);
         }
     }
     // Limit the whole buffer together, preserving waveform and stereo balance
@@ -1031,6 +1228,12 @@ impl Audio {
         Bound {
             engine: &mut self.engine,
             backend: &mut self.backend,
+        }
+    }
+    /// `options.directionalAudio`: render mono sources for headphones (`ear_settings`).
+    pub fn set_directional(&mut self, on: bool) {
+        if let Ok(mut m) = self.backend.mixer.lock() {
+            m.directional = on;
         }
     }
     /// World identity for this player's sources and camera. Existing channels keep their world.
@@ -1516,7 +1719,7 @@ mod tests {
 
     fn channel(samples: Vec<f32>, linear: Option<f32>, at: [f32; 3], looping: bool) -> Channel {
         Channel {
-            samples: Some((Arc::new(samples), 48_000)),
+            samples: Some((Arc::new(samples), 48_000, 1)),
             position: 0.0,
             state: State::Playing,
             gain: 1.0,
@@ -1528,6 +1731,7 @@ mod tests {
             owner: 0,
             world: 0,
             started: None,
+            ears: Ears::default(),
         }
     }
 
@@ -1535,7 +1739,7 @@ mod tests {
     fn decoded_sounds_stay_within_the_budget_least_recently_used_out() {
         let mut cache = SoundCache::default();
         let quarter = CACHE_BYTES / 4 / std::mem::size_of::<f32>();
-        let sound = || Some((Arc::new(vec![0.0f32; quarter]), 44100));
+        let sound = || Some((Arc::new(vec![0.0f32; quarter]), 44100, 1));
         for key in ["a", "b", "c", "d"] {
             cache.insert(key.into(), sound());
         }
@@ -1889,6 +2093,62 @@ mod tests {
         assert!(audio.should_change_device());
         assert!(audio.device_probe.is_none());
         assert_eq!(audio.default_seen.as_deref(), Some("headphones"));
+    }
+
+    #[test]
+    fn stereo_files_play_as_they_are_wherever_their_source_is() {
+        let mut m = Mixer::default();
+        // Out of its 16-block range and off to the side: OpenAL neither pans
+        // nor attenuates a stereo buffer.
+        let mut c = channel(Vec::new(), Some(16.0), [-40.0, 0.0, 0.0], false);
+        c.samples = Some((Arc::new([0.5f32, -0.25].repeat(8)), 48_000, 2));
+        m.channels.insert(1, c);
+        let mut data = [0.0f32; 8];
+        mix(&mut m, &mut data, 2, 48_000);
+        for frame in data.as_chunks::<2>().0 {
+            assert_eq!(*frame, [0.5, -0.25]);
+        }
+        // A mono output hears both channels.
+        m.channels.get_mut(&1).unwrap().position = 0.0;
+        let mut mono = [0.0f32; 4];
+        mix(&mut m, &mut mono, 1, 48_000);
+        assert_eq!(mono, [0.125; 4]);
+    }
+
+    #[test]
+    fn directional_audio_delays_and_dulls_the_ear_away_from_a_source() {
+        let mut m = Mixer {
+            directional: true,
+            ..Mixer::default()
+        };
+        // A click west of a listener facing south: on its right.
+        let mut click = vec![0.0f32; 128];
+        click[0] = 1.0;
+        let mut c = channel(click, None, [-4.0, 0.0, 0.0], false);
+        c.gain = 0.25;
+        m.channels.insert(1, c);
+        let mut data = [0.0f32; 2 * 96];
+        mix(&mut m, &mut data, 2, 48_000);
+        let (left, right): (Vec<f32>, Vec<f32>) =
+            data.as_chunks::<2>().0.iter().map(|f| (f[0], f[1])).unzip();
+        // The near ear hears it at once, the far one 0.66 ms (31.5 samples)
+        // later, around the head.
+        assert!(right[0] > 0.0);
+        assert!(left[..31].iter().all(|&s| s == 0.0), "{left:?}");
+        assert_ne!(left[31], 0.0);
+        let energy = |s: &[f32]| s.iter().map(|x| x * x).sum::<f32>();
+        assert!(energy(&left) < energy(&right) / 2.0);
+    }
+
+    #[test]
+    fn a_source_ahead_reaches_both_ears_alike_and_one_behind_loses_its_highs() {
+        let ahead = ear_settings([0.0, 0.0, 3.0], 48_000);
+        assert_eq!(ahead.delay[0], ahead.delay[1]);
+        assert_eq!(ahead.shadow[0], ahead.shadow[1]);
+        assert_eq!(ahead.back, 1.0);
+        let behind = ear_settings([0.0, 0.0, -3.0], 48_000);
+        assert_eq!(behind.delay, ahead.delay);
+        assert!(behind.back < 0.6, "{behind:?}");
     }
 
     #[test]
