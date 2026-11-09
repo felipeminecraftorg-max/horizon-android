@@ -29,6 +29,10 @@ public interface LevelAccessor {
         return dev.horizon.android.lane3.Neo.biome(id == null || id.isEmpty() ? "minecraft:plains" : id);
     }
 
+    /** A particle only clients draw: the server shows none. */
+    default void addParticle(net.minecraft.core.particles.ParticleOptions particle, double x, double y, double z, double dx, double dy,
+            double dz) {}
+
     default net.minecraft.util.RandomSource getRandom() {
         return net.minecraft.server.level.ServerLevel.CURRENT.random;
     }

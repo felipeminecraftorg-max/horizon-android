@@ -7,24 +7,43 @@ import net.minecraft.world.level.block.state.BlockState;
 /** A block by its id: what it does is Horizon's (lane 1 carried a mod's own). */
 public class Block extends net.minecraft.world.level.block.state.BlockBehaviour {
     String id;
-    /** Its states: the block's own state (lane 3 keeps a mod block's states Horizon's). */
-    protected final net.minecraft.world.level.block.state.StateDefinition<Block, BlockState> stateDefinition =
-            new net.minecraft.world.level.block.state.StateDefinition<>(BlockState.of("minecraft:air"));
+    /** Its properties: the ones {@code createBlockStateDefinition} adds, then Horizon's block's. */
+    protected final net.minecraft.world.level.block.state.StateDefinition<Block, BlockState> stateDefinition;
+    /** Horizon's default state of this block, once asked. */
+    private BlockState defaultState;
 
+    /** The game's default state of a block is Horizon's: a mod's {@code registerDefaultState} is kept by it. */
     protected final void registerDefaultState(BlockState state) {}
+
+    /** The block adds its properties ({@code builder.add(FACING)}). */
+    protected void createBlockStateDefinition(
+            net.minecraft.world.level.block.state.StateDefinition.Builder<Block, BlockState> builder) {}
 
     public net.minecraft.world.level.block.state.StateDefinition<Block, BlockState> getStateDefinition() {
         return stateDefinition;
     }
 
+    private net.minecraft.world.level.block.state.StateDefinition<Block, BlockState> define() {
+        net.minecraft.world.level.block.state.StateDefinition.Builder<Block, BlockState> builder =
+                new net.minecraft.world.level.block.state.StateDefinition.Builder<>(this);
+        try {
+            createBlockStateDefinition(builder);
+        } catch (RuntimeException | LinkageError e) {
+            // A property a stand-in couldn't make: the block keeps the others.
+        }
+        return new net.minecraft.world.level.block.state.StateDefinition<>(this, BlockState.horizonOf(this), builder.horizonProperties());
+    }
+
     public Block(String id) {
         super(null);
         this.id = id;
+        this.stateDefinition = define();
     }
 
     /** A mod's block: its id is the one it is registered under (lane 3 sets it). */
     public Block(net.minecraft.world.level.block.state.BlockBehaviour.Properties properties) {
         super(properties);
+        this.stateDefinition = define();
     }
 
     /**
@@ -42,7 +61,26 @@ public class Block extends net.minecraft.world.level.block.state.BlockBehaviour 
     }
 
     public BlockState defaultBlockState() {
-        return BlockState.of(id);
+        BlockState d = horizonDefault();
+        return d != null ? d : BlockState.horizonOf(this);
+    }
+
+    /** Horizon's default state of the block (every property set), or null outside a game. */
+    public BlockState horizonDefault() {
+        if (defaultState != null || id == null) return defaultState;
+        String text;
+        try {
+            text = dev.horizon.android.lane3.Native.defaultState(id);
+        } catch (Throwable t) {
+            text = null;
+        }
+        if (text != null && !text.isEmpty()) defaultState = BlockState.of(text);
+        return defaultState;
+    }
+
+    /** A constant of the game's ({@code Blocks.STONE}): the block of the id its field names. */
+    public static Block horizonConstant(String owner, String field) {
+        return owner.endsWith("/Blocks") ? byId("minecraft:" + field.toLowerCase(java.util.Locale.ROOT)) : null;
     }
 
     public String getDescriptionId() {
@@ -60,12 +98,12 @@ public class Block extends net.minecraft.world.level.block.state.BlockBehaviour 
 
     @Override
     public boolean equals(Object o) {
-        return o instanceof Block b && b.id.equals(id);
+        return o == this || (o instanceof Block b && id != null && id.equals(b.id));
     }
 
     @Override
     public int hashCode() {
-        return id.hashCode();
+        return id == null ? System.identityHashCode(this) : id.hashCode();
     }
 
     @Override

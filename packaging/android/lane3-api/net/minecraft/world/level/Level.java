@@ -74,6 +74,28 @@ public abstract class Level implements LevelAccessor {
         return Native.time();
     }
 
+    /** A sound at the middle of {@code pos} for the players near it (Horizon's {@code /playsound}). */
+    public void playSound(net.minecraft.world.entity.player.Player except, BlockPos pos, net.minecraft.sounds.SoundEvent sound,
+            net.minecraft.sounds.SoundSource source, float volume, float pitch) {
+        playSound(except, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, sound, source, volume, pitch);
+    }
+
+    public void playSound(net.minecraft.world.entity.player.Player except, double x, double y, double z,
+            net.minecraft.sounds.SoundEvent sound, net.minecraft.sounds.SoundSource source, float volume, float pitch) {
+        if (sound == null || sound.getLocation() == null) return;
+        Native.command(String.format(java.util.Locale.ROOT, "playsound %s %s @a %.3f %.3f %.3f %.3f %.3f", sound.getLocation(),
+                source == null ? "master" : source.getName(), x, y, z, Math.max(0.0F, volume), Math.max(0.0F, Math.min(2.0F, pitch))));
+    }
+
+    public void playSound(net.minecraft.world.entity.player.Player except, net.minecraft.world.entity.Entity at,
+            net.minecraft.sounds.SoundEvent sound, net.minecraft.sounds.SoundSource source, float volume, float pitch) {
+        if (at != null) playSound(except, at.getX(), at.getY(), at.getZ(), sound, source, volume, pitch);
+    }
+
+    /** A sound only this client hears: the server has none. */
+    public void playLocalSound(double x, double y, double z, net.minecraft.sounds.SoundEvent sound, net.minecraft.sounds.SoundSource source,
+            float volume, float pitch, boolean delayed) {}
+
     public net.minecraft.world.level.material.FluidState getFluidState(BlockPos pos) {
         return new net.minecraft.world.level.material.FluidState();
     }

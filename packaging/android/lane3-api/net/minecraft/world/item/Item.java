@@ -12,6 +12,11 @@ public class Item {
         return id;
     }
 
+    /** A constant of the game's ({@code Items.STICK}): the item of the id its field names. */
+    public static Item horizonConstant(String owner, String field) {
+        return owner.endsWith("/Items") ? byId("minecraft:" + field.toLowerCase(java.util.Locale.ROOT)) : null;
+    }
+
     /** The item {@code id} names, as the registry holds it (one object per id). */
     public static Item byId(String id) {
         return net.minecraft.core.registries.BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.parse(id));

@@ -101,11 +101,28 @@ fn parse_state(game: &Game<'_>, text: &str) -> Option<BlockStateId> {
         let (k, v) = part.split_once('=')?;
         properties.insert(k.to_owned(), v.to_owned());
     }
-    let state = horizon_world::chunk::BlockState {
+    let registry = &game.pack.assets.registry;
+    let mut state = horizon_world::chunk::BlockState {
         name: name.to_owned(),
         properties,
     };
-    game.pack.assets.registry.resolve(&state).ok()
+    if let Ok(id) = registry.resolve(&state) {
+        return Some(id);
+    }
+    // A property or value Horizon's block doesn't have (a mod's block carried without it):
+    // the others still count.
+    let default = registry.state(registry.default_state(name)?)?;
+    state.properties = std::mem::replace(
+        &mut state.properties,
+        horizon_world::chunk::BlockProperties::new(),
+    )
+    .into_iter()
+    .filter(|(k, v)| {
+        default.properties.contains_key(k.as_str())
+            && registry.property_values(name, k).contains(&v.as_str())
+    })
+    .collect();
+    registry.resolve(&state).ok()
 }
 
 /// Starts the lane 3 mods that are on, once per server thread.
@@ -581,6 +598,50 @@ pub extern "system" fn Java_dev_horizon_android_lane3_Native_hasEffect<'l>(
     let id = rust_string(&mut env, &effect);
     let short = id.strip_prefix("minecraft:").unwrap_or(&id).to_owned();
     u8::from(current(|g| g.potions.effects.get(&short).is_some()) == Some(true))
+}
+
+/// The block `id`'s default state, as `state_text` writes it, or "" for a block Horizon lacks.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_horizon_android_lane3_Native_defaultState<'l>(
+    mut env: JNIEnv<'l>,
+    _class: JClass<'l>,
+    id: JString<'l>,
+) -> jstring {
+    let id = rust_string(&mut env, &id);
+    let text = current(|g| {
+        g.pack
+            .assets
+            .registry
+            .default_state(&id)
+            .map(|s| state_text(g, s))
+    })
+    .flatten()
+    .unwrap_or_default();
+    java_string(&mut env, &text)
+}
+
+/// The block `id`'s properties with their values, in the registry's order:
+/// `facing=north,south,west,east;lit=true,false`.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_horizon_android_lane3_Native_properties<'l>(
+    mut env: JNIEnv<'l>,
+    _class: JClass<'l>,
+    id: JString<'l>,
+) -> jstring {
+    let id = rust_string(&mut env, &id);
+    let text = current(|g| {
+        let registry = &g.pack.assets.registry;
+        let default = registry.state(registry.default_state(&id)?)?;
+        let parts: Vec<String> = default
+            .properties
+            .keys()
+            .map(|k| format!("{k}={}", registry.property_values(&id, k).join(",")))
+            .collect();
+        Some(parts.join(";"))
+    })
+    .flatten()
+    .unwrap_or_default();
+    java_string(&mut env, &text)
 }
 
 /// A mod's block asks for a tick at x, y, z in `delay` ticks (`Level.scheduleTick`).

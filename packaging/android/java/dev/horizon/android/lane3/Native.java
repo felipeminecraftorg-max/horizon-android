@@ -39,6 +39,12 @@ public final class Native {
     /** A tick for the block at x, y, z in {@code delay} ticks, in the level in place. */
     public static native void scheduleTick(int x, int y, int z, int delay);
 
+    /** The block {@code id}'s default state, every property set ({@code minecraft:oak_stairs[facing=north,...]}). */
+    public static native String defaultState(String id);
+
+    /** The block {@code id}'s properties and their values: {@code facing=north,south;lit=true,false}. */
+    public static native String properties(String id);
+
     /** The biome at x, y, z ({@code minecraft:plains}), or "" outside a game. */
     public static native String biome(int x, int y, int z);
 }

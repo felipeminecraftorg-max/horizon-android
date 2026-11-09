@@ -27,6 +27,9 @@ packaging/android/lane3-api/net/minecraft/core/Direction.java
 packaging/android/lane3-api/net/minecraft/core/Holder.java
 packaging/android/lane3-api/net/minecraft/core/Registry.java
 packaging/android/lane3-api/net/minecraft/core/Vec3i.java
+packaging/android/lane3-api/net/minecraft/core/particles/ParticleOptions.java
+packaging/android/lane3-api/net/minecraft/core/particles/ParticleType.java
+packaging/android/lane3-api/net/minecraft/core/particles/SimpleParticleType.java
 packaging/android/lane3-api/net/minecraft/core/registries/BuiltInRegistries.java
 packaging/android/lane3-api/net/minecraft/core/registries/Registries.java
 packaging/android/lane3-api/net/minecraft/network/chat/Component.java
@@ -40,6 +43,8 @@ packaging/android/lane3-api/net/minecraft/server/TickTask.java
 packaging/android/lane3-api/net/minecraft/server/level/ServerLevel.java
 packaging/android/lane3-api/net/minecraft/server/level/ServerPlayer.java
 packaging/android/lane3-api/net/minecraft/server/network/ServerGamePacketListenerImpl.java
+packaging/android/lane3-api/net/minecraft/sounds/SoundEvent.java
+packaging/android/lane3-api/net/minecraft/sounds/SoundSource.java
 packaging/android/lane3-api/net/minecraft/util/Mth.java
 packaging/android/lane3-api/net/minecraft/util/RandomSource.java
 packaging/android/lane3-api/net/minecraft/world/InteractionHand.java
@@ -66,7 +71,12 @@ packaging/android/lane3-api/net/minecraft/world/level/block/state/BlockBehaviour
 packaging/android/lane3-api/net/minecraft/world/level/block/state/BlockState.java
 packaging/android/lane3-api/net/minecraft/world/level/block/state/StateDefinition.java
 packaging/android/lane3-api/net/minecraft/world/level/block/state/StateHolder.java
+packaging/android/lane3-api/net/minecraft/world/level/block/state/properties/BooleanProperty.java
+packaging/android/lane3-api/net/minecraft/world/level/block/state/properties/DirectionProperty.java
+packaging/android/lane3-api/net/minecraft/world/level/block/state/properties/EnumProperty.java
+packaging/android/lane3-api/net/minecraft/world/level/block/state/properties/IntegerProperty.java
 packaging/android/lane3-api/net/minecraft/world/level/block/state/properties/Property.java
+packaging/android/lane3-api/net/minecraft/world/level/block/state/properties/WordProperty.java
 packaging/android/lane3-api/net/minecraft/world/level/levelgen/structure/templatesystem/StructurePlaceSettings.java
 packaging/android/lane3-api/net/minecraft/world/level/levelgen/structure/templatesystem/StructureTemplate.java
 packaging/android/lane3-api/net/minecraft/world/level/levelgen/structure/templatesystem/StructureTemplateManager.java

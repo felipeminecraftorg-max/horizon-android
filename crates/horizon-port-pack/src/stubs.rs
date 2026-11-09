@@ -1203,15 +1203,19 @@ pub fn stubs(refs: &Refs, provided: &Provided, api: &crate::api::Api) -> Stubs {
                 clinit.extend_from_slice(&i.to_be_bytes());
                 clinit.push(0xb7);
                 clinit.extend_from_slice(&init.to_be_bytes());
-            } else if let Some(id) = vanilla_constant(name, field)
-                .filter(|_| (provided.member)(class, "byId", &by_id(descriptor)))
-            {
-                // `Blocks.BEDROCK`: the game's own block, the one its registry answers, so
-                // `state.getBlock() == Blocks.BEDROCK` holds.
-                let s = stub.pool.string(&id);
-                let m = stub.pool.member(10, class, "byId", &by_id(descriptor));
+            } else if (provided.member)(class, CONSTANT, &constant_of(descriptor)) {
+                // One of the game's constants of a type Horizon holds (`Blocks.BEDROCK`,
+                // `BlockStateProperties.WATERLOGGED`): Horizon's class makes it from the class
+                // and field that name it, so `state.getBlock() == Blocks.BEDROCK` holds.
+                let owner = stub.pool.string(name);
+                let named = stub.pool.string(field);
+                let m = stub
+                    .pool
+                    .member(10, class, CONSTANT, &constant_of(descriptor));
                 clinit.push(0x13);
-                clinit.extend_from_slice(&s.to_be_bytes());
+                clinit.extend_from_slice(&owner.to_be_bytes());
+                clinit.push(0x13);
+                clinit.extend_from_slice(&named.to_be_bytes());
                 clinit.push(0xb8);
                 clinit.extend_from_slice(&m.to_be_bytes());
             } else if makeable(class) && !(is_enum && class == name) {
@@ -1312,19 +1316,13 @@ pub fn stubs(refs: &Refs, provided: &Provided, api: &crate::api::Api) -> Stubs {
     }
 }
 
-/// The id a vanilla constant names: `Blocks.BEDROCK` is `minecraft:bedrock`, `Items.STICK`
-/// `minecraft:stick`. Only the two classes of constants whose names are their ids.
-fn vanilla_constant(class: &str, field: &str) -> Option<String> {
-    matches!(
-        class,
-        "net/minecraft/world/level/block/Blocks" | "net/minecraft/world/item/Items"
-    )
-    .then(|| format!("minecraft:{}", field.to_ascii_lowercase()))
-}
+/// The static method of Horizon's classes that makes one of the game's constants of its type:
+/// `horizonConstant(String owner, String field)`.
+const CONSTANT: &str = "horizonConstant";
 
-/// `byId(String)` answering a value of the type `descriptor` names.
-fn by_id(descriptor: &str) -> String {
-    format!("(Ljava/lang/String;){descriptor}")
+/// [`CONSTANT`]'s descriptor answering a value of the type `descriptor` names.
+fn constant_of(descriptor: &str) -> String {
+    format!("(Ljava/lang/String;Ljava/lang/String;){descriptor}")
 }
 
 /// One of Horizon's class files with `patch`'s interfaces and members added: each member
@@ -1775,7 +1773,7 @@ mod tests {
     }
 
     #[test]
-    fn vanilla_s_block_constants_are_the_game_s_own_blocks() {
+    fn the_game_s_constants_are_made_by_horizon_s_classes() {
         const BLOCK: &str = "net/minecraft/world/level/block/Block";
         const BLOCKS: &str = "net/minecraft/world/level/block/Blocks";
         let mut refs = Refs::default();
@@ -1797,8 +1795,8 @@ mod tests {
         let constructor = |_: &str, _: &str| false;
         let member = |c: &str, n: &str, d: &str| {
             c == BLOCK
-                && n == "byId"
-                && d == "(Ljava/lang/String;)Lnet/minecraft/world/level/block/Block;"
+                && n == "horizonConstant"
+                && d == "(Ljava/lang/String;Ljava/lang/String;)Lnet/minecraft/world/level/block/Block;"
         };
         let ancestors = |_: &str| BTreeSet::new();
         let out = stubs(
@@ -1814,13 +1812,16 @@ mod tests {
         let bytes = &out.classes[BLOCKS];
         let mut back = Refs::default();
         back.add_class(bytes).unwrap();
-        // The initialiser asks the game's registry for each block by its id.
-        assert!(back.methods[BLOCK].contains_key(&(
-            "byId".to_owned(),
-            "(Ljava/lang/String;)Lnet/minecraft/world/level/block/Block;".to_owned()
-        )));
+        // The initialiser asks Horizon's Block for each constant by the class and field naming it.
+        assert!(
+            back.methods[BLOCK].contains_key(&(
+                "horizonConstant".to_owned(),
+                "(Ljava/lang/String;Ljava/lang/String;)Lnet/minecraft/world/level/block/Block;"
+                    .to_owned()
+            ))
+        );
         let has = |text: &str| bytes.windows(text.len()).any(|w| w == text.as_bytes());
-        assert!(has("minecraft:bedrock") && has("minecraft:oak_log"));
+        assert!(has(BLOCKS) && has("BEDROCK") && has("OAK_LOG"));
     }
 
     #[test]
