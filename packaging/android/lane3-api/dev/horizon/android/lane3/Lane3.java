@@ -160,6 +160,7 @@ public final class Lane3 {
             }
             report.append('\n');
         }
+        if (!Neo.MOD_BUSES.isEmpty()) Neo.setup();
         MinecraftServer server = MinecraftServer.CURRENT;
         guard("server starting", () -> ServerLifecycleEvents.SERVER_STARTING.invoker().onServerStarting(server));
         guard("server started", () -> ServerLifecycleEvents.SERVER_STARTED.invoker().onServerStarted(server));
@@ -213,6 +214,17 @@ public final class Lane3 {
                 // Outside a game.
             }
         }
+    }
+
+    /** {@link #guard} for the API slice's own classes. */
+    static void guardPublic(String where, Runnable call) {
+        guard(where, call);
+    }
+
+    /** What the player did on a mod's screen (Horizon's lines), then the screen drawn again. */
+    public static void screenEvents(String events) {
+        if (loader == null) return;
+        guard("screen", () -> Neo.screenEvents(events));
     }
 
     private static void guard(String where, Runnable call) {
@@ -344,6 +356,7 @@ public final class Lane3 {
                     : new net.neoforged.neoforge.event.tick.ServerTickEvent.Pre(server));
         }
         if (end) {
+            guard("screen tick", Neo::screenTick);
             guard("world tick", () -> ServerTickEvents.END_WORLD_TICK.invoker().onEndTick(ServerLevel.CURRENT));
             guard("server tick", () -> ServerTickEvents.END_SERVER_TICK.invoker().onEndTick(server));
         } else {

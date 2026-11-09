@@ -2,10 +2,25 @@
 package net.minecraft.world.item;
 
 public class Item {
-    final String id;
+    String id;
 
     public Item(String id) {
         this.id = id;
+    }
+
+    /** A mod's item: its id is the one it is registered under (lane 3 sets it). */
+    public Item(Properties properties) {}
+
+    protected Item() {}
+
+    /** The id lane 3 registered this item under. */
+    public final void horizonId(String id) {
+        if (this.id == null) this.id = id;
+    }
+
+    /** How an item is made: lane 3 keeps none of it (lane 1 carried the item's). */
+    public static class Properties {
+        public Properties() {}
     }
 
     public String id() {
@@ -23,18 +38,19 @@ public class Item {
     }
 
     public String getDescriptionId() {
+        if (id == null) return "item.unknown";
         int colon = id.indexOf(':');
         return "item." + id.substring(0, colon) + "." + id.substring(colon + 1);
     }
 
     @Override
     public boolean equals(Object o) {
-        return o instanceof Item i && i.id.equals(id);
+        return o == this || (o instanceof Item i && id != null && id.equals(i.id));
     }
 
     @Override
     public int hashCode() {
-        return id.hashCode();
+        return id == null ? System.identityHashCode(this) : id.hashCode();
     }
 
     @Override

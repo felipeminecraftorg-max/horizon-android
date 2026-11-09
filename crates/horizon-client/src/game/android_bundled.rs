@@ -398,6 +398,49 @@ pub(super) fn native_frame(game: &mut Game<'_>, elapsed: Duration) {
     #[cfg(target_os = "android")]
     {
         recipes_frame::run(&mut *game);
+        lane3::screen_frame(&mut *game);
+    }
+}
+
+/// A lane 3 mod's screen is up: it draws (true), in place of a Horizon mod's screen.
+pub(super) fn native_mod_screen_draw(game: &mut Game<'_>, batch: &mut HudBatch) -> bool {
+    let _ = (&game, &batch);
+    #[cfg(target_os = "android")]
+    {
+        lane3::screen_draw(&mut *game, &mut *batch)
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        false
+    }
+}
+
+/// A click on a lane 3 mod's screen (true when one is up).
+pub(super) fn native_mod_screen_click(
+    game: &mut Game<'_>,
+    button: winit::event::MouseButton,
+) -> bool {
+    let _ = (&game, &button);
+    #[cfg(target_os = "android")]
+    {
+        lane3::screen_click(&mut *game, button)
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        false
+    }
+}
+
+/// Esc on a lane 3 mod's screen (true when one is up): it closes.
+pub(super) fn native_mod_screen_escape(game: &mut Game<'_>) -> bool {
+    let _ = &game;
+    #[cfg(target_os = "android")]
+    {
+        lane3::screen_escape(&mut *game)
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        false
     }
 }
 

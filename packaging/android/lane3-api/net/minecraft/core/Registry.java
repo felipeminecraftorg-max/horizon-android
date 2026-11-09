@@ -9,6 +9,11 @@ public interface Registry<T> extends Iterable<T> {
 
     T get(ResourceLocation id);
 
+    /** The registry's own key ({@code minecraft:block}), or null for one lane 3 doesn't name. */
+    default net.minecraft.resources.ResourceKey<? extends Registry<T>> key() {
+        return null;
+    }
+
     boolean containsKey(ResourceLocation id);
 
     static <V, T extends V> T register(Registry<V> registry, ResourceLocation id, T value) {

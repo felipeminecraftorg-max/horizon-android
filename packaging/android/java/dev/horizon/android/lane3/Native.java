@@ -45,6 +45,15 @@ public final class Native {
     /** The block {@code id}'s properties and their values: {@code facing=north,south;lit=true,false}. */
     public static native String properties(String id);
 
+    /** A mod's screen, drawn: Horizon shows these lines (GuiGraphics' {@code horizonLines}). */
+    public static native void screen(String lines);
+
+    /** The mod's screen closed. */
+    public static native void screenClose();
+
+    /** The screen's size in GUI pixels: "width height". */
+    public static native String guiSize();
+
     /** The biome at x, y, z ({@code minecraft:plains}), or "" outside a game. */
     public static native String biome(int x, int y, int z);
 }

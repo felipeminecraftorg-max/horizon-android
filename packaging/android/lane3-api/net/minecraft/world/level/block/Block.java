@@ -13,7 +13,7 @@ public class Block extends net.minecraft.world.level.block.state.BlockBehaviour 
     private BlockState defaultState;
 
     /** The game's default state of a block is Horizon's: a mod's {@code registerDefaultState} is kept by it. */
-    protected final void registerDefaultState(BlockState state) {}
+    protected void registerDefaultState(BlockState state) {}
 
     /** The block adds its properties ({@code builder.add(FACING)}). */
     protected void createBlockStateDefinition(
@@ -32,6 +32,11 @@ public class Block extends net.minecraft.world.level.block.state.BlockBehaviour 
             // A property a stand-in couldn't make: the block keeps the others.
         }
         return new net.minecraft.world.level.block.state.StateDefinition<>(this, BlockState.horizonOf(this), builder.horizonProperties());
+    }
+
+    /** A stand-in's block (one of the game's kinds the mod extends): made as a mod's is. */
+    protected Block() {
+        this((net.minecraft.world.level.block.state.BlockBehaviour.Properties) null);
     }
 
     public Block(String id) {
@@ -80,7 +85,23 @@ public class Block extends net.minecraft.world.level.block.state.BlockBehaviour 
 
     /** A constant of the game's ({@code Blocks.STONE}): the block of the id its field names. */
     public static Block horizonConstant(String owner, String field) {
-        return owner.endsWith("/Blocks") ? byId("minecraft:" + field.toLowerCase(java.util.Locale.ROOT)) : null;
+        if (!owner.endsWith("/Blocks")) return null;
+        String id = "minecraft:" + field.toLowerCase(java.util.Locale.ROOT);
+        // The flower pot mods cast to its kind to add their plants to it.
+        if (field.equals("FLOWER_POT")) {
+            try {
+                Object pot = Class.forName("net.minecraft.world.level.block.FlowerPotBlock", true, Block.class.getClassLoader())
+                        .getDeclaredConstructor().newInstance();
+                if (pot instanceof Block b) {
+                    b.horizonId(id);
+                    ((dev.horizon.android.lane3.SimpleRegistry<Block>) BuiltInRegistries.BLOCK).horizonHold(net.minecraft.resources.ResourceLocation.parse(id), b);
+                    return b;
+                }
+            } catch (Throwable t) {
+                // No mod names the pot's kind: the plain block.
+            }
+        }
+        return byId(id);
     }
 
     public String getDescriptionId() {

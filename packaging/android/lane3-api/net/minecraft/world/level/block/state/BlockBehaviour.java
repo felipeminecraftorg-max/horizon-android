@@ -9,6 +9,10 @@ import net.minecraft.world.level.Level;
 public abstract class BlockBehaviour {
     protected final Properties properties;
 
+    protected BlockBehaviour() {
+        this(null);
+    }
+
     protected BlockBehaviour(Properties properties) {
         this.properties = properties == null ? Properties.of() : properties;
     }

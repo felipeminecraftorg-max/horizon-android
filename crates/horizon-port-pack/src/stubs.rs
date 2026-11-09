@@ -683,13 +683,15 @@ pub fn stand_ins(
     held: &std::collections::HashMap<String, crate::api::ApiClass>,
     api: &crate::api::Api,
 ) -> Stubs {
+    // A class `new` can make: public, not abstract, with a public constructor taking nothing.
     let class = |c: &str| {
         held.get(c).map(|k| Known {
             interface: k.is_interface(),
-            plain: k
-                .methods
-                .get(&("<init>".to_owned(), "()V".to_owned()))
-                .is_some_and(|a| a & 1 != 0),
+            plain: k.access & ABSTRACT == 0
+                && k
+                    .methods
+                    .get(&("<init>".to_owned(), "()V".to_owned()))
+                    .is_some_and(|a| a & 1 != 0),
         })
     };
     let constructor = |c: &str, d: &str| {

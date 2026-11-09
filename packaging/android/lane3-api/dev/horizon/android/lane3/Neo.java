@@ -143,6 +143,10 @@ public final class Neo {
     static final Map<String, Integer> REGISTRIES = new LinkedHashMap<>();
 
     static void clear() {
+        SCREENS.clear();
+        HANDLERS.clear();
+        screen = null;
+        serverMenu = null;
         OWN.clear();
         DEFINED.clear();
         MADE.clear();
@@ -179,6 +183,8 @@ public final class Neo {
                         .hold(key.location(), b);
             }
         }
+        if (made instanceof net.minecraft.world.item.Item i) i.horizonId(key.location().toString());
+        if (made instanceof net.minecraft.core.particles.ParticleType<?> p) p.horizonId(key.location().toString());
         if (made instanceof net.minecraft.world.item.Item i && key.isFor(net.minecraft.core.registries.Registries.ITEM)) {
             ((SimpleRegistry<net.minecraft.world.item.Item>) net.minecraft.core.registries.BuiltInRegistries.ITEM)
                     .hold(key.location(), i);
@@ -401,6 +407,209 @@ public final class Neo {
     public static ResourceKey<net.minecraft.world.level.Level> level(String id) {
         return (ResourceKey<net.minecraft.world.level.Level>) (ResourceKey<?>) ResourceKey.create(
                 net.minecraft.core.registries.Registries.DIMENSION, net.minecraft.resources.ResourceLocation.parse(id));
+    }
+
+    // --- Menus, their screens and the messages their buttons send ---------------------------
+
+    /** Each menu type's screen (NeoForge's {@code RegisterMenuScreensEvent}). */
+    private static final Map<net.minecraft.world.inventory.MenuType<?>, net.minecraft.client.gui.screens.MenuScreens.ScreenConstructor<?, ?>>
+            SCREENS = new HashMap<>();
+    /** The server's handler of each message type a mod registered. */
+    private static final Map<net.minecraft.resources.ResourceLocation, net.neoforged.neoforge.network.handling.IPayloadHandler<?>> HANDLERS =
+            new HashMap<>();
+    /** The screen open now, its menu on the server's side, and where the mouse is on it. */
+    private static net.minecraft.client.gui.screens.Screen screen;
+    private static net.minecraft.world.inventory.AbstractContainerMenu serverMenu;
+    private static int mouseX = -1;
+    private static int mouseY = -1;
+    private static int windows;
+
+    public static synchronized void screen(net.minecraft.world.inventory.MenuType<?> type,
+            net.minecraft.client.gui.screens.MenuScreens.ScreenConstructor<?, ?> constructor) {
+        if (type != null && constructor != null) SCREENS.put(type, constructor);
+    }
+
+    public static synchronized void handles(net.minecraft.network.protocol.common.custom.CustomPacketPayload.Type<?> type,
+            net.neoforged.neoforge.network.handling.IPayloadHandler<?> handler) {
+        if (type != null && handler != null) HANDLERS.put(type.id(), handler);
+    }
+
+    /** The server's side of a message for it: its handler runs now, for the acting player. */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static void serverbound(net.minecraft.network.protocol.common.custom.CustomPacketPayload payload) {
+        if (payload == null || payload.type() == null) return;
+        net.neoforged.neoforge.network.handling.IPayloadHandler handler;
+        synchronized (Neo.class) {
+            handler = HANDLERS.get(payload.type().id());
+        }
+        if (handler == null) return;
+        handler.handle(payload, new net.neoforged.neoforge.network.handling.IPayloadContext() {
+            public net.minecraft.world.entity.player.Player player() {
+                return net.minecraft.server.level.ServerPlayer.ACTING;
+            }
+
+            public java.util.concurrent.CompletableFuture<Void> enqueueWork(Runnable work) {
+                try {
+                    work.run();
+                    return java.util.concurrent.CompletableFuture.completedFuture(null);
+                } catch (Throwable t) {
+                    return java.util.concurrent.CompletableFuture.failedFuture(t);
+                }
+            }
+
+            public net.minecraft.network.protocol.PacketFlow flow() {
+                return net.minecraft.network.protocol.PacketFlow.SERVERBOUND;
+            }
+
+            public net.minecraft.network.Connection connection() {
+                return new net.minecraft.network.Connection();
+            }
+        });
+    }
+
+    private static int[] guiSize() {
+        String text;
+        try {
+            text = Native.guiSize();
+        } catch (Throwable t) {
+            text = null;
+        }
+        if (text != null) {
+            String[] p = text.split(" ");
+            try {
+                if (p.length == 2) return new int[] {Integer.parseInt(p[0]), Integer.parseInt(p[1])};
+            } catch (NumberFormatException e) {
+                // The usual size below.
+            }
+        }
+        return new int[] {427, 240};
+    }
+
+    /**
+     * A player opens a mod's menu: the server's side is made, then the client's from the data
+     * {@code extra} writes, and its screen, which Horizon shows. Its window id, if it opened.
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static synchronized java.util.OptionalInt openMenu(net.minecraft.world.MenuProvider provider,
+            java.util.function.Consumer<net.minecraft.network.RegistryFriendlyByteBuf> extra) {
+        if (provider == null) return java.util.OptionalInt.empty();
+        closeScreen(false);
+        int id = windows % 100 + 1;
+        windows = id;
+        net.minecraft.server.level.ServerPlayer player = net.minecraft.server.level.ServerPlayer.ACTING;
+        net.minecraft.world.inventory.AbstractContainerMenu server = provider.createMenu(id, player.getInventory(), player);
+        if (server == null) return java.util.OptionalInt.empty();
+        net.minecraft.client.gui.screens.MenuScreens.ScreenConstructor constructor = SCREENS.get(server.getType());
+        if (constructor == null) {
+            Lane3.failed("open menu", new IllegalStateException("no screen for the menu " + server.getClass().getName()));
+            return java.util.OptionalInt.empty();
+        }
+        net.minecraft.network.RegistryFriendlyByteBuf data = new net.minecraft.network.RegistryFriendlyByteBuf(io.netty.buffer.Unpooled.buffer());
+        if (extra != null) extra.accept(data);
+        net.minecraft.client.player.LocalPlayer local = net.minecraft.client.player.LocalPlayer.CURRENT;
+        net.minecraft.world.inventory.AbstractContainerMenu client = server.getType().create(id, local.getInventory(), data);
+        net.minecraft.client.gui.screens.Screen made = (net.minecraft.client.gui.screens.Screen) constructor.create(
+                client == null ? server : client, local.getInventory(), provider.getDisplayName());
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        mc.screen = made;
+        int[] size = guiSize();
+        made.init(mc, size[0], size[1]);
+        player.containerMenu = server;
+        local.containerMenu = client;
+        screen = made;
+        serverMenu = server;
+        mouseX = -1;
+        mouseY = -1;
+        draw();
+        return java.util.OptionalInt.of(id);
+    }
+
+    /** Draws the open screen for Horizon. */
+    private static void draw() {
+        if (screen == null) return;
+        int[] size = guiSize();
+        if (size[0] != screen.width || size[1] != screen.height) screen.init(net.minecraft.client.Minecraft.getInstance(), size[0], size[1]);
+        net.minecraft.client.gui.GuiGraphics graphics = new net.minecraft.client.gui.GuiGraphics(size[0], size[1]);
+        try {
+            screen.render(graphics, mouseX, mouseY, 0.0F);
+        } finally {
+            Native.screen(graphics.horizonLines());
+        }
+    }
+
+    /** The open screen closes: its menu's {@code removed} runs, and Horizon's screen goes when {@code tell}. */
+    public static synchronized void closeScreen(boolean tell) {
+        net.minecraft.client.gui.screens.Screen was = screen;
+        net.minecraft.world.inventory.AbstractContainerMenu menu = serverMenu;
+        screen = null;
+        serverMenu = null;
+        net.minecraft.client.Minecraft.getInstance().screen = null;
+        net.minecraft.server.level.ServerPlayer.ACTING.containerMenu = null;
+        net.minecraft.client.player.LocalPlayer.CURRENT.containerMenu = null;
+        if (was != null) {
+            try {
+                was.removed();
+            } finally {
+                if (menu != null) menu.removed(net.minecraft.server.level.ServerPlayer.ACTING);
+            }
+        }
+        if (tell && was != null) Native.screenClose();
+    }
+
+    /**
+     * What the player did on the screen, a line each: {@code move x y}, {@code click x y
+     * button}, {@code key code}, {@code close}. The screen is drawn again after.
+     */
+    static synchronized void screenEvents(String events) {
+        for (String line : events.split("\n")) {
+            if (screen == null) return;
+            String[] p = line.split(" ");
+            try {
+                switch (p[0]) {
+                    case "move" -> {
+                        mouseX = Integer.parseInt(p[1]);
+                        mouseY = Integer.parseInt(p[2]);
+                    }
+                    case "click" -> {
+                        mouseX = Integer.parseInt(p[1]);
+                        mouseY = Integer.parseInt(p[2]);
+                        screen.mouseClicked(mouseX, mouseY, Integer.parseInt(p[3]));
+                    }
+                    case "key" -> screen.keyPressed(Integer.parseInt(p[1]), 0, 0);
+                    case "close" -> closeScreen(true);
+                    default -> {}
+                }
+            } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
+                // A line Horizon didn't write.
+            }
+        }
+        if (screen != null) draw();
+    }
+
+    /** Ticks the open screen ({@code Screen.tick}) and draws it again. */
+    static synchronized void screenTick() {
+        if (screen == null) return;
+        screen.tick();
+        draw();
+    }
+
+    /**
+     * The mods' setup events, after every mod is constructed: on their own buses, and on the
+     * game's for the subscribers that name no bus (NeoForge sends a mod-bus event's listeners
+     * there itself).
+     */
+    static void setup() {
+        java.util.List<Bus> buses = new java.util.ArrayList<>(MOD_BUSES.values());
+        buses.add(GAME);
+        java.util.List<java.util.Map.Entry<String, Supplier<net.neoforged.bus.api.Event>>> events = java.util.List.of(
+                new java.util.AbstractMap.SimpleImmutableEntry<>("common setup", net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent::new),
+                new java.util.AbstractMap.SimpleImmutableEntry<>("client setup", net.neoforged.fml.event.lifecycle.FMLClientSetupEvent::new),
+                new java.util.AbstractMap.SimpleImmutableEntry<>("payload handlers",
+                        net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent::new),
+                new java.util.AbstractMap.SimpleImmutableEntry<>("menu screens", net.neoforged.neoforge.client.event.RegisterMenuScreensEvent::new));
+        for (java.util.Map.Entry<String, Supplier<net.neoforged.bus.api.Event>> e : events) {
+            for (Bus bus : buses) Lane3.guardPublic(e.getKey(), () -> bus.post(e.getValue().get()));
+        }
     }
 
     /** The acting player: x, y, z, yaw, pitch and its level's id (Native.player). */

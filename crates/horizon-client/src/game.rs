@@ -8468,7 +8468,12 @@ impl Game<'_> {
                 self.draw_creative(&mut batch);
             }
             Screen::Chat => self.draw_chat_screen(&mut batch),
-            Screen::Mod => self.draw_mod_screen(&mut batch),
+            Screen::Mod => {
+                // A lane 3 mod's screen (Android) draws in place of a Horizon mod's.
+                if !android_bundled::native_mod_screen_draw(self, &mut batch) {
+                    self.draw_mod_screen(&mut batch);
+                }
+            }
             Screen::Playing | Screen::Options | Screen::Win => {}
         }
         self.fire_screen_render_post(&mut batch);
@@ -15810,7 +15815,11 @@ impl Game<'_> {
                 Screen::BlockEditor => self.close_block_editor(),
                 Screen::Chat => self.close_chat(chat::ChatExit::Intentional),
                 Screen::Win => self.close_win_screen()?,
-                Screen::Mod => self.close_mod_screen(true),
+                Screen::Mod => {
+                    if !android_bundled::native_mod_screen_escape(self) {
+                        self.close_mod_screen(true);
+                    }
+                }
                 Screen::DebugOptions => self.close_debug_options(),
             },
             KeyCode::Digit1
@@ -17833,7 +17842,11 @@ impl Game<'_> {
                             self.stats_click(size);
                         }
                         Screen::Stats if button == MouseButton::Left => self.stats_release(),
-                        Screen::Mod if pressed => self.mod_screen_click(button),
+                        Screen::Mod if pressed => {
+                            if !android_bundled::native_mod_screen_click(self, button) {
+                                self.mod_screen_click(button);
+                            }
+                        }
                         _ => {}
                     }
                 }

@@ -3,6 +3,6 @@ package net.neoforged.neoforge.network.handling;
 
 /** What a mod does with one of its messages. */
 @FunctionalInterface
-public interface IPayloadHandler<T> {
+public interface IPayloadHandler<T extends net.minecraft.network.protocol.common.custom.CustomPacketPayload> {
     void handle(T payload, IPayloadContext context);
 }

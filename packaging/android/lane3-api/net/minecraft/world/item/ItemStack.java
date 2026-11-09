@@ -28,7 +28,7 @@ public final class ItemStack {
     }
 
     public boolean isEmpty() {
-        return count <= 0 || item.id().equals("minecraft:air");
+        return count <= 0 || item == null || item.id() == null || item.id().equals("minecraft:air");
     }
 
     public Item getItem() {

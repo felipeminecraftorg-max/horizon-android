@@ -11,6 +11,13 @@ public class ServerLevel extends Level implements net.minecraft.world.level.Worl
 
     public static final ServerLevel CURRENT = new ServerLevel();
 
+    private final ServerChunkCache serverChunks = new ServerChunkCache();
+
+    @Override
+    public ServerChunkCache getChunkSource() {
+        return serverChunks;
+    }
+
     /** Particles the players near see (Horizon's {@code /particle}): how many it sent. */
     public <T extends net.minecraft.core.particles.ParticleOptions> int sendParticles(T particle, double x, double y, double z, int count,
             double dx, double dy, double dz, double speed) {

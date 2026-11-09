@@ -7,6 +7,11 @@ public class SimpleParticleType extends ParticleType<SimpleParticleType> impleme
         super(id);
     }
 
+    /** A mod's: named when it is registered. */
+    public SimpleParticleType(boolean overrideLimiter) {
+        super(overrideLimiter);
+    }
+
     @Override
     public SimpleParticleType getType() {
         return this;

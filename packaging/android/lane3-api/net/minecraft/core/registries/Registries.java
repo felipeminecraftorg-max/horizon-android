@@ -9,6 +9,7 @@ import net.minecraft.resources.ResourceLocation;
 @SuppressWarnings({"rawtypes", "unchecked"})
 public final class Registries {
     public static final ResourceKey ACTIVITY = key("activity");
+    public static final ResourceKey ARMOR_MATERIAL = key("armor_material");
     public static final ResourceKey ATTRIBUTE = key("attribute");
     public static final ResourceKey BANNER_PATTERN = key("banner_pattern");
     public static final ResourceKey BIOME = key("worldgen/biome");

@@ -30,6 +30,12 @@ public class DeferredRegister<T> {
         return new DeferredRegister<>(key, namespace);
     }
 
+    /** For the registry itself ({@code BuiltInRegistries.BLOCK_ENTITY_TYPE}). */
+    public static <T> DeferredRegister<T> create(Registry<T> registry, String namespace) {
+        ResourceKey<? extends Registry<T>> key = registry == null ? null : registry.key();
+        return new DeferredRegister<>(key != null ? key : ResourceKey.<T>createRegistryKey(ResourceLocation.parse("horizon:unknown")), namespace);
+    }
+
     public static <T> DeferredRegister<T> create(ResourceLocation registry, String namespace) {
         return new DeferredRegister<>(ResourceKey.<T>createRegistryKey(registry), namespace);
     }

@@ -29,6 +29,10 @@ public interface LevelAccessor {
         return dev.horizon.android.lane3.Neo.biome(id == null || id.isEmpty() ? "minecraft:plains" : id);
     }
 
+    default net.minecraft.world.level.block.entity.BlockEntity getBlockEntity(BlockPos pos) {
+        return null;
+    }
+
     /** A particle only clients draw: the server shows none. */
     default void addParticle(net.minecraft.core.particles.ParticleOptions particle, double x, double y, double z, double dx, double dy,
             double dz) {}

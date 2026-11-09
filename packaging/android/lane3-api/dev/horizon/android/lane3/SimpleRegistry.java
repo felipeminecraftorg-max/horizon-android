@@ -29,10 +29,20 @@ public final class SimpleRegistry<T> implements DefaultedRegistry<T> {
         this.make = make;
     }
 
+    @Override
+    public net.minecraft.resources.ResourceKey<? extends net.minecraft.core.Registry<T>> key() {
+        return registry;
+    }
+
     /** A mod's entry, made: kept as the one value for its id, without counting it again. */
     synchronized void hold(ResourceLocation id, T value) {
         values.put(id, value);
         keys.put(value, id);
+    }
+
+    /** {@link #hold} for the API slice's own classes. */
+    public void horizonHold(ResourceLocation id, T value) {
+        hold(id, value);
     }
 
     public synchronized void put(ResourceLocation id, T value) {

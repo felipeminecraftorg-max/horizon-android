@@ -4,6 +4,7 @@
 //! fires, and reach the world through the `Native` methods below, which act on the `Game` that
 //! fired the event.
 use crate::game::Game;
+use horizon_client::{hud::HudBatch, text::Text};
 use horizon_world::registry::BlockStateId;
 use jni::{
     JNIEnv,
@@ -30,6 +31,31 @@ enum Owed {
     },
 }
 
+/// A mod's screen, as its Java code last drew it (`GuiGraphics` lines), and what the player did
+/// on it since: shared by the server thread, where the mod runs, and the window, which shows it.
+struct SharedScreen {
+    /// The screen's number (a new one each time it is drawn) and its lines; none when closed.
+    drawn: Option<(u64, std::sync::Arc<str>)>,
+    /// A new screen's number: the window opens it if it shows another or none.
+    opened: u64,
+    events: Vec<String>,
+}
+
+static SCREEN: std::sync::Mutex<SharedScreen> = std::sync::Mutex::new(SharedScreen {
+    drawn: None,
+    opened: 0,
+    events: Vec::new(),
+});
+/// The window's GUI size (width << 32 | height), for the mods' screens to lay out in.
+static GUI_SIZE: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new((427 << 32) | 240);
+
+fn shared_screen() -> std::sync::MutexGuard<'static, SharedScreen> {
+    SCREEN
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// At most this many owed calls wait at once (a block placing blocks without end stops there).
 const OWED_MAX: usize = 4096;
 
@@ -43,6 +69,11 @@ thread_local! {
     /// Each player's level at the end of the last tick, by entity id.
     static LEVELS: std::cell::RefCell<HashMap<i32, String>> =
         std::cell::RefCell::new(HashMap::new());
+    /// The mod screen the window shows (its open number), and the one the player closed.
+    static SHOWN: Cell<Option<u64>> = const { Cell::new(None) };
+    static DISMISSED: Cell<u64> = const { Cell::new(0) };
+    /// Where the mouse was last told to the mod's screen.
+    static TOLD: Cell<(i32, i32)> = const { Cell::new((i32::MIN, i32::MIN)) };
     /// The players inside mods' blocks this tick: (entity id, block, position), each once.
     static INSIDE: std::cell::RefCell<Vec<(i32, String, [i32; 3])>> =
         const { std::cell::RefCell::new(Vec::new()) };
@@ -170,6 +201,210 @@ fn start(game: &mut Game<'_>) {
     });
 }
 
+/// What the player did on a mod's screen since the last tick reaches its Java code.
+fn screen_events() {
+    let events = std::mem::take(&mut shared_screen().events);
+    if !events.is_empty() {
+        crate::lane3::screen_events(&events.join("\n"));
+    }
+}
+
+// --- The window's side of the mods' screens ------------------------------------------------
+
+/// The window, once a frame: its GUI size for the mods, and a mod's screen opened or closed.
+pub(super) fn screen_frame(game: &mut Game<'_>) {
+    let (w, h) = game.gui_size();
+    GUI_SIZE.store(
+        ((w.max(1.0) as u64) << 32) | (h.max(1.0) as u64),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    let (drawn, opened) = {
+        let s = shared_screen();
+        (s.drawn.as_ref().map(|(n, _)| *n), s.opened)
+    };
+    let shown = SHOWN.with(Cell::get);
+    match (shown, drawn) {
+        (None, Some(_))
+            if opened != DISMISSED.with(Cell::get)
+                && game.screen == crate::game::Screen::Playing =>
+        {
+            SHOWN.with(|s| s.set(Some(opened)));
+            TOLD.with(|t| t.set((i32::MIN, i32::MIN)));
+            game.screen = crate::game::Screen::Mod;
+            game.capture(false);
+        }
+        (Some(_), None) => {
+            SHOWN.with(|s| s.set(None));
+            if game.screen == crate::game::Screen::Mod {
+                game.screen = crate::game::Screen::Playing;
+                game.capture(true);
+            }
+        }
+        (Some(n), Some(_)) if game.screen != crate::game::Screen::Mod => {
+            // Another screen took its place (death, the pause menu): the mod's closes.
+            SHOWN.with(|s| s.set(None));
+            DISMISSED.with(|d| d.set(n));
+            shared_screen().events.push("close".into());
+        }
+        (Some(n), Some(_)) if n != opened => SHOWN.with(|s| s.set(Some(opened))),
+        _ => {}
+    }
+}
+
+/// The texture a mod names (`places:textures/screens/bin.png`) as the GUI atlas names it
+/// (`places:screens/bin`; the game's own without its namespace).
+fn atlas_name(texture: &str) -> String {
+    let (ns, path) = texture.split_once(':').unwrap_or(("minecraft", texture));
+    let path = path.strip_prefix("textures/").unwrap_or(path);
+    let path = path.strip_suffix(".png").unwrap_or(path);
+    if ns == "minecraft" {
+        path.to_owned()
+    } else {
+        format!("{ns}:{path}")
+    }
+}
+
+/// A sprite a widget names (`minecraft:widget/button`) in the GUI atlas.
+fn sprite_name(sprite: &str) -> String {
+    let (ns, path) = sprite.split_once(':').unwrap_or(("minecraft", sprite));
+    if path.starts_with("textures/") {
+        return atlas_name(sprite);
+    }
+    if ns == "minecraft" {
+        format!("gui/sprites/{path}")
+    } else {
+        format!("{ns}:gui/sprites/{path}")
+    }
+}
+
+/// Draws a mod's screen, when one is up: the world dimmed, then what the screen drew.
+pub(super) fn screen_draw(game: &mut Game<'_>, batch: &mut HudBatch) -> bool {
+    if SHOWN.with(Cell::get).is_none() {
+        return false;
+    }
+    let Some(lines) = shared_screen()
+        .drawn
+        .as_ref()
+        .map(|(_, l)| std::sync::Arc::clone(l))
+    else {
+        return true;
+    };
+    game.native_fill(batch, [0.0, 0.0, batch.width, batch.height], 0xC010_1010);
+    let num = |s: Option<&&str>| s.and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
+    let mut tooltip = None;
+    for line in lines.lines() {
+        let f: Vec<&str> = line.split('\t').collect();
+        match f.first().copied() {
+            Some("blit") if f.len() >= 12 => {
+                let name = atlas_name(f[1]);
+                let [x, y, w, h] = [num(f.get(2)), num(f.get(3)), num(f.get(4)), num(f.get(5))];
+                let [u, v, uw, vh] = [num(f.get(6)), num(f.get(7)), num(f.get(8)), num(f.get(9))];
+                let [tw, th] = [num(f.get(10)).max(1.0), num(f.get(11)).max(1.0)];
+                if let Some([sw, sh]) = game.native_sprite_size(&name) {
+                    let (sx, sy) = (sw / tw, sh / th);
+                    game.native_sprite(
+                        batch,
+                        &name,
+                        [u * sx, v * sy, uw * sx, vh * sy],
+                        [x, y, w, h],
+                    );
+                }
+            }
+            Some("sprite") if f.len() >= 6 => {
+                let name = sprite_name(f[1]);
+                let [x, y, w, h] = [num(f.get(2)), num(f.get(3)), num(f.get(4)), num(f.get(5))];
+                if let Some([sw, sh]) = game.native_sprite_size(&name) {
+                    game.native_sprite(batch, &name, [0.0, 0.0, sw, sh], [x, y, w, h]);
+                }
+            }
+            Some("fill") if f.len() >= 6 => {
+                let [x1, y1, x2, y2] = [num(f.get(1)), num(f.get(2)), num(f.get(3)), num(f.get(4))];
+                let argb = f[5].parse::<u32>().unwrap_or(0);
+                game.native_fill(
+                    batch,
+                    [x1.min(x2), y1.min(y2), (x2 - x1).abs(), (y2 - y1).abs()],
+                    argb,
+                );
+            }
+            Some("text") if f.len() >= 6 => {
+                let rgb = f[3].parse::<u32>().unwrap_or(0xFF_FFFF);
+                game.native_text(
+                    batch,
+                    f[5],
+                    [num(f.get(1)), num(f.get(2))],
+                    rgb,
+                    f[4] == "1",
+                );
+            }
+            Some("button") if f.len() >= 8 => {
+                let [x, y, w, h] = [num(f.get(1)), num(f.get(2)), num(f.get(3)), num(f.get(4))];
+                horizon_client::ui::button(
+                    batch,
+                    &game.gui.atlas,
+                    x,
+                    y,
+                    w,
+                    h,
+                    &Text::literal(f[7]),
+                    f[6] == "1",
+                    f[5] == "1",
+                );
+            }
+            Some("tooltip") if f.len() >= 4 => {
+                tooltip = Some(([num(f.get(1)), num(f.get(2))], f[3].to_owned()));
+            }
+            _ => {}
+        }
+    }
+    if let Some(([x, y], text)) = tooltip {
+        let w = game.native_text_width(&text) + 6.0;
+        let (tx, ty) = ((x + 12.0).min(batch.width - w), (y - 12.0).max(0.0));
+        game.native_fill(batch, [tx, ty, w, 12.0], 0xF010_0010);
+        game.native_text(batch, &text, [tx + 3.0, ty + 2.0], 0xFF_FFFF, true);
+    }
+    // The mouse, for what it hovers.
+    let at = (game.cursor.0 as i32, game.cursor.1 as i32);
+    if TOLD.with(|t| t.replace(at)) != at {
+        shared_screen()
+            .events
+            .push(format!("move {} {}", at.0, at.1));
+    }
+    true
+}
+
+/// A click on a mod's screen goes to its Java code.
+pub(super) fn screen_click(game: &mut Game<'_>, button: winit::event::MouseButton) -> bool {
+    if SHOWN.with(Cell::get).is_none() {
+        return false;
+    }
+    let b = match button {
+        winit::event::MouseButton::Left => 0,
+        winit::event::MouseButton::Right => 1,
+        winit::event::MouseButton::Middle => 2,
+        _ => return true,
+    };
+    let (x, y) = (game.cursor.0 as i32, game.cursor.1 as i32);
+    shared_screen().events.push(format!("click {x} {y} {b}"));
+    true
+}
+
+/// Esc on a mod's screen: it closes here at once, and its code hears the key.
+pub(super) fn screen_escape(game: &mut Game<'_>) -> bool {
+    let Some(n) = SHOWN.with(Cell::get) else {
+        return false;
+    };
+    SHOWN.with(|s| s.set(None));
+    DISMISSED.with(|d| d.set(n));
+    {
+        let mut s = shared_screen();
+        s.events.push("key 256".into());
+        s.events.push("close".into());
+    }
+    game.screen = crate::game::Screen::Playing;
+    game.capture(true);
+    true
+}
+
 /// A block took the state `new` (it was `old`): a mod's block with its own `onPlace` is owed it.
 pub(super) fn placed(block: &str, new: BlockStateId, old: BlockStateId, at: [i32; 3]) {
     if !active() || !HOOKS.with(|h| h.borrow().0.contains(block)) {
@@ -281,9 +516,15 @@ pub(super) fn server_tick(game: &mut Game<'_>, end: bool) {
         .and_then(|h| h.hub.guests.first().map(|g| g.entity_id));
     match first {
         Some(entity) => as_player(game, entity, |g| {
-            with_current(g, || crate::lane3::server_tick(end));
+            with_current(g, || {
+                screen_events();
+                crate::lane3::server_tick(end);
+            });
         }),
-        None => with_current(game, || crate::lane3::server_tick(end)),
+        None => with_current(game, || {
+            screen_events();
+            crate::lane3::server_tick(end);
+        }),
     }
     if !end {
         return;
@@ -360,6 +601,11 @@ pub(super) fn server_stopping() {
         }
     }
     STARTED.with(|s| s.set(None));
+    {
+        let mut screen = shared_screen();
+        screen.drawn = None;
+        screen.events.clear();
+    }
     OWED.with(|o| o.borrow_mut().clear());
     LEVELS.with(|l| l.borrow_mut().clear());
 }
@@ -598,6 +844,44 @@ pub extern "system" fn Java_dev_horizon_android_lane3_Native_hasEffect<'l>(
     let id = rust_string(&mut env, &effect);
     let short = id.strip_prefix("minecraft:").unwrap_or(&id).to_owned();
     u8::from(current(|g| g.potions.effects.get(&short).is_some()) == Some(true))
+}
+
+/// A mod's screen drew itself: the window shows these lines.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_horizon_android_lane3_Native_screen<'l>(
+    mut env: JNIEnv<'l>,
+    _class: JClass<'l>,
+    lines: JString<'l>,
+) {
+    let text = rust_string(&mut env, &lines);
+    let mut s = shared_screen();
+    let opened = match s.drawn.take() {
+        Some((n, _)) => n,
+        None => {
+            s.opened += 1;
+            s.opened
+        }
+    };
+    s.drawn = Some((opened, std::sync::Arc::from(text)));
+}
+
+/// A mod's screen closed.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_horizon_android_lane3_Native_screenClose<'l>(
+    _env: JNIEnv<'l>,
+    _class: JClass<'l>,
+) {
+    shared_screen().drawn = None;
+}
+
+/// The window's GUI size: `width height`.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_horizon_android_lane3_Native_guiSize<'l>(
+    mut env: JNIEnv<'l>,
+    _class: JClass<'l>,
+) -> jstring {
+    let size = GUI_SIZE.load(std::sync::atomic::Ordering::Relaxed);
+    java_string(&mut env, &format!("{} {}", size >> 32, size & 0xFFFF_FFFF))
 }
 
 /// The block `id`'s default state, as `state_text` writes it, or "" for a block Horizon lacks.

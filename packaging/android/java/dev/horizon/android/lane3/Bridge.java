@@ -182,6 +182,17 @@ public final class Bridge {
         }
     }
 
+    private static final Class<?>[] TEXT = {String.class};
+
+    /** What the player did on a mod's screen. */
+    public static void screenEvents(String events) {
+        try {
+            call("screenEvents", TEXT, events);
+        } catch (Throwable t) {
+            // As above.
+        }
+    }
+
     public static void serverTick(boolean end) {
         try {
             call("serverTick", BOOL, end);

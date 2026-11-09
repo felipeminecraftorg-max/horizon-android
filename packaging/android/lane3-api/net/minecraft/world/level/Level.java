@@ -33,7 +33,22 @@ public abstract class Level implements LevelAccessor {
         return net.minecraft.server.MinecraftServer.CURRENT;
     }
 
-    public final boolean isClientSide = false;
+    public final boolean isClientSide;
+    private final net.minecraft.world.level.chunk.ChunkSource chunks;
+
+    protected Level() {
+        this(false);
+    }
+
+    /** A level of the client's side ({@code client}): its chunks are none the server's code reaches. */
+    protected Level(boolean client) {
+        this.isClientSide = client;
+        this.chunks = client ? new net.minecraft.world.level.chunk.ChunkSource(false) : new net.minecraft.server.level.ServerChunkCache();
+    }
+
+    public net.minecraft.world.level.chunk.ChunkSource getChunkSource() {
+        return chunks;
+    }
 
     public final net.minecraft.util.RandomSource random = net.minecraft.util.RandomSource.create();
 
@@ -63,7 +78,7 @@ public abstract class Level implements LevelAccessor {
     }
 
     public boolean isClientSide() {
-        return false;
+        return isClientSide;
     }
 
     public long getGameTime() {
@@ -95,6 +110,11 @@ public abstract class Level implements LevelAccessor {
     /** A sound only this client hears: the server has none. */
     public void playLocalSound(double x, double y, double z, net.minecraft.sounds.SoundEvent sound, net.minecraft.sounds.SoundSource source,
             float volume, float pitch, boolean delayed) {}
+
+    /** A block's entity: lane 3 has none of its own yet (Horizon keeps the blocks' data). */
+    public net.minecraft.world.level.block.entity.BlockEntity getBlockEntity(BlockPos pos) {
+        return null;
+    }
 
     public net.minecraft.world.level.material.FluidState getFluidState(BlockPos pos) {
         return new net.minecraft.world.level.material.FluidState();

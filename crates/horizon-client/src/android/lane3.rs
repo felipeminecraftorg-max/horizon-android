@@ -283,6 +283,20 @@ pub fn ticked(state: &str, pos: [i32; 3]) {
     });
 }
 
+/// What the player did on a mod's screen (`move x y`, `click x y button`, `key code`, `close`).
+pub fn screen_events(events: &str) {
+    let _ = call(|env, class| {
+        let e = JObject::from(env.new_string(events)?);
+        env.call_static_method(
+            class,
+            "screenEvents",
+            "(Ljava/lang/String;)V",
+            &[JValue::Object(&e)],
+        )?;
+        Ok(())
+    });
+}
+
 /// The acting player went from the level `from` to `to`.
 pub fn changed_dimension(from: &str, to: &str) {
     let _ = call(|env, class| {
