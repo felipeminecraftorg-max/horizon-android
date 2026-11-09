@@ -485,14 +485,6 @@ impl GameLevel<'_> {
         handled: &mut bool,
     ) {
         let _ = (ticks, dimension, pos, state, handled);
-        if !*handled {
-            super::android_bundled::native_block_ticked(
-                &self.facts.get(state).name,
-                state,
-                [pos.x, pos.y, pos.z],
-                handled,
-            );
-        }
     }
 
     /// An authoritative server is about to compute the state the block
@@ -587,7 +579,15 @@ impl GameLevel<'_> {
         state: BlockStateId,
         handled: &mut bool,
     ) {
-        let _ = (ticks, dimension, pos, state, handled);
+        let _ = (&ticks, dimension, &handled);
+        if !*handled {
+            super::android_bundled::native_block_ticked(
+                &self.facts.get(state).name,
+                state,
+                [pos.x, pos.y, pos.z],
+                handled,
+            );
+        }
     }
 
     /// A block is about to take the state it is placed in

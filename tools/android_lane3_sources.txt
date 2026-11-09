@@ -44,6 +44,7 @@ packaging/android/lane3-api/net/minecraft/util/Mth.java
 packaging/android/lane3-api/net/minecraft/util/RandomSource.java
 packaging/android/lane3-api/net/minecraft/world/InteractionHand.java
 packaging/android/lane3-api/net/minecraft/world/InteractionResult.java
+packaging/android/lane3-api/net/minecraft/world/ItemInteractionResult.java
 packaging/android/lane3-api/net/minecraft/world/effect/MobEffect.java
 packaging/android/lane3-api/net/minecraft/world/effect/MobEffectInstance.java
 packaging/android/lane3-api/net/minecraft/world/effect/MobEffects.java
@@ -69,6 +70,7 @@ packaging/android/lane3-api/net/minecraft/world/level/block/state/properties/Pro
 packaging/android/lane3-api/net/minecraft/world/level/levelgen/structure/templatesystem/StructurePlaceSettings.java
 packaging/android/lane3-api/net/minecraft/world/level/levelgen/structure/templatesystem/StructureTemplate.java
 packaging/android/lane3-api/net/minecraft/world/level/levelgen/structure/templatesystem/StructureTemplateManager.java
+packaging/android/lane3-api/net/minecraft/world/level/material/FluidState.java
 packaging/android/lane3-api/net/minecraft/world/phys/BlockHitResult.java
 packaging/android/lane3-api/net/minecraft/world/phys/HitResult.java
 packaging/android/lane3-api/net/minecraft/world/phys/Vec2.java
@@ -90,9 +92,11 @@ packaging/android/lane3-api/net/neoforged/fml/util/thread/SidedThreadGroups.java
 packaging/android/lane3-api/net/neoforged/neoforge/attachment/AttachmentType.java
 packaging/android/lane3-api/net/neoforged/neoforge/common/ModConfigSpec.java
 packaging/android/lane3-api/net/neoforged/neoforge/common/NeoForge.java
+packaging/android/lane3-api/net/neoforged/neoforge/common/util/TriState.java
 packaging/android/lane3-api/net/neoforged/neoforge/event/entity/EntityEvent.java
 packaging/android/lane3-api/net/neoforged/neoforge/event/entity/living/LivingEvent.java
 packaging/android/lane3-api/net/neoforged/neoforge/event/entity/player/PlayerEvent.java
+packaging/android/lane3-api/net/neoforged/neoforge/event/entity/player/PlayerInteractEvent.java
 packaging/android/lane3-api/net/neoforged/neoforge/event/tick/ServerTickEvent.java
 packaging/android/lane3-api/net/neoforged/neoforge/network/event/RegisterPayloadHandlersEvent.java
 packaging/android/lane3-api/net/neoforged/neoforge/network/handling/IPayloadContext.java

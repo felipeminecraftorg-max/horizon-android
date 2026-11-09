@@ -245,6 +245,9 @@ public final class Lane3 {
                 default -> r.shouldSwing() ? 1 : 2;
             };
         });
+        if (answer[0] == 0 && !Neo.MOD_BUSES.isEmpty()) {
+            guard("use block", () -> answer[0] = Neo.use(x, y, z, face, hand));
+        }
         return answer[0];
     }
 
@@ -266,6 +269,7 @@ public final class Lane3 {
         if (loader == null) return;
         guard("block broken", () -> PlayerBlockBreakEvents.AFTER.invoker().afterBlockBreak(
                 ServerLevel.CURRENT, ServerPlayer.ACTING, new BlockPos(x, y, z), BlockState.of(state), null));
+        if (!Neo.MOD_BUSES.isEmpty()) guard("broken " + state, () -> Neo.broken(state, x, y, z));
     }
 
     /** An entity is inside a mod's block {@code block} at x, y, z: its {@code entityInside} runs. */

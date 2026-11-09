@@ -27,6 +27,15 @@ public class Block extends net.minecraft.world.level.block.state.BlockBehaviour 
         super(properties);
     }
 
+    /**
+     * NeoForge's: a player broke the block (the game has taken it away already: lane 3 calls
+     * this after).
+     */
+    public boolean onDestroyedByPlayer(BlockState state, net.minecraft.world.level.Level level, net.minecraft.core.BlockPos pos,
+            net.minecraft.world.entity.player.Player player, boolean willHarvest, net.minecraft.world.level.material.FluidState fluid) {
+        return true;
+    }
+
     /** The id lane 3 registered this block under. */
     public final void horizonId(String id) {
         if (this.id == null) this.id = id;

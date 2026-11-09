@@ -74,6 +74,10 @@ public abstract class Level implements LevelAccessor {
         return Native.time();
     }
 
+    public net.minecraft.world.level.material.FluidState getFluidState(BlockPos pos) {
+        return new net.minecraft.world.level.material.FluidState();
+    }
+
     public boolean isEmptyBlock(BlockPos pos) {
         return getBlockState(pos).isAir();
     }

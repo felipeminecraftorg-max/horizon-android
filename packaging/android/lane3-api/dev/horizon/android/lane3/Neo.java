@@ -256,6 +256,8 @@ public final class Neo {
         if (known != null) return known;
         boolean found = false;
         for (Class<?> c = block.getClass(); c != null && c != net.minecraft.world.level.block.Block.class && !found; c = c.getSuperclass()) {
+            // A stand-in for one of the game's classes does nothing of its own.
+            if (c.getName().startsWith("net.minecraft.")) continue;
             try {
                 for (Method d : c.getDeclaredMethods()) {
                     if (d.getName().equals(name) && !d.isBridge()) {
@@ -287,10 +289,70 @@ public final class Neo {
                 net.minecraft.server.level.ServerLevel.CURRENT, new net.minecraft.core.BlockPos(x, y, z), net.minecraft.server.level.ServerPlayer.ACTING);
     }
 
+    /** A result as the game takes it: 0 pass, 1 used (swing), 2 used, 3 refused. */
+    private static int code(net.minecraft.world.InteractionResult r) {
+        if (r == null || r == net.minecraft.world.InteractionResult.PASS) return 0;
+        if (r == net.minecraft.world.InteractionResult.FAIL) return 3;
+        return r.shouldSwing() ? 1 : 2;
+    }
+
+    /**
+     * A player right-clicked the block at x, y, z with {@code hand} (0 main, 1 off), as
+     * {@code ServerPlayerGameMode.useItemOn}: NeoForge's event, then a mod's block's own
+     * {@code useItemOn} and {@code useWithoutItem}.
+     */
+    static int use(int x, int y, int z, int face, int handIndex) {
+        net.minecraft.world.InteractionHand hand = net.minecraft.world.InteractionHand.values()[handIndex & 1];
+        net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(x, y, z);
+        net.minecraft.world.phys.BlockHitResult hit =
+                new net.minecraft.world.phys.BlockHitResult(pos, net.minecraft.core.Direction.from3DDataValue(face), false);
+        net.minecraft.server.level.ServerPlayer player = net.minecraft.server.level.ServerPlayer.ACTING;
+        net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.RightClickBlock event =
+                new net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.RightClickBlock(player, hand, pos, hit);
+        GAME.post(event);
+        if (event.isCanceled()) {
+            int c = code(event.getCancellationResult());
+            return c == 0 ? 3 : c;
+        }
+        if (event.getUseBlock().isFalse()) return 0;
+        String text = Native.block(x, y, z);
+        net.minecraft.world.level.block.Block block = text == null ? null : block(text);
+        if (block == null) return 0;
+        boolean useItemOn = own(block, "useItemOn");
+        boolean useWithoutItem = own(block, "useWithoutItem");
+        if (!useItemOn && !useWithoutItem) return 0;
+        net.minecraft.world.level.block.state.BlockState state = net.minecraft.world.level.block.state.BlockState.of(text);
+        net.minecraft.server.level.ServerLevel level = net.minecraft.server.level.ServerLevel.CURRENT;
+        boolean holding = !player.getMainHandItem().isEmpty() || !player.getOffhandItem().isEmpty();
+        // Sneaking with something in hand skips the block, unless the event asked for it.
+        if (player.isShiftKeyDown() && holding && !event.getUseBlock().isTrue()) return 0;
+        net.minecraft.world.ItemInteractionResult item = net.minecraft.world.ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+        if (useItemOn) {
+            item = net.minecraft.world.level.block.state.BlockBehaviour.horizonUseItem(
+                    block, player.getItemInHand(hand), state, level, pos, player, hand, hit);
+            if (item == null) item = net.minecraft.world.ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+            if (item.consumesAction()) return code(item.result());
+        }
+        if (useWithoutItem && item == net.minecraft.world.ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION
+                && hand == net.minecraft.world.InteractionHand.MAIN_HAND) {
+            return code(net.minecraft.world.level.block.state.BlockBehaviour.horizonUse(block, state, level, pos, player, hit));
+        }
+        return 0;
+    }
+
+    /** A player broke the mod's block state {@code state} at x, y, z: its {@code onDestroyedByPlayer}. */
+    static void broken(String state, int x, int y, int z) {
+        net.minecraft.world.level.block.Block block = block(state);
+        if (block == null || !own(block, "onDestroyedByPlayer")) return;
+        block.onDestroyedByPlayer(net.minecraft.world.level.block.state.BlockState.of(state), net.minecraft.server.level.ServerLevel.CURRENT,
+                new net.minecraft.core.BlockPos(x, y, z), net.minecraft.server.level.ServerPlayer.ACTING, true,
+                new net.minecraft.world.level.material.FluidState());
+    }
+
     /** {@code Block.onPlace}: the mod's block state {@code state} replaced {@code old} at x, y, z. */
     static void placed(String state, int x, int y, int z, String old) {
         net.minecraft.world.level.block.Block block = block(state);
-        if (block == null) return;
+        if (block == null || !own(block, "onPlace")) return;
         net.minecraft.world.level.block.state.BlockBehaviour.horizonPlace(block, net.minecraft.world.level.block.state.BlockState.of(state),
                 net.minecraft.server.level.ServerLevel.CURRENT, new net.minecraft.core.BlockPos(x, y, z),
                 net.minecraft.world.level.block.state.BlockState.of(old));
@@ -299,7 +361,7 @@ public final class Neo {
     /** {@code Block.tick}: a tick the mod's block scheduled at x, y, z is due. */
     static void ticked(String state, int x, int y, int z) {
         net.minecraft.world.level.block.Block block = block(state);
-        if (block == null) return;
+        if (block == null || !own(block, "tick")) return;
         net.minecraft.server.level.ServerLevel level = net.minecraft.server.level.ServerLevel.CURRENT;
         net.minecraft.world.level.block.state.BlockBehaviour.horizonTick(block, net.minecraft.world.level.block.state.BlockState.of(state), level,
                 new net.minecraft.core.BlockPos(x, y, z), level.random);

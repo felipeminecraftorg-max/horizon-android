@@ -469,7 +469,11 @@ pub extern "system" fn Java_dev_horizon_android_lane3_Native_sneaking<'l>(
     _env: JNIEnv<'l>,
     _class: JClass<'l>,
 ) -> jboolean {
-    let on = current(|g| g.keys.contains(&winit::keyboard::KeyCode::ShiftLeft));
+    // The acting player's own (a server's guest's body), or this window's key.
+    let on = current(|g| {
+        g.player.as_ref().is_some_and(|p| p.shift_key_down)
+            || g.keys.contains(&winit::keyboard::KeyCode::ShiftLeft)
+    });
     u8::from(on == Some(true))
 }
 
