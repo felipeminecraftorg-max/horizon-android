@@ -1,7 +1,7 @@
 //! Lane 2, block shapes: a mod block whose Java class makes its own shape (`getShape`,
 //! MCreator's `makeShapes`) carries over with its template's (a full cube, a pumpkin's). The
-//! shape a mod draws is almost always its model's: the boxes of the model's elements, turned as
-//! its blockstate turns the model. So the carried block gets those as its `shapes`.
+//! model supplies an approximation: its element boxes, turned as its blockstate turns the
+//! model. This cannot recover a Java-defined collision shape that differs from the artwork.
 //!
 //! Only blocks on a template whose shape is the block's whole (`minecraft:stone`, and the
 //! facing ones `minecraft:carved_pumpkin` and `minecraft:furnace`), with a model of elements of
@@ -70,6 +70,11 @@ fn elements(carry: &Path, model: &str, depth: usize) -> Option<Vec<[f64; 6]>> {
     if let Some(list) = v["elements"].as_array() {
         let mut boxes = Vec::new();
         for e in list {
+            // A tilted element is not its unrotated box. Leave this model to a native shape
+            // implementation instead of writing an incorrect collision override.
+            if !e["rotation"].is_null() && e["rotation"]["angle"].as_f64() != Some(0.0) {
+                return None;
+            }
             let corner = |key: &str| -> Option<[f64; 3]> {
                 let a = e[key].as_array()?;
                 Some([
@@ -78,14 +83,13 @@ fn elements(carry: &Path, model: &str, depth: usize) -> Option<Vec<[f64; 6]>> {
                     a.get(2)?.as_f64()?,
                 ])
             };
-            let (Some(from), Some(to)) = (corner("from"), corner("to")) else {
-                continue;
-            };
+            let (from, to) = (corner("from")?, corner("to")?);
             let mut b = [0.0; 6];
             for i in 0..3 {
                 let (lo, hi) = (from[i].min(to[i]), from[i].max(to[i]));
-                b[i] = (lo / 16.0).clamp(0.0, 1.0);
-                b[i + 3] = (hi / 16.0).clamp(0.0, 1.0);
+                // The content API accepts boxes beyond one block (e.g. an overhanging beam).
+                b[i] = lo / 16.0;
+                b[i + 3] = hi / 16.0;
             }
             // A flat plane (a cross plant's, a sign's face) holds nothing.
             if (0..3).all(|i| b[i + 3] - b[i] >= 1.0 / 64.0) {
@@ -117,20 +121,32 @@ fn fit(mut boxes: Vec<[f64; 6]>) -> Vec<[f64; 6]> {
     boxes
 }
 
-/// Boxes turned clockwise (seen from above) by `y` degrees, as a blockstate turns a model.
-fn turn(boxes: &[[f64; 6]], y: i64) -> Vec<[f64; 6]> {
+/// A blockstate's negative XYZ quarter-turns, about the block centre, as in the renderer.
+fn turn(boxes: &[[f64; 6]], rotations: [i64; 3]) -> Vec<[f64; 6]> {
     boxes
         .iter()
         .map(|b| {
-            let corner = |x: f64, z: f64| match y.rem_euclid(360) {
-                90 => (1.0 - z, x),
-                180 => (1.0 - x, 1.0 - z),
-                270 => (z, 1.0 - x),
-                _ => (x, z),
+            let corner = |mut p: [f64; 3]| {
+                for (axis, angle) in rotations.into_iter().enumerate() {
+                    let (a, c) = ((axis + 1) % 3, (axis + 2) % 3);
+                    for _ in 0..angle.rem_euclid(360) / 90 {
+                        let old = p[a];
+                        p[a] = p[c];
+                        p[c] = 1.0 - old;
+                    }
+                }
+                p
             };
-            let (x0, z0) = corner(b[0], b[2]);
-            let (x1, z1) = corner(b[3], b[5]);
-            [x0.min(x1), b[1], z0.min(z1), x0.max(x1), b[4], z0.max(z1)]
+            // Quarter turns are signed axis permutations, so opposite corners suffice.
+            let lo = corner([b[0], b[1], b[2]]);
+            let hi = corner([b[3], b[4], b[5]]);
+            std::array::from_fn(|i| {
+                if i < 3 {
+                    lo[i].min(hi[i])
+                } else {
+                    lo[i - 3].max(hi[i - 3])
+                }
+            })
         })
         .collect()
 }
@@ -142,13 +158,49 @@ fn round(boxes: Vec<[f64; 6]>) -> Vec<[f64; 6]> {
         .collect()
 }
 
-/// A blockstate variant's model and turn.
-fn variant(v: &Value) -> Option<(String, i64)> {
-    let v = v.as_array().and_then(|a| a.first()).unwrap_or(v);
-    Some((
-        v["model"].as_str()?.to_owned(),
-        v["y"].as_i64().unwrap_or(0),
-    ))
+/// A blockstate variant's model and turns. Invalid rotations must not become identity.
+fn variant(v: &Value) -> Option<(&str, [i64; 3])> {
+    let mut rotations = [0; 3];
+    for (angle, key) in rotations.iter_mut().zip(["x", "y", "z"]) {
+        *angle = if v[key].is_null() {
+            0
+        } else {
+            v[key].as_i64()?
+        };
+        if angle.rem_euclid(90) != 0 {
+            return None;
+        }
+    }
+    Some((v["model"].as_str()?, rotations))
+}
+
+/// Random visual alternatives can share a collision only if every alternative agrees.
+fn variant_shapes(carry: &Path, v: &Value) -> Option<Vec<[f64; 6]>> {
+    let options = v
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or(std::slice::from_ref(v));
+    let mut common = None;
+    for option in options {
+        let (model, rotations) = variant(option)?;
+        let boxes = elements(carry, model, 0)?;
+        if boxes.is_empty() {
+            return None;
+        }
+        let mut boxes = round(fit(turn(&boxes, rotations)));
+        boxes.sort_by(|a, b| {
+            a.iter()
+                .zip(b)
+                .map(|(a, b)| a.total_cmp(b))
+                .find(|c| !c.is_eq())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        if common.as_ref().is_some_and(|previous| *previous != boxes) {
+            return None;
+        }
+        common = Some(boxes);
+    }
+    common
 }
 
 /// The `shapes` of block `path` from its blockstate and models, for template property
@@ -161,33 +213,43 @@ fn shapes_of(carry: &Path, ns: &str, path: &str, property: &str) -> Option<Value
         .join(format!("{path}.json"));
     let state: Value = serde_json::from_slice(&fs::read(file).ok()?).ok()?;
     let variants = state["variants"].as_object()?;
-    let shape = |(model, y): (String, i64)| -> Option<Vec<[f64; 6]>> {
-        let boxes = elements(carry, &model, 0)?;
-        (!boxes.is_empty()).then(|| round(fit(turn(&boxes, y))))
-    };
     let mut values = BTreeMap::new();
     if property.is_empty() {
-        let first = variants.get("").or_else(|| variants.values().next())?;
-        values.insert(String::new(), shape(variant(first)?)?);
+        let mut common = None;
+        for v in variants.values() {
+            let boxes = variant_shapes(carry, v)?;
+            if common.as_ref().is_some_and(|previous| *previous != boxes) {
+                return None;
+            }
+            common = Some(boxes);
+        }
+        values.insert(String::new(), common?);
     } else {
-        let mut by_facing: BTreeMap<&str, (String, i64)> = BTreeMap::new();
+        let mut by_facing = BTreeMap::new();
         for (key, v) in variants {
             let facing = key
                 .split(',')
                 .find_map(|kv| kv.strip_prefix(&format!("{property}=")));
-            if let (Some(f), Some(m)) = (facing, variant(v))
-                && let Some(name) = FACINGS.iter().find(|x| **x == f)
+            if let Some(f) = facing
+                && let Some(&name) = FACINGS.iter().find(|x| **x == f)
             {
-                by_facing.entry(name).or_insert(m);
+                let boxes = variant_shapes(carry, v)?;
+                if by_facing
+                    .get(name)
+                    .is_some_and(|previous| *previous != boxes)
+                {
+                    return None;
+                }
+                by_facing.insert(name, boxes);
             }
         }
-        let (north_model, north_y) = by_facing.get("north").cloned()?;
+        let north = by_facing.get("north")?;
         for (i, f) in FACINGS.iter().enumerate() {
-            let m = by_facing
-                .get(f)
+            let boxes = by_facing
+                .get(*f)
                 .cloned()
-                .unwrap_or_else(|| (north_model.clone(), north_y + 90 * i as i64));
-            values.insert((*f).to_owned(), shape(m)?);
+                .unwrap_or_else(|| round(turn(north, [0, 90 * i as i64, 0])));
+            values.insert((*f).to_owned(), boxes);
         }
     }
     // A shape that is the whole block is the template's already.
@@ -243,6 +305,163 @@ pub fn add_model_shapes(carry: &Path, id: &str, classes: &BTreeSet<String>) -> u
 mod tests {
     use super::*;
 
+    /// Run the actual carry-over entry point, including the block declaration it writes.
+    fn inferred(variants: Value, models: &[(&str, Value)], template: &str) -> Option<Value> {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let carry = std::env::temp_dir().join(format!(
+            "port-pack-shape-regression-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let write = |path: &str, value: &Value| {
+            let file = carry.join(path);
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(file, serde_json::to_vec(value).unwrap()).unwrap();
+        };
+        write(
+            "assets/ruby/blockstates/probe.json",
+            &serde_json::json!({"variants": variants}),
+        );
+        for (name, model) in models {
+            write(&format!("assets/ruby/models/block/{name}.json"), model);
+        }
+        write(
+            "data/ruby/horizon/block/probe.json",
+            &serde_json::json!({"template": template}),
+        );
+        let count = add_model_shapes(&carry, "ruby", &BTreeSet::from(["ProbeBlock".into()]));
+        let declaration: Value = serde_json::from_slice(
+            &fs::read(carry.join("data/ruby/horizon/block/probe.json")).unwrap(),
+        )
+        .unwrap();
+        fs::remove_dir_all(carry).unwrap();
+        assert_eq!(count, usize::from(declaration.get("shapes").is_some()));
+        declaration.get("shapes").cloned()
+    }
+
+    fn model(from: [i32; 3], to: [i32; 3]) -> Value {
+        serde_json::json!({"elements": [{"from": from, "to": to}]})
+    }
+
+    #[test]
+    fn carried_collision_follows_xyz_model_rotations() {
+        let models = [("probe", model([0, 0, 0], [4, 8, 12]))];
+        // Quarter turns about the block centre, X then Y then Z, as in the renderer.
+        for (rotation, expected) in [
+            (
+                serde_json::json!({"x": 90}),
+                [0.0, 0.0, 0.5, 0.25, 0.75, 1.0],
+            ),
+            (
+                serde_json::json!({"x": 90, "y": 90}),
+                [0.0, 0.0, 0.0, 0.5, 0.75, 0.25],
+            ),
+            (
+                serde_json::json!({"x": 90, "y": 90, "z": 90}),
+                [0.0, 0.5, 0.0, 0.75, 1.0, 0.25],
+            ),
+        ] {
+            let mut variant = rotation;
+            variant["model"] = "ruby:block/probe".into();
+            let shape =
+                inferred(serde_json::json!({"": variant}), &models, "minecraft:stone").unwrap();
+            assert_eq!(shape["values"][""], serde_json::json!([expected]));
+        }
+    }
+
+    #[test]
+    fn carried_collision_keeps_boxes_outside_the_block() {
+        let shape = inferred(
+            serde_json::json!({"": {"model": "ruby:block/probe"}}),
+            &[("probe", model([-4, 0, 0], [4, 8, 20]))],
+            "minecraft:stone",
+        )
+        .unwrap();
+        assert_eq!(
+            shape["values"][""],
+            serde_json::json!([[-0.25, 0.0, 0.0, 0.25, 0.5, 1.25]])
+        );
+    }
+
+    #[test]
+    fn random_models_need_the_same_collision() {
+        let variants = serde_json::json!({"": [
+            {"model": "ruby:block/probe", "weight": 3},
+            {"model": "ruby:block/other"}
+        ]});
+        let small = model([0, 0, 0], [4, 8, 12]);
+        assert!(
+            inferred(
+                variants.clone(),
+                &[
+                    ("probe", small.clone()),
+                    ("other", model([0, 0, 0], [8, 8, 12]))
+                ],
+                "minecraft:stone"
+            )
+            .is_none()
+        );
+        assert!(
+            inferred(
+                variants,
+                &[("probe", small.clone()), ("other", small)],
+                "minecraft:stone"
+            )
+            .is_some()
+        );
+    }
+
+    #[test]
+    fn a_template_cannot_collapse_different_state_shapes() {
+        let models = [
+            ("probe", model([0, 0, 0], [4, 8, 12])),
+            ("other", model([0, 0, 0], [8, 8, 12])),
+        ];
+        for (template, first, second) in [
+            ("minecraft:stone", "lit=false", "lit=true"),
+            (
+                "minecraft:furnace",
+                "facing=north,lit=false",
+                "facing=north,lit=true",
+            ),
+        ] {
+            assert!(
+                inferred(
+                    serde_json::json!({(first): {"model": "ruby:block/probe"},
+                    (second): {"model": "ruby:block/other"}}),
+                    &models,
+                    template
+                )
+                .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn unsupported_rotations_do_not_write_an_unrotated_collision() {
+        let mut tilted = model([0, 0, 0], [4, 8, 12]);
+        tilted["elements"][0]["rotation"] = serde_json::json!({
+            "origin": [8, 8, 8], "axis": "y", "angle": 45
+        });
+        assert!(
+            inferred(
+                serde_json::json!({"": {"model": "ruby:block/probe"}}),
+                &[("probe", tilted)],
+                "minecraft:stone"
+            )
+            .is_none()
+        );
+        assert!(
+            inferred(
+                serde_json::json!({"": {"model": "ruby:block/probe", "x": 45}}),
+                &[("probe", model([0, 0, 0], [4, 8, 12]))],
+                "minecraft:stone"
+            )
+            .is_none()
+        );
+    }
+
     #[test]
     fn class_names_become_block_ids() {
         assert_eq!(block_ids("AntennaBlock"), ["antenna"]);
@@ -264,9 +483,9 @@ mod tests {
     fn a_turn_moves_the_north_side_clockwise() {
         // A slab against the north side.
         let north = [[0.0, 0.0, 0.0, 1.0, 1.0, 0.25]];
-        assert_eq!(turn(&north, 90), [[0.75, 0.0, 0.0, 1.0, 1.0, 1.0]]);
-        assert_eq!(turn(&north, 180), [[0.0, 0.0, 0.75, 1.0, 1.0, 1.0]]);
-        assert_eq!(turn(&north, 270), [[0.0, 0.0, 0.0, 0.25, 1.0, 1.0]]);
+        assert_eq!(turn(&north, [0, 90, 0]), [[0.75, 0.0, 0.0, 1.0, 1.0, 1.0]]);
+        assert_eq!(turn(&north, [0, 180, 0]), [[0.0, 0.0, 0.75, 1.0, 1.0, 1.0]]);
+        assert_eq!(turn(&north, [0, 270, 0]), [[0.0, 0.0, 0.0, 0.25, 1.0, 1.0]]);
     }
 
     #[test]
