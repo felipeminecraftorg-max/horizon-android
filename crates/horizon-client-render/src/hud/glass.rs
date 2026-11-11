@@ -13,6 +13,8 @@ pub struct GlassSurface {
     pub blur: f32,
     pub refraction: f32,
     pub tint: u32,
+    /// Local interaction direction; only the reflected light moves, never text.
+    pub light: [f32; 2],
 }
 
 #[repr(C)]
@@ -23,6 +25,10 @@ struct Uniform {
     clip: [f32; 4],
     tint: [f32; 4],
     optics: [f32; 4],
+}
+
+fn uniform_stride(alignment: usize) -> usize {
+    std::mem::size_of::<Uniform>().next_multiple_of(alignment)
 }
 struct Targets {
     size: [u32; 2],
@@ -133,9 +139,10 @@ impl GlassRenderer {
                 cache: None,
             })
         };
-        let stride = (device.limits().min_uniform_buffer_offset_alignment as usize)
-            .max(80)
-            .next_multiple_of(16);
+        // The adapter's alignment can be smaller than this 80-byte uniform.
+        // With 64-byte alignment the next lens must start at 128, not at 80.
+        // The capture's default 256-byte limit masked that validation error.
+        let stride = uniform_stride(device.limits().min_uniform_buffer_offset_alignment as usize);
         let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Launcher lens uniforms"),
             size: stride as u64,
@@ -243,7 +250,7 @@ impl GlassRenderer {
         let mut bytes = vec![0; self.stride * batch.glass.len()];
         for (i, lens) in batch.glass.iter().enumerate() {
             let uniform = Uniform {
-                frame: [size[0] as f32, size[1] as f32, scale, 0.],
+                frame: [size[0] as f32, size[1] as f32, lens.light[0], lens.light[1]],
                 rect: lens.rect.map(|v| v * scale),
                 clip: lens.clip.map(|v| v * scale),
                 tint: [0, 8, 16, 24].map(|shift| ((lens.tint >> shift) & 255) as f32 / 255.),
@@ -313,8 +320,8 @@ impl GlassRenderer {
             );
             let rect = lens.rect.map(|v| v * scale);
             let clip = lens.clip.map(|v| v * scale);
-            // Nine-tap blur and chromatic edge samples never read beyond this halo.
-            let halo = (lens.refraction + lens.blur * 1.5 + 3.) * scale;
+            // The shader caps the lens displacement at 1.5 times its strength.
+            let halo = (lens.refraction * 1.5 + lens.blur * 1.5 + 3.) * scale;
             if let Some([x, y, w, h]) = copy_region(rect, clip, size, halo) {
                 let origin = wgpu::Origin3d { x, y, z: 0 };
                 let info = |texture| wgpu::TexelCopyTextureInfo {
@@ -365,6 +372,17 @@ impl GlassRenderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn lens_uniform_offsets_follow_the_device_alignment() {
+        for (alignment, expected) in [(16, 80), (32, 96), (64, 128), (128, 128), (256, 256)] {
+            let stride = uniform_stride(alignment);
+            assert_eq!(stride, expected);
+            for lens in 0..24 {
+                assert_eq!((lens * stride) % alignment, 0);
+                assert!((lens + 1) * stride >= lens * stride + 80);
+            }
+        }
+    }
     #[test]
     fn clipped_lens_copy_includes_sampling_halo_without_leaving_frame() {
         assert_eq!(

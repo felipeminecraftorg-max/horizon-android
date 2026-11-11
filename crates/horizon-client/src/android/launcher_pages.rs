@@ -1094,7 +1094,11 @@ impl Launcher {
         }
 
         let mut b = HudBatch::new([r.config.width, r.config.height]);
-        let mut ui = Ui::mobile(&gui.atlas, &mut b, (0.0, 0.0));
+        let mut ui = Ui::mobile(
+            &gui.atlas,
+            &mut b,
+            (self.cursor.0 as f32, self.cursor.1 as f32),
+        );
         // Keep ui.w and ui.h synchronized with Launcher::ui_density(). When the soft keyboard is
         // active, compute ime_top_dp and bias scroll offsets / modal Y positions instead of shrinking ui.h.
         let ime_top_dp = if self.catalog.editing.is_some() {
@@ -6319,7 +6323,7 @@ impl Launcher {
                     A::Blur => {
                         let blur = self.catalog.config.theme.glass.normalized().blur;
                         self.catalog.config.theme.glass.blur = if blur < 0.1 {
-                            4.
+                            2.
                         } else if blur < 6. {
                             8.
                         } else {

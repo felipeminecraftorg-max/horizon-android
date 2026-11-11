@@ -42,5 +42,11 @@
     "fetched_main": "2266c4de14561146044c422e6c525b3ce52b0f79",
     "moving_main_merged": false,
     "notes": "Reviewed the current upstream loading handoff: it still leaks its resource owner for the process lifetime and has no Android lifecycle or GLES preparation path to transplant. Retained the Android baseline; this change owns resources per session, publishes background pause without redraws, and keeps native events flowing during exclusive GLES world preparation. No upstream deployment workflows were enabled."
+  },
+  "launcher_glass_review": {
+    "date": "2026-11-11",
+    "fetched_main": "77e510c3abb3d65570c3dfbd1a62f7e532d93358",
+    "moving_main_merged": false,
+    "notes": "Reviewed the current upstream HUD and UI architecture before the launcher repair build. The Android launcher lens compositor and launcher_visual module are fork-local and absent upstream. Kept the selected Android baseline; no unrelated UI or gameplay changes were transplanted. Reproduced and fixed the dynamic-uniform alignment failure locally."
   }
 }
