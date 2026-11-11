@@ -304,10 +304,22 @@ fn icon_hit(icon: Icon, u: f32, v: f32) -> bool {
                 (-1.0, 0.0),
                 (0.0, 1.0),
                 (0.0, -1.0),
-                (0.7071, 0.7071),
-                (-0.7071, 0.7071),
-                (0.7071, -0.7071),
-                (-0.7071, -0.7071),
+                (
+                    std::f32::consts::FRAC_1_SQRT_2,
+                    std::f32::consts::FRAC_1_SQRT_2,
+                ),
+                (
+                    -std::f32::consts::FRAC_1_SQRT_2,
+                    std::f32::consts::FRAC_1_SQRT_2,
+                ),
+                (
+                    std::f32::consts::FRAC_1_SQRT_2,
+                    -std::f32::consts::FRAC_1_SQRT_2,
+                ),
+                (
+                    -std::f32::consts::FRAC_1_SQRT_2,
+                    -std::f32::consts::FRAC_1_SQRT_2,
+                ),
             ];
             dirs.iter().any(|&(rx, ry)| {
                 seg_dist(
@@ -381,10 +393,22 @@ fn icon_hit(icon: Icon, u: f32, v: f32) -> bool {
                 (-1.0, 0.0),
                 (0.0, 1.0),
                 (0.0, -1.0),
-                (0.7071, 0.7071),
-                (-0.7071, 0.7071),
-                (0.7071, -0.7071),
-                (-0.7071, -0.7071),
+                (
+                    std::f32::consts::FRAC_1_SQRT_2,
+                    std::f32::consts::FRAC_1_SQRT_2,
+                ),
+                (
+                    -std::f32::consts::FRAC_1_SQRT_2,
+                    std::f32::consts::FRAC_1_SQRT_2,
+                ),
+                (
+                    std::f32::consts::FRAC_1_SQRT_2,
+                    -std::f32::consts::FRAC_1_SQRT_2,
+                ),
+                (
+                    -std::f32::consts::FRAC_1_SQRT_2,
+                    -std::f32::consts::FRAC_1_SQRT_2,
+                ),
             ];
             dirs.iter().any(|&(rx, ry)| {
                 let proj = dx * rx + dy * ry;
