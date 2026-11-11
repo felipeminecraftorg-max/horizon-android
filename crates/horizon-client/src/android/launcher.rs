@@ -9,6 +9,8 @@ mod gesture;
 mod login;
 #[path = "launcher_pages.rs"]
 mod pages;
+#[path = "session_file.rs"]
+mod session_file;
 #[path = "wardrobe.rs"]
 mod wardrobe;
 use horizon_client::{
@@ -17,6 +19,7 @@ use horizon_client::{
     hud::{HudAtlas, HudBatch},
     ui_theme::{Face, Ui},
 };
+use session_file::SessionFile;
 use std::{
     path::PathBuf,
     sync::{Arc, Mutex, mpsc},
@@ -31,7 +34,7 @@ use winit::{
 
 struct PreparedAccount {
     key: String,
-    file: PathBuf,
+    file: SessionFile,
     appearance: crate::skins::cloud::Cache,
 }
 pub(super) struct Launcher {
@@ -70,7 +73,7 @@ pub(super) struct Launcher {
     wardrobe: wardrobe::Wardrobe,
     session_worker: Option<mpsc::Receiver<std::result::Result<PreparedAccount, String>>>,
     session_ready: bool,
-    prepared_session: Option<PathBuf>,
+    prepared_session: Option<SessionFile>,
     pub(super) launching: bool,
     pub(super) launch_pending_tick: bool,
     pub(super) diagnostics_modal_open: bool,
@@ -198,14 +201,14 @@ impl Launcher {
                     )?;
                     Ok(PreparedAccount {
                         key: account.key(),
-                        file,
+                        file: file.into(),
                         appearance,
                     })
                 })();
                 if let Err(unsent) = tx.send(res)
                     && let Ok(prepared) = unsent.0
                 {
-                    let _ = std::fs::remove_file(prepared.file);
+                    drop(prepared);
                 }
             });
             Some(rx)
@@ -503,14 +506,14 @@ impl Launcher {
                             )?;
                             Ok(PreparedAccount {
                                 key: account.key(),
-                                file,
+                                file: file.into(),
                                 appearance,
                             })
                         })();
                         if let Err(unsent) = sender.send(result)
                             && let Ok(prepared) = unsent.0
                         {
-                            let _ = std::fs::remove_file(prepared.file);
+                            drop(prepared);
                         }
                     });
                     if let Some(window) = &self.window {
@@ -572,14 +575,14 @@ impl Launcher {
                         )?;
                         Ok(PreparedAccount {
                             key: account.key(),
-                            file,
+                            file: file.into(),
                             appearance,
                         })
                     })();
                     if let Err(unsent) = sender.send(result)
                         && let Ok(prepared) = unsent.0
                     {
-                        let _ = std::fs::remove_file(prepared.file);
+                        drop(prepared);
                     }
                 });
                 return Ok(());
@@ -626,7 +629,7 @@ impl Launcher {
                     .join(".local/horizon-client")
                     .join(horizon_core::VANILLA_VERSION),
                 game_home,
-                session_file: self.prepared_session.take(),
+                session_file: self.prepared_session.take().map(SessionFile::into_path),
                 offline_name: crate::catalog::truncate_player_name(&self.catalog.config.name),
                 server: self.catalog.config.server.clone(),
                 control_socket: (!crate::PUBLIC_BUILD).then(|| self.home.join("control.json")),
@@ -963,7 +966,7 @@ impl ApplicationHandler for Launcher {
                     {
                         self.launching = false;
                         self.launch_pending_tick = false;
-                        let _ = std::fs::remove_file(prepared.file);
+                        drop(prepared);
                         self.catalog.status =
                             "The selected account changed. Choose Play again.".into();
                     } else {
@@ -996,7 +999,7 @@ impl ApplicationHandler for Launcher {
                                 }
                             }
                             Err(error) => {
-                                let _ = std::fs::remove_file(prepared.file);
+                                drop(prepared);
                                 self.fail(error);
                             }
                         }

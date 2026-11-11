@@ -38,6 +38,7 @@ pub(super) struct Login {
     pub visible: bool,
     pub signed_in: bool,
     pub profile: Option<String>,
+    selected_key: Option<String>,
     task: Option<SignIn>,
     auto_open_device: bool,
     state: Option<SignInState>,
@@ -58,6 +59,7 @@ impl Login {
             visible: false,
             signed_in: false,
             profile: None,
+            selected_key: None,
             task: None,
             auto_open_device: false,
             state: None,
@@ -71,6 +73,7 @@ impl Login {
         let account = accounts.selected().cloned();
         self.saved_accounts = accounts.accounts;
         self.profile = account.as_ref().map(|a| a.name.clone());
+        self.selected_key = account.as_ref().map(Account::key);
         self.signed_in = account.is_some_and(|a| {
             account::store()
                 .get(&a.key())
@@ -80,9 +83,9 @@ impl Login {
         });
     }
     fn provider_name(&self) -> &'static str {
-        self.profile
+        self.selected_key
             .as_deref()
-            .and_then(|name| self.saved_accounts.iter().find(|a| a.name == name))
+            .and_then(|key| self.saved_accounts.iter().find(|a| a.key() == key))
             .map(|a| match a.provider {
                 account::Provider::Ely => "Ely.by",
                 account::Provider::Microsoft => "Microsoft",
@@ -553,7 +556,7 @@ impl Login {
                 } else {
                     "Microsoft"
                 };
-                let current = self.profile.as_deref() == Some(account.name.as_str());
+                let current = self.selected_key.as_deref() == Some(account.key().as_str());
                 let cy = content_y + (row + 1) as f32 * (row_h + 6.0);
                 self.account_row(
                     ui,
