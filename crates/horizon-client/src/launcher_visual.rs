@@ -1,11 +1,45 @@
 //! Android launcher materials and shared, captureable native page components.
-//! All textures are original procedural art. Two small wallpaper buffers are
-//! cached per preset; no screen readback, live blur passes or per-frame rasterization.
+//! Wallpaper art is original and cached. Liquid Glass uses GPU backdrop lenses;
+//! Dark Aero retains its cached wallpaper material. Neither reads pixels to the CPU.
 use super::{Face, Icon, LauncherThemeConfig, ThemePreset, Ui, active_theme, color};
 use std::{cell::RefCell, collections::HashMap};
 
 pub fn default_effects() -> bool {
     true
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct GlassTuning {
+    pub opacity: f32,
+    pub blur: f32,
+    pub refraction: f32,
+}
+impl Default for GlassTuning {
+    fn default() -> Self {
+        Self {
+            opacity: 0.14,
+            blur: 4.,
+            refraction: 14.,
+        }
+    }
+}
+impl GlassTuning {
+    pub fn normalized(self) -> Self {
+        let def = Self::default();
+        let safe = |v: f32, fallback, min, max| {
+            if v.is_finite() {
+                v.clamp(min, max)
+            } else {
+                fallback
+            }
+        };
+        Self {
+            opacity: safe(self.opacity, def.opacity, 0.06, 0.5),
+            blur: safe(self.blur, def.blur, 0., 10.),
+            refraction: safe(self.refraction, def.refraction, 0., 24.),
+        }
+    }
 }
 
 #[derive(
@@ -256,6 +290,15 @@ pub fn panel(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, emphasized: bool) {
             radius,
             if emphasized { th.accent } else { th.surface },
         );
+        return;
+    }
+    if th.material == Material::Glass {
+        let optics = th.glass.normalized();
+        let tint = color::hex(
+            if emphasized { 0x7155D0 } else { 0x1C2435 },
+            ((optics.opacity + if emphasized { 0.10 } else { 0. }) * 255.) as u8,
+        );
+        ui.backdrop_lens(r, radius, tint, [optics.blur, optics.refraction]);
         return;
     }
     for i in (1..=3).rev() {
@@ -632,6 +675,9 @@ pub enum AppearanceAction {
     Preset(ThemePreset),
     Wallpaper(Wallpaper),
     Effects,
+    Transparency,
+    Blur,
+    Refraction,
     Sounds,
     Motion,
     Advanced,
@@ -793,7 +839,11 @@ pub fn appearance(
     for (i, (title, subtitle, on, action)) in [
         (
             "Glass effects",
-            "Frosted wallpaper and edge reflections",
+            if cfg.preset == ThemePreset::LiquidGlass {
+                "Live backdrop, curved edges and reflections"
+            } else {
+                "Frosted wallpaper and edge reflections"
+            },
             cfg.glass_effects,
             AppearanceAction::Effects,
         ),
@@ -830,7 +880,70 @@ pub fn appearance(
             target(r, action);
         }
     }
-    let cy = row_y + 240.;
+    let tuning_y = row_y + 232.;
+    let tuning_height = if cfg.preset == ThemePreset::LiquidGlass && cfg.glass_effects {
+        let optics = cfg.glass.normalized();
+        for (i, (label, value, action)) in [
+            (
+                "Transparency",
+                format!("{}%", ((1. - optics.opacity) * 100.).round() as u32),
+                AppearanceAction::Transparency,
+            ),
+            (
+                "Backdrop blur",
+                if optics.blur < 0.1 {
+                    "Off · lightest".into()
+                } else if optics.blur < 6. {
+                    "Soft".into()
+                } else {
+                    "Strong".into()
+                },
+                AppearanceAction::Blur,
+            ),
+            (
+                "Refraction",
+                if optics.refraction < 0.1 {
+                    "Off".into()
+                } else if optics.refraction < 18. {
+                    "Natural".into()
+                } else {
+                    "Strong".into()
+                },
+                AppearanceAction::Refraction,
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let r = [x, tuning_y + i as f32 * 58., w, 50.];
+            panel(ui, r, 14., false);
+            ui.text(
+                Face::Medium,
+                12.,
+                x + 16.,
+                r[1] + 15.,
+                th.text_primary,
+                label,
+            );
+            let text = ui.fit_text(Face::Regular, 11., &value, w * 0.40);
+            let tw = ui.measure(Face::Regular, 11., &text);
+            ui.text(
+                Face::Regular,
+                11.,
+                x + w - 16. - tw,
+                r[1] + 16.,
+                th.text_primary,
+                &text,
+            );
+            if let Some(r) = ui.clip_rect(r) {
+                target(r, action);
+            }
+        }
+        182.
+    } else {
+        0.
+    };
+    let cy = row_y + 240. + tuning_height;
     ui.text(Face::Medium, 13., x, cy, th.text_primary, "More palettes");
     let cols = if narrow { 2 } else { 4 };
     let cw = (w - 8. * (cols - 1) as f32) / cols as f32;
@@ -930,11 +1043,40 @@ mod tests {
         assert_eq!(loaded.resolve().material, Material::Opaque);
         assert_eq!(loaded.resolve().wallpaper, Wallpaper::Graphite);
         let mut legacy = serde_json::to_value(&cfg).unwrap();
-        for key in ["wallpaper", "glass_effects", "interface_sounds"] {
+        for key in ["wallpaper", "glass_effects", "interface_sounds", "glass"] {
             legacy.as_object_mut().unwrap().remove(key);
         }
         let loaded: LauncherThemeConfig = serde_json::from_value(legacy).unwrap();
         assert!(loaded.interface_sounds);
         assert_eq!(loaded.wallpaper, Wallpaper::None);
+        assert_eq!(loaded.glass, GlassTuning::default());
+    }
+
+    #[test]
+    fn disabling_liquid_glass_removes_backdrop_work_and_saved_optics_roundtrip() {
+        let mut cfg = LauncherThemeConfig::default();
+        cfg.apply_preset(ThemePreset::LiquidGlass);
+        cfg.glass = GlassTuning {
+            opacity: 0.08,
+            blur: 0.,
+            refraction: 24.,
+        };
+        let saved: LauncherThemeConfig =
+            serde_json::from_str(&serde_json::to_string(&cfg).unwrap()).unwrap();
+        assert_eq!(saved.resolve().glass, cfg.glass);
+        let atlas = HudAtlas::boot();
+        for enabled in [true, false] {
+            cfg.glass_effects = enabled;
+            set_active_for_test(&cfg);
+            let mut batch = HudBatch::new([640, 360]);
+            let mut ui = Ui::new(&atlas, &mut batch, (0., 0.));
+            panel(&mut ui, [20., 20., 150., 50.], 18., false);
+            ui.finish();
+            assert_eq!(!batch.glass.is_empty(), enabled);
+        }
+    }
+
+    fn set_active_for_test(cfg: &LauncherThemeConfig) {
+        super::super::set_active_theme(cfg.resolve());
     }
 }
