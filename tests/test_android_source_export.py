@@ -1,13 +1,11 @@
 """Publication boundaries: private player/build material must never enter exports."""
 from pathlib import Path
-import sys
 import tempfile
 import unittest
 import zipfile
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
-import export_android_source as export
-from check_public_tree import prohibited
+from tools import export_android_source as export
+from tools.check_public_tree import prohibited
 
 
 class SourceExportTests(unittest.TestCase):

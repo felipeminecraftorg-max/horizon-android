@@ -74,6 +74,10 @@ class PrePushTests(unittest.TestCase):
         audit = subprocess.run([sys.executable, "tools/check_public_tree.py", "--history"],
                                cwd=self.repo, env=self.env, text=True, capture_output=True)
         self.assert_private_rejected(audit)
+        # CI audits the tested revision's whole ancestry, not unrelated fetched refs.
+        audit = subprocess.run([sys.executable, "tools/check_public_tree.py", "--ref", self.base],
+                               cwd=self.repo, env=self.env, text=True, capture_output=True)
+        self.assert_passed(audit)
 
     def test_raw_revision_push_uses_supplied_oid(self):
         self.private_commit()
@@ -108,6 +112,9 @@ class PrePushTests(unittest.TestCase):
         for remote_oid in [ZERO_OID, remote]:
             with self.subTest(remote_oid=remote_oid):
                 self.assert_private_rejected(self.push(self.update("refs/heads/main", tip, remote_oid=remote_oid)))
+        audit = subprocess.run([sys.executable, "tools/check_public_tree.py", "--ref", "HEAD"],
+                               cwd=self.repo, env=self.env, text=True, capture_output=True)
+        self.assert_private_rejected(audit)
 
     def test_annotated_tags_check_their_target_history(self):
         self.private_commit()
