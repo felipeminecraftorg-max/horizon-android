@@ -10,7 +10,9 @@ use std::{
 };
 use wgpu::util::DeviceExt;
 
+mod glass;
 mod pack_text;
+pub use glass::GlassSurface;
 
 /// A sprite's atlas region, and its size in GUI pixels: the size of the
 /// default resources' texture of that name, whatever the resolution of the
@@ -1010,6 +1012,8 @@ pub fn inset_overlay(batch: &mut HudBatch, margins: [f32; 2], draw: impl FnOnce(
 }
 /// One frame of overlay geometry in GUI pixels.
 pub struct HudBatch {
+    /// Ordered native launcher lenses. Empty for the game's HUD and menus.
+    pub glass: Vec<GlassSurface>,
     pub vertices: Vec<HudVertex>,
     pub scale: f32,
     pub width: f32,
@@ -1071,6 +1075,7 @@ impl HudBatch {
             scale += 1;
         }
         Self {
+            glass: Vec::new(),
             vertices: Vec::new(),
             scale: scale as f32,
             width: (window[0] as f32 / scale as f32).ceil(),
@@ -1766,6 +1771,7 @@ impl HudUniform {
     }
 }
 pub struct HudRenderer {
+    glass: Option<glass::GlassRenderer>,
     pub sprite_animations: Vec<(Rect, crate::sprites::SpriteAnimation, (usize, usize, u32))>,
     /// The shared atlas texture, for run-time glyph uploads.
     pub atlas_texture: Option<wgpu::Texture>,
@@ -2001,6 +2007,7 @@ impl HudRenderer {
             mapped_at_creation: false,
         });
         Ok(Self {
+            glass: None,
             atlas_texture: None,
             sprite_animations: Vec::new(),
             pipeline,
@@ -2124,6 +2131,13 @@ impl HudRenderer {
         batch: &HudBatch,
         size: [u32; 2],
     ) {
+        if batch.glass.is_empty() {
+            self.glass = None;
+        } else {
+            self.glass
+                .get_or_insert_with(|| glass::GlassRenderer::new(device, self.format))
+                .prepare(device, uploads, encoder, batch, size, self.zoom);
+        }
         self.upload_patches(uploads, encoder, &batch.patches);
         if batch.vertices.is_empty() || size.contains(&0) {
             return;
@@ -2202,6 +2216,21 @@ impl HudRenderer {
     }
     /// Draw part of the prepared batch, preserving its blend/depth runs.
     pub fn draw_range(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        target: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
+        batch: &HudBatch,
+        size: [u32; 2],
+        vertices: std::ops::Range<u32>,
+    ) {
+        if let Some(glass) = &self.glass {
+            glass.draw(self, encoder, target, depth, batch, size, vertices);
+        } else {
+            self.draw_plain_range(encoder, target, depth, batch, size, vertices);
+        }
+    }
+    fn draw_plain_range(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
@@ -3153,6 +3182,7 @@ mod tests {
         // Odd scaled dimensions, odd image sizes and an oversized panel.
         for (width, height) in [(640, 360), (641, 361), (456, 256), (534, 300), (100, 100)] {
             let batch = HudBatch {
+                glass: Vec::new(),
                 vertices: Vec::new(),
                 scale: 3.0,
                 width: width as f32,
