@@ -1305,7 +1305,9 @@ impl Launcher {
                             visual::HomeAction::Mods => Action::Page(Page::Mods),
                             visual::HomeAction::Packs => Action::Page(Page::Packs),
                             visual::HomeAction::Shaders => Action::Page(Page::Shaders),
-                            visual::HomeAction::Files => Action::Page(Page::Installed),
+                            visual::HomeAction::Files => Action::SetInstalledSubTab(
+                                crate::catalog::InstalledSubTab::FileManager,
+                            ),
                         };
                         self.targets.push((rect, action));
                     },
@@ -5343,6 +5345,13 @@ impl Launcher {
                 events.exit();
             }
             Some(Action::SettingsCat(cat)) => {
+                self.catalog.page = Page::Settings;
+                self.catalog.editing = None;
+                self.catalog.project_modal = None;
+                self.catalog.modal_worker = None;
+                crate::platform::hide();
+                self.error = None;
+                self.catalog.browse(&self.home);
                 self.catalog.settings_category = cat;
                 self.theme_advanced = false;
                 self.catalog.scroll = 0.0;
@@ -6444,6 +6453,11 @@ impl Launcher {
                 self.anim.intro_done = true;
             }
             Some(Action::SetInstalledSubTab(tab)) => {
+                self.catalog.page = Page::Installed;
+                self.catalog.project_modal = None;
+                self.catalog.modal_worker = None;
+                self.error = None;
+                self.catalog.browse(&self.home);
                 self.catalog.installed_sub_tab = tab;
                 self.catalog.editing = None;
                 crate::platform::hide();
