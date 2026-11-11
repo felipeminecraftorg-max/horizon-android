@@ -7,10 +7,26 @@ then a wallpaper independently: Plain, Aurora, Graphite or Midnight. Glass
 effects, interface sounds and launcher animations each have their own switch.
 Advanced colors and the earlier palettes remain available.
 
-The wallpaper art is original and procedural. Frosted surfaces sample a cached,
-softened wallpaper, with a translucent tint and a cached nine-slice highlight.
-This is a lightweight wallpaper material, not Apple's compositor or a live blur
-of the game. The game's own visual and animation settings are independent.
+The wallpaper art is original and procedural. Liquid Glass now reads the already
+drawn launcher scene beneath each surface. A rounded-rectangle distance field
+defines its convex normal; Snell refraction bends the background, a nine-tap
+filter softens it, and a narrow directional highlight and restrained chromatic
+edge finish the lens. Text and icons are drawn afterwards and remain sharp.
+The default tint opacity is 14%, instead of the earlier 56% grey overlay.
+
+With Liquid Glass and effects enabled, scroll down in Appearance for three tap
+controls: Transparency (70%, 86%, 92%), Backdrop blur (off, soft, strong) and
+Refraction (off, natural, strong). These settings persist and old configurations
+receive defaults. Turning blur off uses one background sample rather than nine;
+turning Glass effects off removes all backdrop targets and passes.
+
+The compositor reuses two screen-sized GPU textures, copies only each visible
+lens's region plus its sampling halo, and composites in drawing order. It never
+reads the screen back to the CPU during normal use and does not continuously
+redraw an idle launcher. This adds GPU bandwidth and texture memory when enabled;
+phone performance must be measured on the device. Dark Aero retains its cached
+wallpaper sheen. This is an original approximation, not Apple's compositor.
+The game's own visuals and animation settings are independent.
 
 Portrait navigation moves to the bottom; landscape uses a side rail. Home has
 one primary launch button, the current profile and shortcuts to content. Status
@@ -45,6 +61,11 @@ The account and installation state are fixture data; no real session or game
 files are required. The second frame of each page verifies that warm UI textures
 are reused without new atlas uploads. These captures verify native drawing,
 not Android installation, touch hardware latency or phone FPS.
+
+The capture tool also runs numerical GPU checks against a changing striped
+background: refraction bends it, blur lowers its contrast, the centre remains
+transparent, foreground UI stays sharp, and a scroll clip excludes the lens.
+These checks use the production compositor, not a separate shader substitute.
 
 Validation also includes the gesture regression tests, native viewport and
 configuration tests, the existing Android launcher source checks and an ARM64
