@@ -286,7 +286,7 @@ class LauncherOverhaulTests(unittest.TestCase):
 
         # Main Launcher "Launching..." state & Virtual Mouse Speed slider
         self.assertIn("pub(super) launching: bool,", launcher)
-        self.assertIn('"Launching..."', launcher_pages)
+        self.assertIn('"Getting ready…"', (ROOT / "crates/horizon-client/src/launcher_visual.rs").read_text(encoding="utf-8"))
         self.assertIn("pub mouse_speed_dragging: bool,", touch_ui)
 
 
