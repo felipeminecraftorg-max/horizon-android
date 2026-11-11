@@ -720,7 +720,11 @@ impl Cache {
         }
         // Apply a soft rounded-corner mask to project icons so they sit cleanly in cards.
         let mut masked = rgba.to_vec();
-        let r = (w.min(h) as f32 * 0.22).max(2.0);
+        let r = if key.starts_with("launcher-wallpaper:") || key.starts_with("launcher-material:") {
+            0.0
+        } else {
+            (w.min(h) as f32 * 0.22).max(2.0)
+        };
         let (wf, hf) = (w as f32, h as f32);
         for y in 0..h {
             for x in 0..w {
@@ -1776,7 +1780,12 @@ impl<'a> Ui<'a> {
 
     /// Paints the active theme background (solid or multi-stop gradient) over `[x, y, w, h]` dp.
     pub fn draw_theme_background(&mut self, x: f32, y: f32, w: f32, h: f32, theme: &ResolvedTheme) {
-        if theme.is_gradient {
+        if theme.wallpaper != launcher_visual::Wallpaper::None {
+            launcher_visual::background(self, [x, y, w, h], theme.wallpaper);
+            if theme.is_light {
+                self.fill(x, y, w, h, color::hex(0xFFFFFF, 224));
+            }
+        } else if theme.is_gradient {
             let mid = theme
                 .use_three_stops
                 .then_some((theme.gradient_mid_pos, theme.gradient_mid));
@@ -2176,10 +2185,12 @@ pub enum ThemePreset {
     SakuraRose,
     DaylightFrost,
     Custom,
+    LiquidGlass,
+    DarkAero,
 }
 
 impl ThemePreset {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 10] = [
         Self::ObsidianViolet,
         Self::CyberCyan,
         Self::EmeraldForest,
@@ -2188,6 +2199,8 @@ impl ThemePreset {
         Self::SakuraRose,
         Self::DaylightFrost,
         Self::Custom,
+        Self::LiquidGlass,
+        Self::DarkAero,
     ];
 
     pub fn label(self) -> &'static str {
@@ -2200,6 +2213,8 @@ impl ThemePreset {
             Self::SakuraRose => "Sakura Rose",
             Self::DaylightFrost => "Daylight Frost",
             Self::Custom => "Custom Theme",
+            Self::LiquidGlass => "Liquid Glass",
+            Self::DarkAero => "Dark Aero",
         }
     }
 
@@ -2213,12 +2228,20 @@ impl ThemePreset {
             Self::SakuraRose => "Twilight plum with blossom pink",
             Self::DaylightFrost => "High-contrast Material 3 light",
             Self::Custom => "Personalized colors & gradients",
+            Self::LiquidGlass => "Frosted depth and quiet violet light",
+            Self::DarkAero => "Black glass and polished silver",
         }
     }
 
     /// Returns `(bg_rgb, surface_rgb, accent_rgb, grad_start_rgb, grad_mid_rgb, grad_end_rgb, is_light)`
     pub fn palette_rgb(self) -> (u32, u32, u32, u32, u32, u32, bool) {
         match self {
+            Self::LiquidGlass => (
+                0x101320, 0x242839, 0xAA98FF, 0x1C203D, 0x282140, 0x0A0C15, false,
+            ),
+            Self::DarkAero => (
+                0x050607, 0x191B1F, 0xE2E5EC, 0x17191D, 0x090A0D, 0x030405, false,
+            ),
             Self::ObsidianViolet | Self::Custom => (
                 0x13111C, 0x1D192B, 0x9A7BFF, 0x161129, 0x1E1638, 0x0E0C16, false,
             ),
@@ -2348,6 +2371,12 @@ pub const THEME_BG_SWATCHES_LIGHT: [(u32, &str, &str); 6] = [
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct LauncherThemeConfig {
+    #[serde(default)]
+    pub wallpaper: launcher_visual::Wallpaper,
+    #[serde(default = "launcher_visual::default_effects")]
+    pub glass_effects: bool,
+    #[serde(default = "launcher_visual::default_effects")]
+    pub interface_sounds: bool,
     pub preset: ThemePreset,
     pub appearance: ThemeAppearance,
     pub background_mode: BackgroundMode,
@@ -2365,6 +2394,9 @@ pub struct LauncherThemeConfig {
 impl Default for LauncherThemeConfig {
     fn default() -> Self {
         Self {
+            wallpaper: launcher_visual::Wallpaper::None,
+            glass_effects: true,
+            interface_sounds: true,
             preset: ThemePreset::ObsidianViolet,
             appearance: ThemeAppearance::Dark,
             background_mode: BackgroundMode::Solid,
@@ -2443,6 +2475,8 @@ pub fn lerp_color(c0: u32, c1: u32, t: f32) -> u32 {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ResolvedTheme {
+    pub material: launcher_visual::Material,
+    pub wallpaper: launcher_visual::Wallpaper,
     pub is_light: bool,
     pub is_gradient: bool,
     pub gradient_direction: GradientDirection,
@@ -2505,6 +2539,11 @@ impl LauncherThemeConfig {
 
     pub fn apply_preset(&mut self, preset: ThemePreset) {
         self.preset = preset;
+        self.wallpaper = match preset {
+            ThemePreset::LiquidGlass => launcher_visual::Wallpaper::Aurora,
+            ThemePreset::DarkAero => launcher_visual::Wallpaper::Graphite,
+            _ => launcher_visual::Wallpaper::None,
+        };
         if preset != ThemePreset::Custom {
             let (bg, surf, acc, gs, gm, ge, is_light) = preset.palette_rgb();
             self.appearance = if is_light {
@@ -2640,6 +2679,16 @@ impl LauncherThemeConfig {
         };
 
         ResolvedTheme {
+            wallpaper: self.wallpaper,
+            material: if self.glass_effects {
+                match self.preset {
+                    ThemePreset::LiquidGlass => launcher_visual::Material::Glass,
+                    ThemePreset::DarkAero => launcher_visual::Material::Aero,
+                    _ => launcher_visual::Material::Opaque,
+                }
+            } else {
+                launcher_visual::Material::Opaque
+            },
             is_light,
             is_gradient: self.background_mode == BackgroundMode::Gradient,
             gradient_direction: self.gradient_direction,
@@ -2661,8 +2710,22 @@ impl LauncherThemeConfig {
             accent_soft: color::with_alpha(color::hex(accent_rgb, 255), 0.22),
             on_accent: color::hex(on_accent_rgb, 255),
             accent_text: color::hex(on_accent_rgb, 255),
-            text_primary: color::hex(text_primary_rgb, 255),
-            text_muted: color::hex(text_muted_rgb, 255),
+            text_primary: color::hex(
+                if self.preset == ThemePreset::DarkAero {
+                    0xECEEF2
+                } else {
+                    text_primary_rgb
+                },
+                255,
+            ),
+            text_muted: color::hex(
+                if self.preset == ThemePreset::DarkAero {
+                    0xACB0B8
+                } else {
+                    text_muted_rgb
+                },
+                255,
+            ),
             success: color::hex(if is_light { 0x15803D } else { 0x4ADE80 }, 255),
             danger: color::hex(if is_light { 0xDC2626 } else { 0xF87171 }, 255),
         }
@@ -2905,3 +2968,6 @@ mod tests {
         assert_ne!(grad.bg_solid >> 24, 0, "solid fallback is always opaque");
     }
 }
+
+#[path = "launcher_visual.rs"]
+pub mod launcher_visual;
