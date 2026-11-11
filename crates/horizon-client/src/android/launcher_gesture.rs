@@ -1,4 +1,39 @@
 //! Track total drag distance separately from per-event scroll deltas.
+/// One pointer owns a gesture. A release can activate only the same target
+/// that received its press; a second finger cannot replace or finish it.
+pub(super) struct TapGate<T> {
+    active: Option<(u64, Option<T>)>,
+}
+impl<T> Default for TapGate<T> {
+    fn default() -> Self {
+        Self { active: None }
+    }
+}
+impl<T: Copy + PartialEq> TapGate<T> {
+    pub(super) fn start(&mut self, id: u64, target: Option<T>) -> bool {
+        if self.active.is_some() {
+            return false;
+        }
+        self.active = Some((id, target));
+        true
+    }
+    pub(super) fn owns(&self, id: u64) -> bool {
+        self.active.is_some_and(|(owner, _)| owner == id)
+    }
+    pub(super) fn finish(&mut self, id: u64, target: Option<T>, moved: bool) -> bool {
+        if !self.owns(id) {
+            return false;
+        }
+        let (_, pressed) = self.active.take().unwrap();
+        !moved && pressed.is_some() && pressed == target
+    }
+    pub(super) fn pressed(&self) -> Option<T> {
+        self.active.and_then(|(_, target)| target)
+    }
+    pub(super) fn cancel(&mut self) {
+        self.active = None;
+    }
+}
 /// Scroll only enough to reveal the selected row, retaining the current offset.
 pub(super) fn reveal(scroll: f32, row: [f32; 4], view: [f32; 3]) -> f32 {
     let [top, bottom, maximum] = view;
@@ -46,6 +81,30 @@ impl Drag {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_release_never_clicks_another_button_or_an_empty_press() {
+        let mut gate = TapGate::default();
+        gate.start(1, Some('a'));
+        assert!(!gate.finish(1, Some('b'), false));
+        gate.start(1, None);
+        assert!(!gate.finish(1, Some('a'), false));
+        gate.start(1, Some('a'));
+        assert!(!gate.finish(1, Some('a'), true));
+        gate.start(1, Some('a'));
+        assert!(gate.finish(1, Some('a'), false));
+        assert!(!gate.finish(1, Some('a'), false));
+    }
+    #[test]
+    fn secondary_fingers_and_cancellation_do_not_activate() {
+        let mut gate = TapGate::default();
+        assert!(gate.start(10, Some('a')));
+        assert!(!gate.start(11, Some('b')));
+        assert!(!gate.finish(11, Some('a'), false));
+        assert!(gate.owns(10));
+        gate.cancel();
+        assert!(!gate.finish(10, Some('a'), false));
+    }
 
     #[test]
     fn focus_scroll_reveals_rows_in_both_directions_and_stops_at_bounds() {

@@ -1,5 +1,6 @@
 use super::*;
 use crate::catalog::SettingsCategory;
+use horizon_client::ui_theme::launcher_visual as visual;
 use horizon_client::{
     gfx::Renderer,
     osk::Output,
@@ -372,6 +373,8 @@ pub(super) enum Action {
     ToggleInventoryControls,
     // Theme customization actions (Settings -> Launcher Settings -> Theme)
     SelectThemePreset(horizon_client::ui_theme::ThemePreset),
+    Appearance(visual::AppearanceAction),
+    StatusDetails(bool),
     SetThemeAppearance(horizon_client::ui_theme::ThemeAppearance),
     SetThemeBackgroundMode(horizon_client::ui_theme::BackgroundMode),
     SetGradientDirection(horizon_client::ui_theme::GradientDirection),
@@ -425,21 +428,7 @@ pub(super) fn button(
 ) {
     let [x, y, w, h] = rect;
     let radius = (h * 0.42).clamp(10.0, 22.0);
-    ui.rounded(
-        x,
-        y,
-        w,
-        h,
-        radius,
-        if accent {
-            my3_accent()
-        } else {
-            my3_surface_high()
-        },
-    );
-    if !accent {
-        ui.border(x, y, w, h, radius, my3_border());
-    }
+    visual::panel(ui, rect, radius, accent);
     let padding = (w * 0.10).clamp(8.0, 14.0);
     let font = if w < 90.0 {
         13.0
@@ -462,7 +451,11 @@ pub(super) fn button(
         font,
         tx,
         ty,
-        if accent { my3_on_accent() } else { my3_text() },
+        if accent && horizon_client::ui_theme::active_theme().material == visual::Material::Opaque {
+            my3_on_accent()
+        } else {
+            my3_text()
+        },
         &fitted,
     );
     if let Some(c) = ui.clip_rect(rect) {
@@ -981,7 +974,20 @@ fn draw_my3_progress_view(
     );
 }
 
+pub(super) fn cancel_slider_drag() {
+    ACTIVE_SLIDER_DRAG.with(|c| c.set(None));
+}
+
 impl Launcher {
+    pub(super) fn pointer_action(&self) -> Option<Action> {
+        let d = self.ui_density();
+        let (x, y) = (self.cursor.0 as f32 / d, self.cursor.1 as f32 / d);
+        self.targets
+            .iter()
+            .rev()
+            .find(|(r, _)| x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3])
+            .map(|(_, a)| *a)
+    }
     /// The same spatial focus algorithm as the game's controller menus.
     pub(super) fn navigate(&mut self, key: &KeyEvent) -> bool {
         self.navigate_key(&key.logical_key)
@@ -1101,163 +1107,55 @@ impl Launcher {
         let active_th = horizon_client::ui_theme::active_theme();
         ui.draw_theme_background(0.0, 0.0, w, h, &active_th);
 
-        // ---- Top Header Bar (brand lockup ... account pill) ----
-        ui.horizon_logo(18.0, 12.0, 28.0);
+        // The same native shell is used in portrait, landscape and capture fixtures.
+        let selected_idx = Page::ALL
+            .iter()
+            .position(|p| *p == self.catalog.page)
+            .unwrap_or(0);
+        let layout = visual::Layout::new(w, h);
+        let has_any_modal = self.catalog.project_modal.is_some()
+            || self.catalog.fm_modal.is_some()
+            || self.chooser.is_some()
+            || self.login.visible
+            || self.exit_confirmation
+            || self.diagnostics_modal_open
+            || self.status_details;
+        self.anim.step(
+            self.catalog.page,
+            self.catalog.settings_category,
+            layout.nav_rect(w, h, selected_idx, Page::ALL.len())[1],
+            has_any_modal,
+            self.catalog.sections,
+        );
         let account_name = self
             .login
             .profile
             .clone()
             .unwrap_or_else(|| self.catalog.config.name.clone());
-        let account_text_w = ui.measure(Face::Medium, 13.5, &account_name).min(136.0);
-        let pill_w = (account_text_w + 64.0).clamp(114.0, 204.0);
-        let pill_x = (w - 18.0 - pill_w).max(190.0);
-        let pill_y = 11.0;
-        let pill_h = 36.0;
-
-        let eq_btn_rect = [pill_x - 44.0, pill_y, 36.0, pill_h];
-        ui.rounded(
-            eq_btn_rect[0],
-            eq_btn_rect[1],
-            eq_btn_rect[2],
-            eq_btn_rect[3],
-            pill_h * 0.5,
-            my3_surface(),
-        );
-        ui.border(
-            eq_btn_rect[0],
-            eq_btn_rect[1],
-            eq_btn_rect[2],
-            eq_btn_rect[3],
-            pill_h * 0.5,
-            my3_border(),
-        );
-        ui.icon(
-            Icon::MenuEquals,
-            eq_btn_rect[0] + 9.0,
-            eq_btn_rect[1] + 9.0,
-            18.0,
-            my3_accent(),
-        );
-        self.targets.push((eq_btn_rect, Action::OpenControlEditor));
-
-        let brand_w = (eq_btn_rect[0] - 66.0).max(70.0);
-        ui.text(Face::SemiBold, 16.0, 54.0, 10.0, my3_text(), "Horizon");
-        let version_line = format!("Android {}", crate::backend::VERSION);
-        let fitted_version = ui.fit_text(Face::Regular, 11.0, &version_line, brand_w);
-        ui.text(
-            Face::Regular,
-            11.0,
-            54.0,
-            30.0,
-            my3_muted(),
-            &fitted_version,
-        );
-
-        // Top-right Account Selector Pill with circular avatar head, username, and chevron.
-        ui.rounded(pill_x, pill_y, pill_w, pill_h, pill_h * 0.5, my3_surface());
-        ui.border(pill_x, pill_y, pill_w, pill_h, pill_h * 0.5, my3_border());
-        ui.avatar_head_2d(pill_x + 6.0, pill_y + 4.0, 28.0, &account_name);
-        if self.login.signed_in {
-            ui.rounded(pill_x + 26.0, pill_y + 24.0, 9.0, 9.0, 4.5, my3_bg());
-            ui.rounded(
-                pill_x + 27.0,
-                pill_y + 25.0,
-                7.0,
-                7.0,
-                3.5,
-                color::hex(0x59D98E, 255),
-            );
-        }
-        let fitted_acct = ui.fit_text(Face::Medium, 13.5, &account_name, pill_w - 62.0);
-        ui.text(
-            Face::Medium,
-            13.5,
-            pill_x + 37.0,
-            pill_y + 8.0,
-            my3_text(),
-            &fitted_acct,
-        );
-        ui.icon(
-            Icon::ChevronDown,
-            pill_x + pill_w - 22.0,
-            pill_y + 12.0,
-            12.0,
-            my3_muted(),
-        );
-        self.targets
-            .push(([pill_x, pill_y, pill_w, pill_h], Action::Account));
-
-        // ---- Left Vertical Navigation Rail + Smooth Gliding Active Pill ----
-        let sidebar_w = if w < 560.0 { 136.0 } else { 184.0 };
-        ui.rounded(
-            sidebar_w,
-            56.0,
-            1.0,
-            (h - 68.0).max(10.0),
-            0.0,
-            my3_border(),
-        );
-        let nav_start_y = 62.0;
-        let nav_step = ((h - nav_start_y - 14.0) / 6.0).clamp(36.0, 48.0);
-        let nav_h = (nav_step - 5.0).clamp(32.0, 41.0);
-        let selected_idx = Page::ALL
+        let items: Vec<_> = Page::ALL
             .iter()
-            .position(|p| *p == self.catalog.page)
-            .unwrap_or(0);
-        let target_nav_y = nav_start_y + selected_idx as f32 * nav_step;
-        let has_any_modal = self.catalog.project_modal.is_some()
-            || self.catalog.fm_modal.is_some()
-            || self.chooser.is_some()
-            || self.login.visible
-            || self.exit_confirmation;
-        self.anim.step(
-            self.catalog.page,
-            self.catalog.settings_category,
-            target_nav_y,
-            has_any_modal,
-            self.catalog.sections,
+            .map(|p| (p.name(), page_icon(*p)))
+            .collect();
+        visual::shell(
+            &mut ui,
+            &items,
+            selected_idx,
+            &account_name,
+            self.login.signed_in,
+            &format!("Android {}", crate::backend::VERSION),
+            |rect, action| {
+                let action = match action {
+                    visual::ShellAction::Page(index) => Action::Page(Page::ALL[index]),
+                    visual::ShellAction::Account => Action::Account,
+                    visual::ShellAction::Appearance => Action::SettingsCat(SettingsCategory::Theme),
+                };
+                self.targets.push((rect, action));
+            },
         );
-
-        // Draw gliding MY3 active indicator pill
-        ui.rounded(
-            10.0,
-            self.anim.nav_pill_y,
-            sidebar_w - 20.0,
-            nav_h,
-            nav_h * 0.5,
-            my3_nav_active(),
-        );
-
-        for (i, page) in Page::ALL.iter().enumerate() {
-            let nx = 10.0;
-            let ny = nav_start_y + i as f32 * nav_step;
-            let nw = sidebar_w - 20.0;
-            let selected = *page == self.catalog.page;
-            let fg = if selected { my3_text() } else { my3_muted() };
-            ui.icon(
-                page_icon(*page),
-                nx + 14.0,
-                ny + (nav_h - 17.0) * 0.5,
-                17.0,
-                fg,
-            );
-            let label = ui.fit_text(Face::Medium, 13.5, page.name(), nw - 42.0);
-            ui.text(
-                Face::Medium,
-                13.5,
-                nx + 39.0,
-                ny + (nav_h - 19.0) * 0.5,
-                fg,
-                &label,
-            );
-            self.targets
-                .push(([nx, ny, nw, nav_h], Action::Page(*page)));
-        }
-
-        // ---- Main Content Area (with smooth slide transition offset) ----
-        let content_x = sidebar_w + 22.0;
-        let content_w = (w - content_x - 22.0).max(160.0);
-        let compact = content_w < 430.0;
+        let content_x = layout.x;
+        let content_w = layout.width;
+        let h = layout.bottom;
+        let compact = content_w < 430.;
         let page = self.catalog.page;
         let slide_y = self.anim.page_slide;
 
@@ -1387,155 +1285,31 @@ impl Launcher {
                     Action::CancelInstall,
                 );
             } else {
-                let card_y = 66.0 + slide_y;
-                let card_h = (h - 178.0).clamp(220.0, 280.0);
-                ui.rounded(content_x, card_y, content_w, card_h, 20.0, my3_surface());
-                ui.border(content_x, card_y, content_w, card_h, 20.0, my3_border());
-
-                ui.text(
-                    Face::SemiBold,
-                    23.0,
-                    content_x + 22.0,
-                    card_y + 18.0,
-                    my3_text(),
-                    if installed {
-                        "Ready to play"
-                    } else if compact {
-                        "Your Java worlds"
-                    } else {
-                        "Your Java worlds, on Android"
+                let view = visual::HomeView {
+                    installed,
+                    launching: self.launching || self.session_worker.is_some(),
+                    profile: self.catalog.config.profile,
+                    renderer: self.catalog.config.renderer.label(),
+                };
+                visual::home(
+                    &mut ui,
+                    [content_x, 76.0 + slide_y, content_w, (h - 116.0).max(0.0)],
+                    &view,
+                    |rect, action| {
+                        let action = match action {
+                            visual::HomeAction::Play => Action::Play,
+                            visual::HomeAction::Profile => Action::Profile,
+                            visual::HomeAction::Appearance => {
+                                Action::SettingsCat(SettingsCategory::Theme)
+                            }
+                            visual::HomeAction::Mods => Action::Page(Page::Mods),
+                            visual::HomeAction::Packs => Action::Page(Page::Packs),
+                            visual::HomeAction::Shaders => Action::Page(Page::Shaders),
+                            visual::HomeAction::Files => Action::Page(Page::Installed),
+                        };
+                        self.targets.push((rect, action));
                     },
                 );
-                ui.text(
-                    Face::Regular,
-                    14.0,
-                    content_x + 22.0,
-                    card_y + 52.0,
-                    my3_muted(),
-                    &format!(
-                        "Minecraft 26.3 • Profile {} • {}",
-                        self.catalog.config.profile + 1,
-                        self.catalog.config.renderer.label()
-                    ),
-                );
-
-                ui.text(
-                    Face::SemiBold,
-                    15.0,
-                    content_x + 22.0,
-                    card_y + 84.0,
-                    my3_text(),
-                    "Horizon Android is becoming Starling",
-                );
-                let notice = "Some Horizon Android features are still being transferred and merged. Export your worlds through Android Files (SAF) before moving.";
-                let mut line_y = card_y + 108.0;
-                let font_size = 11.5;
-                let mut line = String::new();
-                for word in notice.split_whitespace() {
-                    let candidate = if line.is_empty() {
-                        word.to_owned()
-                    } else {
-                        format!("{line} {word}")
-                    };
-                    if !line.is_empty()
-                        && ui.measure(Face::Regular, font_size, &candidate) > content_w - 44.0
-                    {
-                        ui.text(
-                            Face::Regular,
-                            font_size,
-                            content_x + 22.0,
-                            line_y,
-                            my3_muted(),
-                            &line,
-                        );
-                        line_y += 15.0;
-                        line.clear();
-                    }
-                    if !line.is_empty() {
-                        line.push(' ');
-                    }
-                    line.push_str(word);
-                }
-                if !line.is_empty() {
-                    ui.text(
-                        Face::Regular,
-                        font_size,
-                        content_x + 22.0,
-                        line_y,
-                        my3_muted(),
-                        &line,
-                    );
-                }
-                let migration_y = line_y + 24.0;
-                let migration_w = (content_w - 52.0) * 0.5;
-                button(
-                    &mut ui,
-                    &mut self.targets,
-                    [content_x + 22.0, migration_y, migration_w, 34.0],
-                    "Download Starling",
-                    Action::StarlingDownload,
-                    false,
-                );
-                button(
-                    &mut ui,
-                    &mut self.targets,
-                    [
-                        content_x + 30.0 + migration_w,
-                        migration_y,
-                        migration_w,
-                        34.0,
-                    ],
-                    "Export worlds (SAF)",
-                    Action::WorldFiles,
-                    false,
-                );
-                let btn_y = (h - 92.0).max(card_y + card_h + 12.0);
-                let play_w = content_w.min(256.0);
-                let is_launching = self.launching || self.session_worker.is_some();
-                if is_launching && installed {
-                    let radius = 19.0;
-                    ui.rounded(content_x, btn_y, play_w, 46.0, radius, my3_accent_soft());
-                    ui.stroke_rounded(content_x, btn_y, play_w, 46.0, radius, 1.6, my3_accent());
-                    let bar_w = (play_w - 28.0).max(40.0);
-                    let bar_x = content_x + 14.0;
-                    let bar_y = btn_y + 34.0;
-                    ui.rounded(bar_x, bar_y, bar_w, 5.0, 2.5, my3_track());
-                    let sw = (bar_w * 0.36).clamp(24.0, bar_w);
-                    let sx = bar_x + (bar_w - sw) * self.anim.shimmer_phase.clamp(0.0, 1.0);
-                    ui.rounded(sx, bar_y, sw, 5.0, 2.5, my3_accent());
-                    ui.centered_fit(
-                        Face::SemiBold,
-                        15.0,
-                        [content_x + 12.0, btn_y + 4.0, play_w - 24.0, 26.0],
-                        my3_text(),
-                        "Launching...",
-                    );
-                } else {
-                    button(
-                        &mut ui,
-                        &mut self.targets,
-                        [content_x, btn_y, play_w, 46.0],
-                        if installed {
-                            "Play Minecraft 26.3"
-                        } else if self.error.is_some() {
-                            "Retry installation"
-                        } else {
-                            "Download Minecraft 26.3"
-                        },
-                        Action::Play,
-                        true,
-                    );
-                }
-                if content_w > 390.0 && !is_launching {
-                    button(
-                        &mut ui,
-                        &mut self.targets,
-                        [content_x + play_w + 12.0, btn_y, 134.0, 46.0],
-                        &format!("Profile {} v", self.catalog.config.profile + 1),
-                        Action::Profile,
-                        false,
-                    );
-                }
             }
         } else if page == Page::Skins {
             self.wardrobe.draw(
@@ -1971,16 +1745,27 @@ impl Launcher {
             || (self.catalog.downloading.is_some() && self.catalog.busy());
         if !in_progress_dialog {
             let status = self.error.as_deref().unwrap_or(&self.catalog.status);
-            if !status.is_empty() && !page.is_catalog() {
-                let fitted =
-                    ui.fit_text(Face::Regular, 12.5, status, (content_w - 116.0).max(60.0));
-                ui.text(
-                    Face::Regular,
-                    12.5,
-                    content_x,
-                    h - 32.0,
-                    my3_muted(),
-                    &fitted,
+            if !status.is_empty()
+                && (page == Page::Play
+                    || (page == Page::Settings
+                        && self.catalog.settings_category == SettingsCategory::Overview))
+            {
+                button(
+                    &mut ui,
+                    &mut self.targets,
+                    [
+                        content_x,
+                        h - 40.,
+                        (content_w - 116.).clamp(100., 260.),
+                        32.,
+                    ],
+                    if self.error.is_some() {
+                        "View error report"
+                    } else {
+                        "Status & session report"
+                    },
+                    Action::StatusDetails(true),
+                    false,
                 );
             }
             if page == Page::Play
@@ -2039,6 +1824,47 @@ impl Launcher {
         }
         if self.diagnostics_modal_open {
             self.draw_diagnostics_summary_modal(&mut ui, w, h);
+        }
+        if self.status_details {
+            self.targets.clear();
+            self.list_targets.clear();
+            self.list_view = None;
+            ui.fill(0., 0., w, ui.h, horizon_client::hud::rgba(0, 0, 0, 155));
+            let width = (w - 40.).min(500.);
+            let mx = (w - width) / 2.;
+            let message = self.error.as_deref().unwrap_or(&self.catalog.status);
+            let lines = wrap_text_lines(&ui, Face::Regular, 13., message, width - 40.);
+            let height = (112. + lines.len() as f32 * 18.).min(h - 40.);
+            let my = (h - height) / 2.;
+            visual::panel(&mut ui, [mx, my, width, height], 22., false);
+            ui.text(
+                Face::SemiBold,
+                20.,
+                mx + 20.,
+                my + 16.,
+                my3_text(),
+                "Launcher status",
+            );
+            ui.clipped([mx + 20., my + 52., width - 40., height - 110.], |ui| {
+                for (i, line) in lines.iter().enumerate() {
+                    ui.text(
+                        Face::Regular,
+                        13.,
+                        mx + 20.,
+                        my + 52. + i as f32 * 18.,
+                        my3_muted(),
+                        line,
+                    );
+                }
+            });
+            button(
+                &mut ui,
+                &mut self.targets,
+                [mx + 20., my + height - 52., width - 40., 40.],
+                "Close",
+                Action::StatusDetails(false),
+                false,
+            );
         }
         if self.exit_confirmation {
             self.targets.clear();
@@ -2118,10 +1944,17 @@ impl Launcher {
                 );
             }
         }
-        if !self.mouse_down
-            && self.drag.is_none()
-            && let Some((action, time)) = self.feedback
-            && time.elapsed() < std::time::Duration::from_millis(160)
+        let press = self
+            .taps
+            .pressed()
+            .filter(|_| self.drag.as_ref().is_none_or(|d| !d.moved));
+        let feedback = press.map(|a| (a, 28)).or_else(|| {
+            self.feedback.and_then(|(a, t)| {
+                let fade = (1. - t.elapsed().as_secs_f32() / 0.16).clamp(0., 1.);
+                (fade > 0.).then_some((a, (36. * fade * fade) as u8))
+            })
+        });
+        if let Some((action, alpha)) = feedback
             && let Some(([x, y, w, h], _)) = self.targets.iter().find(|(_, a)| *a == action)
         {
             ui.rounded(
@@ -2129,8 +1962,8 @@ impl Launcher {
                 *y,
                 *w,
                 *h,
-                (*h * 0.42).clamp(10.0, 22.0),
-                horizon_client::hud::rgba(255, 255, 255, 36),
+                (*h * 0.42).clamp(10., 22.),
+                horizon_client::hud::rgba(255, 255, 255, alpha),
             );
         }
         crate::documents::draw_ui(&mut ui);
@@ -3881,6 +3714,29 @@ impl Launcher {
             return;
         }
 
+        if cat == SettingsCategory::Theme && !self.theme_advanced {
+            let cfg = self.catalog.config.theme.clone();
+            let view = visual::appearance_screen(
+                ui,
+                content_x,
+                content_w,
+                h,
+                slide_y,
+                &cfg,
+                self.catalog.config.disable_launcher_animations,
+                self.catalog.scroll,
+                |r, a| {
+                    self.targets.push((r, Action::Appearance(a)));
+                    if a != visual::AppearanceAction::Back {
+                        self.list_targets.push((r, Action::Appearance(a)));
+                    }
+                },
+            );
+            self.catalog.scroll = self.catalog.scroll.clamp(0., view[2]);
+            self.list_view = Some(view);
+            return;
+        }
+
         // Sub-category Header Bar with hierarchical Back button
         let header_y = 60.0 + slide_y;
         let back_cat = if cat == SettingsCategory::Theme {
@@ -3893,7 +3749,11 @@ impl Launcher {
             &mut self.targets,
             [content_x, header_y, 88.0, 32.0],
             "← Back",
-            Action::SettingsCat(back_cat),
+            if cat == SettingsCategory::Theme && self.theme_advanced {
+                Action::Appearance(visual::AppearanceAction::Advanced)
+            } else {
+                Action::SettingsCat(back_cat)
+            },
             false,
         );
         let fitted_cat = ui.fit_text(
@@ -5439,7 +5299,10 @@ impl Launcher {
         }
         self.feedback = action.map(|action| (action, std::time::Instant::now()));
         self.focus = None;
-        if action.is_some() && horizon_client::official_install::ready(&self.home) {
+        if action.is_some()
+            && self.catalog.config.theme.interface_sounds
+            && horizon_client::official_install::ready(&self.home)
+        {
             let audio = self.audio.get_or_insert_with(|| {
                 let mut audio = horizon_client::audio::Audio::new(
                     &self.home.join(".local/horizon-client/26.3"),
@@ -5481,6 +5344,7 @@ impl Launcher {
             }
             Some(Action::SettingsCat(cat)) => {
                 self.catalog.settings_category = cat;
+                self.theme_advanced = false;
                 self.catalog.scroll = 0.0;
                 self.anim.trigger_page_transition();
             }
@@ -6423,6 +6287,45 @@ impl Launcher {
                     Err(e) => e,
                 };
             }
+            Some(Action::StatusDetails(open)) => self.status_details = open,
+            Some(Action::Appearance(action)) => {
+                use visual::AppearanceAction as A;
+                match action {
+                    A::Preset(preset) => self.catalog.config.theme.apply_preset(preset),
+                    A::Wallpaper(paper) => self.catalog.config.theme.wallpaper = paper,
+                    A::Effects => {
+                        self.catalog.config.theme.glass_effects =
+                            !self.catalog.config.theme.glass_effects
+                    }
+                    A::Sounds => {
+                        self.catalog.config.theme.interface_sounds =
+                            !self.catalog.config.theme.interface_sounds
+                    }
+                    A::Motion => {
+                        self.catalog.config.disable_launcher_animations =
+                            !self.catalog.config.disable_launcher_animations;
+                        horizon_client::ui_theme::motion::set_launcher_animations_disabled(
+                            self.catalog.config.disable_launcher_animations,
+                        );
+                        horizon_client::ui_theme::motion::set_reduced_motion(
+                            self.catalog.config.super_perf_mode
+                                || self.catalog.config.battery_perf_mode,
+                        );
+                    }
+                    A::Advanced => {
+                        self.theme_advanced = !self.theme_advanced;
+                        self.catalog.scroll = 0.;
+                    }
+                    A::Back => {
+                        self.catalog.page = Page::Settings;
+                        self.catalog.settings_category = SettingsCategory::Overview;
+                        self.catalog.scroll = 0.;
+                    }
+                }
+                horizon_client::ui_theme::set_active_theme(self.catalog.config.theme.resolve());
+                self.anim.trigger_theme_pulse();
+                self.catalog.config.save(&self.home)?;
+            }
             Some(Action::SelectThemePreset(preset)) => {
                 self.catalog.config.theme.apply_preset(preset);
                 horizon_client::ui_theme::set_active_theme(self.catalog.config.theme.resolve());
@@ -6990,6 +6893,15 @@ impl Launcher {
             return Ok(());
         }
 
+        self.last_touch = Some(Instant::now());
+        if t.phase == TouchPhase::Started {
+            let target = self.pointer_action();
+            if !self.taps.start(t.id, target) {
+                return Ok(());
+            }
+        } else if !self.taps.owns(t.id) {
+            return Ok(());
+        }
         let density = self.ui_density();
         let px = t.location.x as f32 / density;
         let py = t.location.y as f32 / density;
@@ -7040,11 +6952,17 @@ impl Launcher {
             TouchPhase::Ended => {
                 if ACTIVE_SLIDER_DRAG.with(|c| c.take()).is_some() {
                     self.drag = None;
-                } else if self.drag.take().is_some_and(|drag| !drag.moved) {
-                    self.activate(events)?;
+                    self.taps.cancel();
+                } else {
+                    let moved = self.drag.take().is_none_or(|drag| drag.moved);
+                    let target = self.pointer_action();
+                    if self.taps.finish(t.id, target, moved) {
+                        self.activate(events)?;
+                    }
                 }
             }
             TouchPhase::Cancelled => {
+                self.taps.cancel();
                 ACTIVE_SLIDER_DRAG.with(|c| c.set(None));
                 self.drag = None;
             }

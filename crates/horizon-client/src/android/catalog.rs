@@ -1277,9 +1277,11 @@ impl Catalog {
             let _ = tx.send(job());
         });
     }
-    pub fn poll(&mut self, home: &Path) {
+    pub fn poll(&mut self, home: &Path) -> bool {
+        let mut changed = false;
         if let Some(rx) = &self.icon_worker {
             while let Ok((key, w, h, rgba, summary)) = rx.try_recv() {
+                changed = true;
                 self.icons.insert(key.clone(), (w, h, rgba));
                 if let Some(s) = summary.filter(|s| !s.trim().is_empty()) {
                     self.enriched_summaries.insert(key, s);
@@ -1288,6 +1290,7 @@ impl Catalog {
         }
         if let Some(rx) = &self.modal_worker {
             while let Ok(update) = rx.try_recv() {
+                changed = true;
                 match update {
                     ModalUpdate::Metadata {
                         description,
@@ -1351,6 +1354,7 @@ impl Catalog {
             Err(_) => None,
         });
         if let Some(reply) = reply {
+            changed = true;
             self.worker = None;
             let downloading = self.downloading.take();
             self.downloading_title.clear();
@@ -1378,6 +1382,7 @@ impl Catalog {
                 Err(_) => None,
             });
         if let Some(result) = result {
+            changed = true;
             self.search_worker = None;
             let visible = self.searches.finish(result.as_ref().ok().cloned());
             if visible && self.page.is_catalog() && !self.busy() {
@@ -1391,6 +1396,7 @@ impl Catalog {
             }
         }
         self.start_search();
+        changed
     }
     fn fetch_icons(&mut self, home: &Path) {
         // Collect both direct icon URLs and Horizon/bundled items that need a Modrinth name search

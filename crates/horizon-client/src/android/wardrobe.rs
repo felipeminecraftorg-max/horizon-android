@@ -185,12 +185,14 @@ impl Wardrobe {
             }
         }
     }
-    pub fn poll(&mut self) {
+    pub fn poll(&mut self) -> bool {
+        let mut changed = false;
         if let Some(result) = self
             .default_worker
             .as_ref()
             .and_then(|rx| rx.try_recv().ok())
         {
+            changed = true;
             self.default_worker = None;
             match result {
                 Ok(bytes) => {
@@ -207,9 +209,10 @@ impl Wardrobe {
             }
         }
         if let Some((key, result)) = self.worker.as_ref().and_then(|r| r.try_recv().ok()) {
+            changed = true;
             self.worker = None;
             if key != self.key {
-                return;
+                return changed;
             }
             match result {
                 Ok((cache, activated_cape)) => {
@@ -227,7 +230,7 @@ impl Wardrobe {
                         if let Err(error) = self.library.save(&self.root) {
                             self.note = error;
                             self.preview();
-                            return;
+                            return changed;
                         }
                     }
                     self.cache = cache;
@@ -238,6 +241,7 @@ impl Wardrobe {
                 Err(error) => self.note = error,
             }
         }
+        changed
     }
     fn kind(&self) -> Kind {
         if self.capes { Kind::Cape } else { Kind::Skin }

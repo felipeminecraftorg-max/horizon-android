@@ -45,6 +45,10 @@ pub(super) struct Launcher {
     game: Option<Box<dyn ApplicationHandler>>,
     cursor: (f64, f64),
     mouse_down: bool,
+    taps: gesture::TapGate<pages::Action>,
+    last_touch: Option<Instant>,
+    theme_advanced: bool,
+    status_details: bool,
     feedback: Option<(pages::Action, Instant)>,
     install: Arc<Mutex<horizon_client::official_install::InstallProgress>>,
     install_paused: Arc<std::sync::atomic::AtomicBool>,
@@ -224,6 +228,10 @@ impl Launcher {
             game: None,
             cursor: (0.0, 0.0),
             mouse_down: false,
+            taps: Default::default(),
+            last_touch: None,
+            theme_advanced: false,
+            status_details: false,
             feedback: None,
             install: Arc::default(),
             install_paused: Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -377,6 +385,18 @@ impl Launcher {
     }
 
     fn request_back(&mut self) {
+        if self.catalog.page == Page::Settings
+            && self.catalog.settings_category == crate::catalog::SettingsCategory::Theme
+            && self.theme_advanced
+        {
+            self.theme_advanced = false;
+            self.catalog.scroll = 0.;
+            return;
+        }
+        if self.status_details {
+            self.status_details = false;
+            return;
+        }
         if crate::platform::active() && self.control_editor.is_some() {
             crate::platform::hide();
             return;
@@ -714,6 +734,7 @@ impl ApplicationHandler for Launcher {
             self.restore_launcher(events);
             return;
         }
+        let repaint = !matches!(event, WindowEvent::RedrawRequested);
         let result = match event {
             WindowEvent::CloseRequested => {
                 self.request_back();
@@ -737,6 +758,8 @@ impl ApplicationHandler for Launcher {
                 horizon_client::android_runtime::clear_gamepads();
                 self.controller_repeat = None;
                 self.mouse_down = false;
+                self.taps.cancel();
+                pages::cancel_slider_drag();
                 self.drag = None;
                 Ok(())
             }
@@ -745,13 +768,24 @@ impl ApplicationHandler for Launcher {
                 button: MouseButton::Left,
                 ..
             } => {
-                if state == ElementState::Pressed {
-                    self.mouse_down = true;
+                // Android may synthesize mouse events for a touch. Never dispatch it twice.
+                if self
+                    .last_touch
+                    .is_some_and(|t| t.elapsed() < Duration::from_millis(500))
+                {
                     Ok(())
-                } else if std::mem::take(&mut self.mouse_down) {
-                    self.activate(events)
+                } else if state == ElementState::Pressed {
+                    let target = self.pointer_action();
+                    self.mouse_down = self.taps.start(u64::MAX, target);
+                    Ok(())
                 } else {
-                    Ok(())
+                    self.mouse_down = false;
+                    let target = self.pointer_action();
+                    if self.taps.finish(u64::MAX, target, false) {
+                        self.activate(events)
+                    } else {
+                        Ok(())
+                    }
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
@@ -802,10 +836,15 @@ impl ApplicationHandler for Launcher {
         if let Err(error) = result {
             self.fail(error);
         }
+        if repaint && let Some(window) = &self.window {
+            window.request_redraw();
+        }
     }
     fn device_event(&mut self, events: &ActiveEventLoop, id: DeviceId, event: DeviceEvent) {
         if matches!(event, DeviceEvent::Removed) {
             self.mouse_down = false;
+            self.taps.cancel();
+            pages::cancel_slider_drag();
             self.drag = None;
         }
         if let Some(game) = &mut self.game {
@@ -815,9 +854,17 @@ impl ApplicationHandler for Launcher {
                 winit::platform::android::native_device_id(id),
                 &event,
             );
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
         }
     }
     fn about_to_wait(&mut self, events: &ActiveEventLoop) {
+        let had_work = self.worker.is_some()
+            || self.session_worker.is_some()
+            || self.catalog.busy()
+            || self.login.pending()
+            || self.diagnostic_export.is_some();
         if let Some(game) = &mut self.game {
             game.about_to_wait(events);
             self.restore_launcher(events);
@@ -881,9 +928,10 @@ impl ApplicationHandler for Launcher {
         if let Some(audio) = &mut self.audio {
             audio.tick(false, &Default::default());
         }
-        self.catalog.poll(&self.home);
-        self.wardrobe.poll();
+        let mut async_changed = self.catalog.poll(&self.home);
+        async_changed |= self.wardrobe.poll();
         if let Some(notice) = crate::documents::poll() {
+            async_changed = true;
             self.wardrobe.reload();
             self.catalog.status = notice.text;
             if notice.changed {
@@ -892,9 +940,11 @@ impl ApplicationHandler for Launcher {
             }
         }
         for result in crate::gallery::poll() {
+            async_changed = true;
             self.catalog.status = result.unwrap_or_else(|e| format!("File export failed: {e}"));
         }
         if self.login.poll() {
+            async_changed = true;
             self.session_worker = None;
             self.prepared_session = None;
             self.session_ready = false;
@@ -971,30 +1021,38 @@ impl ApplicationHandler for Launcher {
                 return;
             }
         }
-        if let Some(window) = &self.window {
-            window.request_redraw();
-        }
-        let frame_ms = if self.worker.is_some()
+        let animating = self.anim.is_active()
+            || self.catalog.editing.is_some()
+            || self.controller_repeat.is_some()
+            || self.drag.is_some()
+            || self.mouse_down
+            || self.control_editor.is_some()
+            || (self.catalog.page == Page::Skins && self.wardrobe.is_animating())
+            || self
+                .feedback
+                .is_some_and(|(_, t)| t.elapsed() < Duration::from_millis(180));
+        let working = had_work
+            || self.worker.is_some()
             || self.launching
             || self.session_worker.is_some()
             || self.catalog.busy()
-            || self.drag.is_some()
             || self.login.pending()
-            || self.control_editor.is_some()
             || self
                 .catalog
                 .project_modal
                 .as_ref()
-                .is_some_and(|m| m.loading)
-            || self.anim.is_active()
-            || (self.catalog.page == Page::Skins && self.wardrobe.is_animating())
-            || self
-                .feedback
-                .is_some_and(|(_, t)| t.elapsed() < Duration::from_millis(180))
+                .is_some_and(|m| m.loading);
+        if (animating || working || async_changed)
+            && let Some(window) = &self.window
         {
+            window.request_redraw();
+        }
+        let frame_ms = if animating {
             16
+        } else if working {
+            100
         } else {
-            33
+            250
         };
         events.set_control_flow(ControlFlow::WaitUntil(
             Instant::now() + Duration::from_millis(frame_ms),
