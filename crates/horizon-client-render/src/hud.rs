@@ -2162,6 +2162,26 @@ impl HudRenderer {
             pack_text.prepare(uploads, encoder, batch, size, batch.scale * self.zoom);
         }
     }
+    /// Render one standalone UI frame with the production atlas uploader and
+    /// pipelines. Capture tools use this without exposing the staging belt.
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_ui_frame(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        target: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
+        batch: &HudBatch,
+        size: [u32; 2],
+    ) {
+        let mut uploads = crate::gfx::upload::Uploads::new(device);
+        let mut encoder = device.create_command_encoder(&Default::default());
+        self.prepare(device, &mut uploads, &mut encoder, batch, size);
+        self.draw(&mut encoder, target, depth, batch, size);
+        uploads.finish(&encoder);
+        queue.submit([encoder.finish()]);
+    }
+
     /// Draw the batch `prepare` staged.
     pub fn draw(
         &self,
