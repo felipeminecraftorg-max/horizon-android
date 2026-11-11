@@ -1,7 +1,7 @@
 # Android launcher appearance and interaction
 
-The launcher has two optional material presets: **Liquid Glass** (cool violet
-frosted surfaces) and **Dark Aero** (black glass and neutral silver). Open the
+The launcher has two optional material presets: **Liquid Glass** (clear lenses
+and cool violet accents) and **Dark Aero** (black glass and neutral silver). Open the
 header's appearance button, or Settings > Launcher > Theme. Pick a preset and
 then a wallpaper independently: Plain, Aurora, Graphite or Midnight. Glass
 effects, interface sounds and launcher animations each have their own switch.
@@ -9,10 +9,12 @@ Advanced colors and the earlier palettes remain available.
 
 The wallpaper art is original and procedural. Liquid Glass now reads the already
 drawn launcher scene beneath each surface. A rounded-rectangle distance field
-defines its convex normal; Snell refraction bends the background, a nine-tap
-filter softens it, and a narrow directional highlight and restrained chromatic
-edge finish the lens. Text and icons are drawn afterwards and remain sharp.
-The default tint opacity is 14%, instead of the earlier 56% grey overlay.
+defines a rolled, circular edge profile; Snell refraction and slight face
+magnification bend the background. A nine-tap filter is lighter in the centre;
+directional reflections, a narrow rim, a contact shadow and restrained colour
+dispersion finish the lens. Reflected light responds to the interaction position.
+Text and icons are drawn afterwards and remain sharp. New configurations default
+to 8% tint and 2 dp blur. Existing transparency and blur choices are preserved.
 
 With Liquid Glass and effects enabled, scroll down in Appearance for three tap
 controls: Transparency (70%, 86%, 92%), Backdrop blur (off, soft, strong) and
@@ -64,8 +66,15 @@ not Android installation, touch hardware latency or phone FPS.
 
 The capture tool also runs numerical GPU checks against a changing striped
 background: refraction bends it, blur lowers its contrast, the centre remains
-transparent, foreground UI stays sharp, and a scroll clip excludes the lens.
+transparent, reflected light follows input, foreground UI stays sharp, and a
+scroll clip excludes the lens.
 These checks use the production compositor, not a separate shader substitute.
+
+Set `HORIZON_CAPTURE_UNIFORM_ALIGNMENT=64` to exercise the mobile buffer layout,
+or `256` for the earlier capture layout. The original 80-byte stride crashed at
+the second lens on a 64-byte device; lens uniforms now round up to the device's
+alignment (128 bytes in that case). `HORIZON_CAPTURE_BACKEND=gl` selects the
+OpenGL capture path when a compatible adapter is installed.
 
 Validation also includes the gesture regression tests, native viewport and
 configuration tests, the existing Android launcher source checks and an ARM64
