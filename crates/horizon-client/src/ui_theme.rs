@@ -940,6 +940,43 @@ impl<'a> Ui<'a> {
     }
 
     // ---- geometry, snapped to physical pixels ----
+    fn backdrop_lens(&mut self, rect: [f32; 4], radius: f32, tint: u32, optics: [f32; 2]) {
+        if self.clip_rect(rect).is_none() {
+            return;
+        }
+        let [x, y, w, h] = rect;
+        let start = self.batch.vertices.len() as u32;
+        self.emit_clipped_uv(
+            self.px_x(x),
+            self.px_y(y),
+            self.px_x(x + w),
+            self.px_y(y + h),
+            0.,
+            0.,
+            1.,
+            1.,
+            0,
+        );
+        let vertices = start..self.batch.vertices.len() as u32;
+        if vertices.is_empty() {
+            return;
+        }
+        let s = self.scale;
+        let d = self.density / s;
+        let clip = self
+            .clip
+            .map(|[x0, y0, x1, y1]| [x0 / s, y0 / s, (x1 - x0) / s, (y1 - y0) / s])
+            .unwrap_or([0., 0., self.batch.width, self.batch.height]);
+        self.batch.glass.push(crate::hud::GlassSurface {
+            vertices,
+            rect: rect.map(|v| v * d),
+            clip,
+            radius: radius * d,
+            blur: optics[0] * d,
+            refraction: optics[1] * d,
+            tint,
+        });
+    }
     fn px_x(&self, v: f32) -> f32 {
         (v * self.density).round()
     }
@@ -2402,6 +2439,7 @@ pub const THEME_BG_SWATCHES_LIGHT: [(u32, &str, &str); 6] = [
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct LauncherThemeConfig {
+    pub glass: launcher_visual::GlassTuning,
     #[serde(default)]
     pub wallpaper: launcher_visual::Wallpaper,
     #[serde(default = "launcher_visual::default_effects")]
@@ -2425,6 +2463,7 @@ pub struct LauncherThemeConfig {
 impl Default for LauncherThemeConfig {
     fn default() -> Self {
         Self {
+            glass: launcher_visual::GlassTuning::default(),
             wallpaper: launcher_visual::Wallpaper::None,
             glass_effects: true,
             interface_sounds: true,
@@ -2506,6 +2545,7 @@ pub fn lerp_color(c0: u32, c1: u32, t: f32) -> u32 {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ResolvedTheme {
+    pub glass: launcher_visual::GlassTuning,
     pub material: launcher_visual::Material,
     pub wallpaper: launcher_visual::Wallpaper,
     pub is_light: bool,
@@ -2710,6 +2750,7 @@ impl LauncherThemeConfig {
         };
 
         ResolvedTheme {
+            glass: self.glass.normalized(),
             wallpaper: self.wallpaper,
             material: if self.glass_effects {
                 match self.preset {

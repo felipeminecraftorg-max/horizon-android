@@ -87,12 +87,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--history", action="store_true", help="Inspect paths in all local Git history")
+    mode.add_argument("--ref", dest="revision", help="Inspect all history reachable from this commit or ref")
     mode.add_argument("--pre-push", action="store_true", help="Inspect history reachable from Git's ref updates on stdin")
     # CI's pull requests: only the commits a merge would add, not every ref's whole history.
     mode.add_argument("--range", metavar="BASE..HEAD", help="Inspect the commits of a revision range")
     args = parser.parse_args()
     revisions = pushed_revisions(sys.stdin) if args.pre_push else [args.range] if args.range else None
-    history = args.history or args.pre_push or bool(args.range)
+    if args.revision:
+        revision = subprocess.check_output(["git", "--no-replace-objects", "rev-parse", "--verify",
+                                            "--end-of-options", args.revision + "^{commit}"], text=True).strip()
+        revisions = [revision]
+    history = args.history or args.pre_push or bool(args.range) or bool(args.revision)
     rejected = sorted({path for path in paths_in_repository(history, revisions)
                        if path and prohibited(path)})
     if not history:

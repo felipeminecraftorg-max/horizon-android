@@ -6306,6 +6306,36 @@ impl Launcher {
                         self.catalog.config.theme.glass_effects =
                             !self.catalog.config.theme.glass_effects
                     }
+                    A::Transparency => {
+                        let opacity = self.catalog.config.theme.glass.normalized().opacity;
+                        self.catalog.config.theme.glass.opacity = if opacity < 0.10 {
+                            0.14
+                        } else if opacity < 0.20 {
+                            0.30
+                        } else {
+                            0.08
+                        };
+                    }
+                    A::Blur => {
+                        let blur = self.catalog.config.theme.glass.normalized().blur;
+                        self.catalog.config.theme.glass.blur = if blur < 0.1 {
+                            4.
+                        } else if blur < 6. {
+                            8.
+                        } else {
+                            0.
+                        };
+                    }
+                    A::Refraction => {
+                        let refraction = self.catalog.config.theme.glass.normalized().refraction;
+                        self.catalog.config.theme.glass.refraction = if refraction < 0.1 {
+                            14.
+                        } else if refraction < 18. {
+                            24.
+                        } else {
+                            0.
+                        };
+                    }
                     A::Sounds => {
                         self.catalog.config.theme.interface_sounds =
                             !self.catalog.config.theme.interface_sounds

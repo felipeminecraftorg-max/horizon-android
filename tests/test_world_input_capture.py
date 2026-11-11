@@ -107,7 +107,7 @@ struct ServerPacks { prompt: Option<()> }
 struct Game {
     focused: bool, agent_pointer: bool, window: Option<Window>, mouse: Mouse,
     keyboard_mouse: bool, view_at: [u32; 2],
-    captured: bool, title: Option<()>, screen: Screen, remote: Option<Remote>,
+    captured: bool, os_mouse_captured: bool, title: Option<()>, screen: Screen, remote: Option<Remote>,
     mining: bool, lan_acting: Option<u32>, renderer: Option<Renderer>, cursor: (f32, f32),
     server_packs: ServerPacks, options: Options,
 }
@@ -115,7 +115,7 @@ impl Default for Game {
     fn default() -> Self {
         Self { focused: true, agent_pointer: false, window: Some(Window::default()),
             keyboard_mouse: true, view_at: [0, 0],
-            mouse: Mouse::default(), captured: false, title: None,
+            mouse: Mouse::default(), captured: false, os_mouse_captured: false, title: None,
             screen: Screen::Playing, remote: None, mining: false, lan_acting: None,
             renderer: None, cursor: (0.0, 0.0), server_packs: ServerPacks::default(),
             options: Options::default() }

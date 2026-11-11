@@ -25,7 +25,11 @@ def triggers(text):
 class ChecksRunnerTests(unittest.TestCase):
     def test_self_hosted_jobs_never_take_a_fork_pull_request(self):
         routed = 0
-        for path in sorted(WORKFLOWS.glob("*.yml")):
+        paths = list(WORKFLOWS.glob("*.yml"))
+        # Android forks retain upstream workflows as inactive source references.
+        paths += [path for path in (ROOT / ".github/upstream-workflows").glob("*.yml.disabled")
+                  if not (WORKFLOWS / path.name.removesuffix(".disabled")).exists()]
+        for path in sorted(paths):
             text = path.read_text()
             on = triggers(text)
             for name, block in jobs(text):

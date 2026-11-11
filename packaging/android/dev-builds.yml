@@ -89,7 +89,9 @@ jobs:
             x86_64) target=x86_64-linux-android ;;
           esac
           rustup target add "$target"
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      # Restored here and saved at the end even when the build fails, so that a
+      # failed build's compiled dependencies speed up the next one.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/.cargo/registry
@@ -143,6 +145,14 @@ jobs:
           path: dist/
           if-no-files-found: error
           retention-days: 14
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: always()
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .local/ci-target
+          key: android-dev-${{ runner.os }}-${{ matrix.abi }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'packaging/android/build.gradle') }}-${{ github.sha }}
       - name: Remove signing key
         if: always()
         run: rm -f .local/android/debug.keystore
