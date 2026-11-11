@@ -35,7 +35,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - run: git diff --check
-      - run: python3 tools/check_public_tree.py --history
+      # Check the complete history of the tested revision, not unrelated archived branches/tags.
+      - run: python3 tools/check_public_tree.py --ref HEAD
       - run: python3 -m unittest discover -s tests -p 'test_android*.py'
       - run: python3 tools/test_android_diagnostics.py
       - run: python3 tools/test_android_performance.py
