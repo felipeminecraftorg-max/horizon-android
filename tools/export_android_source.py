@@ -11,7 +11,10 @@ from pathlib import Path
 import re
 import zipfile
 
-from check_public_tree import prohibited
+try:
+    from .check_public_tree import prohibited
+except ImportError:
+    from check_public_tree import prohibited
 
 ROOT = Path(__file__).resolve().parents[1]
 DIRECTORIES = {'.githooks', '.github', 'benchmarks', 'crates', 'docs', 'launcher',

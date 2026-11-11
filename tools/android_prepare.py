@@ -126,11 +126,11 @@ def main():
     minecraft = private / 'minecraft'
     manifest, server = download_game(args.version, minecraft)
     java_home = args.java_home or download_jdk(manifest, private / 'jdk')
-    environment = dict(os.environ, JAVA_HOME=str(java_home.resolve()))
     isolated = Path(tempfile.mkdtemp(prefix='prepare-', dir=private))
-    for key in ['HORIZON_HOME', 'HORIZON_LAUNCHER_HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME']:
-        environment[key] = str(isolated / key.lower())
-    environment.update(HORIZON_LAUNCHER_NO_SELF_UPDATE='1', HORIZON_NO_AUDIO='1')
+    environment = lab.game_env(os.environ, JAVA_HOME=java_home.resolve(), **{
+        key: isolated / key.lower()
+        for key in ['HORIZON_HOME', 'HORIZON_LAUNCHER_HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME']
+    })
     subprocess.run(['cargo', 'run', '-p', 'horizon-prepare', '--', '--root', str(ROOT), '--prepare',
                     '--minecraft-dir', str(minecraft), '--server-jar', str(server)],
                    cwd=ROOT, env=environment, check=True)
