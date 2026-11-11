@@ -18,8 +18,8 @@ pub struct GlassTuning {
 impl Default for GlassTuning {
     fn default() -> Self {
         Self {
-            opacity: 0.14,
-            blur: 4.,
+            opacity: 0.08,
+            blur: 2.,
             refraction: 14.,
         }
     }

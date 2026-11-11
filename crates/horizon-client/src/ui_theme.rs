@@ -975,6 +975,10 @@ impl<'a> Ui<'a> {
             blur: optics[0] * d,
             refraction: optics[1] * d,
             tint,
+            light: [
+                ((self.cursor.0 - x - w * 0.5) / (w * 0.5).max(1.)).clamp(-1., 1.),
+                ((self.cursor.1 - y - h * 0.5) / (h * 0.5).max(1.)).clamp(-1., 1.),
+            ],
         });
     }
     fn px_x(&self, v: f32) -> f32 {
