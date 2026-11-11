@@ -116,6 +116,7 @@ pub fn set_ui_scale_percent(percent: u32) {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Icon {
     HorizonLogo,
+    Person,
     ChevronDown,
     Play,
     Mods,
@@ -522,6 +523,12 @@ fn icon_hit(icon: Icon, u: f32, v: f32) -> bool {
             let slat1 = seg_dist(u, v, 0.44, 0.42, 0.44, 0.71) <= 0.032;
             let slat2 = seg_dist(u, v, 0.56, 0.42, 0.56, 0.71) <= 0.032;
             lid || handle || (body_outer && !body_inner) || slat1 || slat2
+        }
+        Icon::Person => {
+            let head = ((u - 0.5).powi(2) + (v - 0.28).powi(2)).sqrt();
+            let shoulders = (((u - 0.5) / 0.31).powi(2) + ((v - 0.85) / 0.30).powi(2)).sqrt();
+            (0.115..=0.175).contains(&head)
+                || ((0.86..=1.06).contains(&shoulders) && (0.50..=0.88).contains(&v))
         }
         Icon::Share => {
             let tray_l = seg_dist(u, v, 0.22, 0.56, 0.22, 0.80) <= 0.048;

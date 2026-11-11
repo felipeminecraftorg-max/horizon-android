@@ -147,6 +147,38 @@ pub fn background(ui: &mut Ui<'_>, r: [f32; 4], paper: Wallpaper) {
     }
 }
 
+fn preview(ui: &mut Ui<'_>, r: [f32; 4], paper: Wallpaper, radius: f32) {
+    let Some(t) = texture(ui, paper, false) else {
+        return;
+    };
+    let [x, y, w, h] = r;
+    let mut band = |top: f32, height: f32, inset: f32| {
+        let u0 = t.u0 + (t.u1 - t.u0) * inset / w;
+        let u1 = t.u1 - (t.u1 - t.u0) * inset / w;
+        let v0 = t.v0 + (t.v1 - t.v0) * (top - y) / h;
+        let v1 = t.v0 + (t.v1 - t.v0) * (top + height - y) / h;
+        ui.emit_clipped_uv(
+            ui.px_x(x + inset),
+            ui.px_y(top),
+            ui.px_x(x + w - inset),
+            ui.px_y(top + height),
+            u0,
+            v0,
+            u1,
+            v1,
+            u32::MAX,
+        );
+    };
+    for i in 0..24 {
+        let dh = radius / 24.;
+        let d = radius - (i as f32 + 0.5) * dh;
+        let inset = radius - (radius * radius - d * d).sqrt();
+        band(y + i as f32 * dh, dh, inset);
+        band(y + h - (i as f32 + 1.) * dh, dh, inset);
+    }
+    band(y + radius, h - 2. * radius, 0.);
+}
+
 /// Frosted wallpaper sampled in screen space, followed by a translucent tint
 /// and a restrained edge highlight. This is a wallpaper material, not iOS's compositor.
 fn sheen(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, aero: bool) {
@@ -309,7 +341,7 @@ pub fn button(ui: &mut Ui<'_>, rect: [f32; 4], label: &str, icon: Option<Icon>, 
         th.text_primary
     };
     let icon_w = if icon.is_some() { 26. } else { 0. };
-    let text = ui.fit_text(Face::Medium, 14., label, rect[2] - 32. - icon_w);
+    let text = ui.fit_text(Face::Medium, 14., label, rect[2] - 24. - icon_w);
     let tw = ui.measure(Face::Medium, 14., &text);
     let left = rect[0] + (rect[2] - tw - icon_w) * 0.5;
     if let Some(icon) = icon {
@@ -618,13 +650,13 @@ pub fn appearance_screen(
     scroll: f32,
     mut target: impl FnMut([f32; 4], AppearanceAction),
 ) -> [f32; 3] {
-    let back = [x, 72. + slide, 80., 44.];
+    let back = [x, 72. + slide, 96., 44.];
     button(ui, back, "Back", Some(Icon::ArrowLeft), false);
     target(back, AppearanceAction::Back);
     ui.text(
         Face::SemiBold,
         23.,
-        x + 98.,
+        x + 112.,
         78. + slide,
         active_theme().text_primary,
         "Appearance",
@@ -675,7 +707,7 @@ pub fn appearance(
         } else {
             Wallpaper::Graphite
         };
-        ui.clipped(r, |ui| background(ui, r, paper));
+        preview(ui, r, paper, 18.);
         ui.rounded(r[0], r[1], r[2], r[3], 18., color::hex(0x12151E, 95));
         ui.rounded(
             r[0] + 14.,
@@ -729,9 +761,9 @@ pub fn appearance(
         if paper == Wallpaper::None {
             ui.rounded(r[0], r[1], r[2], r[3], 12., th.bg_solid);
         } else {
-            ui.clipped(r, |ui| background(ui, r, paper));
+            preview(ui, r, paper, 12.);
         }
-        ui.rounded(r[0], r[1] + 34., r[2], 26., 0., color::hex(0, 150));
+
         ui.text(
             Face::Medium,
             10.5,
