@@ -86,7 +86,8 @@ fn check_optics(
                   blur,
                   refraction,
                   phase,
-                  clipped|
+                  clipped,
+                  cursor|
      -> horizon_client::Result<Vec<u8>> {
         let mut config = LauncherThemeConfig::default();
         config.apply_preset(ThemePreset::LiquidGlass);
@@ -97,7 +98,7 @@ fn check_optics(
         };
         ui_theme::set_active_theme(config.resolve());
         let mut batch = HudBatch::new(size);
-        let mut ui = Ui::new(atlas, &mut batch, (0., 0.));
+        let mut ui = Ui::new(atlas, &mut batch, cursor);
         for x in 0..320 {
             let rgb = if (x + phase) % 2 == 0 {
                 0x385A90
@@ -138,11 +139,13 @@ fn check_optics(
         );
         read_pixels(device, queue, &target, size)
     };
-    let clear = render(hud, 0., 0., 0, false)?;
-    let refracted = render(hud, 0., 14., 0, false)?;
-    let blurred = render(hud, 4., 0., 0, false)?;
-    let moved = render(hud, 0., 14., 1, false)?;
-    let clipped = render(hud, 0., 14., 0, true)?;
+    let clear = render(hud, 0., 0., 0, false, (0., 0.))?;
+    let refracted = render(hud, 0., 14., 0, false, (0., 0.))?;
+    let blurred = render(hud, 4., 0., 0, false, (0., 0.))?;
+    let moved = render(hud, 0., 14., 1, false, (0., 0.))?;
+    let clipped = render(hud, 0., 14., 0, true, (0., 0.))?;
+    let relit = render(hud, 0., 14., 0, false, (640., 360.))?;
+    assert_ne!(refracted, relit, "reflected light did not respond to input");
     let pixel = |image: &[u8], x: usize, y: usize| -> [u8; 3] {
         image[(y * 640 + x) * 4..(y * 640 + x) * 4 + 3]
             .try_into()
@@ -208,13 +211,31 @@ fn main() -> horizon_client::Result<()> {
         .nth(1)
         .unwrap_or_else(|| "launcher-captures".into());
     fs::create_dir_all(&output)?;
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let mut instance_descriptor = wgpu::InstanceDescriptor::new_without_display_handle();
+    if std::env::var("HORIZON_CAPTURE_BACKEND").as_deref() == Ok("gl") {
+        instance_descriptor.backends = wgpu::Backends::GL;
+    }
+    let instance = wgpu::Instance::new(instance_descriptor);
     let adapter = pollster::block_on(instance.request_adapter(&Default::default()))?;
     eprintln!(
-        "Native launcher capture adapter: {}",
-        adapter.get_info().name
+        "Native launcher capture adapter: {} ({:?})",
+        adapter.get_info().name,
+        adapter.get_info().backend
     );
-    let (device, queue) = pollster::block_on(adapter.request_device(&Default::default()))?;
+    let mut descriptor = wgpu::DeviceDescriptor::default();
+    if let Ok(alignment) = std::env::var("HORIZON_CAPTURE_UNIFORM_ALIGNMENT") {
+        let alignment: u32 = alignment.parse()?;
+        assert!(alignment.is_power_of_two());
+        assert!(alignment >= adapter.limits().min_uniform_buffer_offset_alignment);
+        descriptor
+            .required_limits
+            .min_uniform_buffer_offset_alignment = alignment;
+    }
+    let (device, queue) = pollster::block_on(adapter.request_device(&descriptor))?;
+    eprintln!(
+        "Capture uniform alignment: {}",
+        device.limits().min_uniform_buffer_offset_alignment
+    );
     let empty = Path::new(&output).join("empty-resources");
     fs::create_dir_all(&empty)?;
     let atlas = HudAtlas::build(&empty)?;
@@ -268,6 +289,7 @@ fn main() -> horizon_client::Result<()> {
     for (stem, preset) in [
         ("liquid-glass", ThemePreset::LiquidGlass),
         ("dark-aero", ThemePreset::DarkAero),
+        ("liquid-glass-reenabled", ThemePreset::LiquidGlass),
     ] {
         let mut config = LauncherThemeConfig::default();
         config.apply_preset(preset);
