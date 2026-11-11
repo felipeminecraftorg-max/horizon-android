@@ -30,6 +30,179 @@ fn texture(
     })
 }
 
+fn read_pixels(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    target: &wgpu::Texture,
+    [w, h]: [u32; 2],
+) -> horizon_client::Result<Vec<u8>> {
+    let row = (w * 4).next_multiple_of(256);
+    let read = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Native capture readback"),
+        size: u64::from(row) * u64::from(h),
+        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&Default::default());
+    encoder.copy_texture_to_buffer(
+        target.as_image_copy(),
+        wgpu::TexelCopyBufferInfo {
+            buffer: &read,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(row),
+                rows_per_image: Some(h),
+            },
+        },
+        wgpu::Extent3d {
+            width: w,
+            height: h,
+            depth_or_array_layers: 1,
+        },
+    );
+    queue.submit([encoder.finish()]);
+    read.slice(..)
+        .map_async(wgpu::MapMode::Read, |r| r.unwrap());
+    device.poll(wgpu::PollType::wait_indefinitely())?;
+    let bytes = read.slice(..).get_mapped_range()?;
+    let pixels = bytes
+        .chunks(row as usize)
+        .flat_map(|r| r[..(w * 4) as usize].iter().copied())
+        .collect();
+    drop(bytes);
+    read.unmap();
+    Ok(pixels)
+}
+
+/// Numerical checks on the production compositor, with scene changes behind a fixed lens.
+fn check_optics(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    hud: &mut HudRenderer,
+    atlas: &HudAtlas,
+) -> horizon_client::Result<()> {
+    let size = [640, 360];
+    let render = |hud: &mut HudRenderer,
+                  blur,
+                  refraction,
+                  phase,
+                  clipped|
+     -> horizon_client::Result<Vec<u8>> {
+        let mut config = LauncherThemeConfig::default();
+        config.apply_preset(ThemePreset::LiquidGlass);
+        config.glass = visual::GlassTuning {
+            opacity: 0.14,
+            blur,
+            refraction,
+        };
+        ui_theme::set_active_theme(config.resolve());
+        let mut batch = HudBatch::new(size);
+        let mut ui = Ui::new(atlas, &mut batch, (0., 0.));
+        for x in 0..320 {
+            let rgb = if (x + phase) % 2 == 0 {
+                0x385A90
+            } else {
+                0xC0D0E0
+            };
+            ui.fill((x * 2) as f32, 0., 2., 360., ui_theme::color::hex(rgb, 255));
+        }
+        if clipped {
+            ui.set_clip(Some([100., 110., 420., 140.]));
+        }
+        visual::panel(&mut ui, [100., 80., 420., 200.], 36., false);
+        ui.set_clip(None);
+        ui.fill(220., 160., 20., 20., u32::MAX);
+        ui.finish();
+        assert_eq!(batch.glass.len(), 1);
+        let target = texture(
+            device,
+            640,
+            360,
+            wgpu::TextureFormat::Rgba8Unorm,
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        );
+        let depth = texture(
+            device,
+            640,
+            360,
+            wgpu::TextureFormat::Depth32Float,
+            wgpu::TextureUsages::RENDER_ATTACHMENT,
+        );
+        hud.render_ui_frame(
+            device,
+            queue,
+            &target.create_view(&Default::default()),
+            &depth.create_view(&Default::default()),
+            &batch,
+            size,
+        );
+        read_pixels(device, queue, &target, size)
+    };
+    let clear = render(hud, 0., 0., 0, false)?;
+    let refracted = render(hud, 0., 14., 0, false)?;
+    let blurred = render(hud, 4., 0., 0, false)?;
+    let moved = render(hud, 0., 14., 1, false)?;
+    let clipped = render(hud, 0., 14., 0, true)?;
+    let pixel = |image: &[u8], x: usize, y: usize| -> [u8; 3] {
+        image[(y * 640 + x) * 4..(y * 640 + x) * 4 + 3]
+            .try_into()
+            .unwrap()
+    };
+    let mut edge_changed = 0;
+    let mut clear_contrast = 0u64;
+    let mut blur_contrast = 0u64;
+    for y in 130..150 {
+        for x in 270..340 {
+            let a = pixel(&clear, x, y)[0] as i32;
+            let b = pixel(&blurred, x, y)[0] as i32;
+            clear_contrast += (a - pixel(&clear, x + 1, y)[0] as i32).unsigned_abs() as u64;
+            blur_contrast += (b - pixel(&blurred, x + 1, y)[0] as i32).unsigned_abs() as u64;
+        }
+        for x in 103..125 {
+            if pixel(&clear, x, y) != pixel(&refracted, x, y) {
+                edge_changed += 1;
+            }
+        }
+    }
+    assert!(
+        edge_changed > 200,
+        "refraction did not bend the background: {edge_changed}"
+    );
+    assert!(
+        blur_contrast * 10 < clear_contrast * 8,
+        "backdrop blur did not reduce contrast: {blur_contrast}/{clear_contrast}"
+    );
+    assert_ne!(
+        pixel(&refracted, 110, 140),
+        pixel(&moved, 110, 140),
+        "lens froze the prior frame's background"
+    );
+    assert_eq!(
+        pixel(&refracted, 225, 165),
+        [255; 3],
+        "foreground UI was blurred"
+    );
+    // The centre stays substantially transparent, rather than becoming the old opaque grey plate.
+    let base = [192i32, 208, 224];
+    let center = pixel(&clear, 302, 140);
+    assert!(
+        center
+            .into_iter()
+            .zip(base)
+            .all(|(a, b)| (a as i32 - b).abs() < 38),
+        "glass is too opaque: {center:?}"
+    );
+    assert_eq!(
+        pixel(&clipped, 300, 95),
+        pixel(&clear, 20, 95),
+        "lens escaped the scroll clip"
+    );
+    eprintln!(
+        "Native optics checks passed: {edge_changed} bent edge pixels; blur contrast {blur_contrast}/{clear_contrast}; live background, sharp foreground, transparency and clipping verified."
+    );
+    Ok(())
+}
+
 fn main() -> horizon_client::Result<()> {
     let output = std::env::args()
         .nth(1)
@@ -82,6 +255,7 @@ fn main() -> horizon_client::Result<()> {
         &sampler,
     )?;
     hud.atlas_texture = Some(atlas_tex);
+    check_optics(&device, &queue, &mut hud, &atlas)?;
     let items = [
         ("Play", Icon::Play),
         ("Mods", Icon::Mods),
@@ -140,7 +314,11 @@ fn main() -> horizon_client::Result<()> {
                     0.,
                     &config,
                     false,
-                    0.,
+                    if preset == ThemePreset::LiquidGlass {
+                        210.
+                    } else {
+                        0.
+                    },
                     |_, _| {},
                 );
             }
@@ -183,47 +361,13 @@ fn main() -> horizon_client::Result<()> {
                 &batch,
                 [w, h],
             );
-            let row = (w * 4).next_multiple_of(256);
-            let read = device.create_buffer(&wgpu::BufferDescriptor {
-                label: None,
-                size: u64::from(row) * u64::from(h),
-                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            let mut encoder = device.create_command_encoder(&Default::default());
-            encoder.copy_texture_to_buffer(
-                target.as_image_copy(),
-                wgpu::TexelCopyBufferInfo {
-                    buffer: &read,
-                    layout: wgpu::TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some(row),
-                        rows_per_image: Some(h),
-                    },
-                },
-                wgpu::Extent3d {
-                    width: w,
-                    height: h,
-                    depth_or_array_layers: 1,
-                },
-            );
-            queue.submit([encoder.finish()]);
-            read.slice(..)
-                .map_async(wgpu::MapMode::Read, |r| r.unwrap());
-            device.poll(wgpu::PollType::wait_indefinitely())?;
-            let bytes = read.slice(..).get_mapped_range()?;
-            let pixels: Vec<_> = bytes
-                .chunks(row as usize)
-                .flat_map(|r| r[..(w * 4) as usize].iter().copied())
-                .collect();
+            let pixels = read_pixels(&device, &queue, &target, [w, h])?;
             let path = Path::new(&output).join(format!("{stem}-{page}.png"));
             let mut png = png::Encoder::new(fs::File::create(&path)?, w, h);
             png.set_color(png::ColorType::Rgba);
             png.set_depth(png::BitDepth::Eight);
             png.write_header()?.write_image_data(&pixels)?;
             println!("{} · {} vertices", path.display(), batch.vertices.len());
-            drop(bytes);
-            read.unmap();
         }
     }
     Ok(())
