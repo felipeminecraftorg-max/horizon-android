@@ -24,6 +24,10 @@ struct Uniform {
     tint: [f32; 4],
     optics: [f32; 4],
 }
+
+fn uniform_stride(alignment: usize) -> usize {
+    std::mem::size_of::<Uniform>().next_multiple_of(alignment)
+}
 struct Targets {
     size: [u32; 2],
     canvas: wgpu::Texture,
@@ -133,9 +137,10 @@ impl GlassRenderer {
                 cache: None,
             })
         };
-        let stride = (device.limits().min_uniform_buffer_offset_alignment as usize)
-            .max(80)
-            .next_multiple_of(16);
+        // The adapter's alignment can be smaller than this 80-byte uniform.
+        // With 64-byte alignment the next lens must start at 128, not at 80.
+        // The capture's default 256-byte limit masked that validation error.
+        let stride = uniform_stride(device.limits().min_uniform_buffer_offset_alignment as usize);
         let uniforms = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Launcher lens uniforms"),
             size: stride as u64,
@@ -365,6 +370,17 @@ impl GlassRenderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn lens_uniform_offsets_follow_the_device_alignment() {
+        for (alignment, expected) in [(16, 80), (32, 96), (64, 128), (128, 128), (256, 256)] {
+            let stride = uniform_stride(alignment);
+            assert_eq!(stride, expected);
+            for lens in 0..24 {
+                assert_eq!((lens * stride) % alignment, 0);
+                assert!((lens + 1) * stride >= lens * stride + 80);
+            }
+        }
+    }
     #[test]
     fn clipped_lens_copy_includes_sampling_halo_without_leaving_frame() {
         assert_eq!(
