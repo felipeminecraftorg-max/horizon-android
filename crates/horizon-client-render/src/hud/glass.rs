@@ -13,6 +13,8 @@ pub struct GlassSurface {
     pub blur: f32,
     pub refraction: f32,
     pub tint: u32,
+    /// Local interaction direction; only the reflected light moves, never text.
+    pub light: [f32; 2],
 }
 
 #[repr(C)]
@@ -248,7 +250,7 @@ impl GlassRenderer {
         let mut bytes = vec![0; self.stride * batch.glass.len()];
         for (i, lens) in batch.glass.iter().enumerate() {
             let uniform = Uniform {
-                frame: [size[0] as f32, size[1] as f32, scale, 0.],
+                frame: [size[0] as f32, size[1] as f32, lens.light[0], lens.light[1]],
                 rect: lens.rect.map(|v| v * scale),
                 clip: lens.clip.map(|v| v * scale),
                 tint: [0, 8, 16, 24].map(|shift| ((lens.tint >> shift) & 255) as f32 / 255.),
@@ -318,8 +320,8 @@ impl GlassRenderer {
             );
             let rect = lens.rect.map(|v| v * scale);
             let clip = lens.clip.map(|v| v * scale);
-            // Nine-tap blur and chromatic edge samples never read beyond this halo.
-            let halo = (lens.refraction + lens.blur * 1.5 + 3.) * scale;
+            // The shader caps the lens displacement at 1.5 times its strength.
+            let halo = (lens.refraction * 1.5 + lens.blur * 1.5 + 3.) * scale;
             if let Some([x, y, w, h]) = copy_region(rect, clip, size, halo) {
                 let origin = wgpu::Origin3d { x, y, z: 0 };
                 let info = |texture| wgpu::TexelCopyTextureInfo {
