@@ -979,7 +979,25 @@ impl<'a> Ui<'a> {
                 ((self.cursor.0 - x - w * 0.5) / (w * 0.5).max(1.)).clamp(-1., 1.),
                 ((self.cursor.1 - y - h * 0.5) / (h * 0.5).max(1.)).clamp(-1., 1.),
             ],
-            profile: launcher_preset_pack::uniform_profile(active_theme().experience),
+            profile: {
+                // Preserve the exported V7 material identity, but let the
+                // native drag sliders modify its optical uniforms live.
+                let theme = active_theme();
+                let tune = theme.glass.normalized();
+                let mut profile = launcher_preset_pack::uniform_profile(theme.experience);
+                if matches!(theme.experience,
+                    ExperiencePreset::LiquidGlass | ExperiencePreset::OldSchool)
+                {
+                    profile[2][0] *= (tune.refraction / 20.).clamp(0., 1.5);
+                    profile[5][0] = (profile[5][0] + (tune.blur - 1.) * 0.14)
+                        .clamp(0., 2.2);
+                    if theme.experience == ExperiencePreset::OldSchool {
+                        profile[5][1] = ((tune.opacity - 0.06) / 0.44)
+                            .clamp(0., 1.) * 0.56;
+                    }
+                }
+                profile
+            },
         });
     }
     fn px_x(&self, v: f32) -> f32 {
@@ -2472,7 +2490,14 @@ pub const THEME_BG_SWATCHES_LIGHT: [(u32, &str, &str); 6] = [
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct LauncherThemeConfig {
+    /// Legacy global optics, preserved for older saved settings and palettes.
     pub glass: launcher_visual::GlassTuning,
+    /// Each experience stores its own optics. None migrates old settings by
+    /// inheriting the legacy value, without wiping the user's calibration.
+    #[serde(default)]
+    pub glass_liquid: Option<launcher_visual::GlassTuning>,
+    #[serde(default)]
+    pub glass_old_school: Option<launcher_visual::GlassTuning>,
     #[serde(default)]
     pub wallpaper: launcher_visual::Wallpaper,
     #[serde(default = "launcher_visual::default_effects")]
@@ -2497,6 +2522,8 @@ impl Default for LauncherThemeConfig {
     fn default() -> Self {
         Self {
             glass: launcher_visual::GlassTuning::default(),
+            glass_liquid: None,
+            glass_old_school: None,
             wallpaper: launcher_visual::Wallpaper::None,
             glass_effects: true,
             interface_sounds: true,
@@ -2617,6 +2644,23 @@ impl Default for ResolvedTheme {
 }
 
 impl LauncherThemeConfig {
+    pub fn current_optics(&self) -> launcher_visual::GlassTuning {
+        match self.preset {
+            ThemePreset::LiquidGlass => self.glass_liquid.unwrap_or(self.glass),
+            ThemePreset::OldSchool => self.glass_old_school.unwrap_or(self.glass),
+            _ => self.glass,
+        }.normalized()
+    }
+
+    pub fn set_current_optics(&mut self, optics: launcher_visual::GlassTuning) {
+        let optics = optics.normalized();
+        match self.preset {
+            ThemePreset::LiquidGlass => self.glass_liquid = Some(optics),
+            ThemePreset::OldSchool => self.glass_old_school = Some(optics),
+            _ => self.glass = optics,
+        }
+    }
+
     pub fn sanitize(&mut self) {
         if !self.gradient_mid_pos.is_finite() {
             self.gradient_mid_pos = 0.50;
@@ -2785,7 +2829,7 @@ impl LauncherThemeConfig {
 
         ResolvedTheme {
             experience: self.preset.into(),
-            glass: self.glass.normalized(),
+            glass: self.current_optics(),
             wallpaper: self.wallpaper,
             material: if self.glass_effects {
                 match self.preset {

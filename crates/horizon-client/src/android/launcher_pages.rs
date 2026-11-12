@@ -91,6 +91,10 @@ pub(crate) struct AnimState {
     pub nav_pill_y: f32,
     pub nav_velocity: f32,
     pub target_nav_y: f32,
+    pub installed_tab_position: f32,
+    pub installed_tab_velocity: f32,
+    pub installed_tab_target: f32,
+    pub animation_dt: f32,
     pub page_fade: f32,
     pub page_slide: f32,
     pub progress_smooth: f32,
@@ -113,6 +117,10 @@ impl Default for AnimState {
             nav_pill_y: 62.0,
             nav_velocity: 0.,
             target_nav_y: 62.0,
+            installed_tab_position: 0.0,
+            installed_tab_velocity: 0.0,
+            installed_tab_target: 0.0,
+            animation_dt: 1. / 60.,
             page_fade: 1.0,
             page_slide: 0.0,
             progress_smooth: 0.0,
@@ -153,6 +161,8 @@ impl AnimState {
             self.last_has_modal = has_modal;
             self.nav_pill_y = target_nav_y;
             self.nav_velocity = 0.;
+            self.installed_tab_position = self.installed_tab_target;
+            self.installed_tab_velocity = 0.;
             self.page_fade = 1.0;
             self.page_slide = 0.0;
             self.modal_anim = if has_modal { 1.0 } else { 0.0 };
@@ -186,6 +196,7 @@ impl AnimState {
             raw_dt
         };
 
+        self.animation_dt = dt;
         let speed = (dt * 14.0).min(1.0);
         let experience = horizon_client::ui_theme::active_theme().experience;
         (self.nav_pill_y, self.nav_velocity) =
@@ -202,6 +213,25 @@ impl AnimState {
             self.section_expand[i] += (target - self.section_expand[i]) * (dt * 14.0).min(1.0);
         }
         self.shimmer_phase = (self.shimmer_phase + dt * 0.95) % 1.0;
+    }
+
+    /// Tab movement has independent momentum, unlike the primary navigation
+    /// rail. Its highlight is animated; actual tab targets stay fixed.
+    pub fn step_installed_tab(&mut self, selected_index: usize) {
+        self.installed_tab_target = selected_index.min(1) as f32;
+        if horizon_client::ui_theme::motion::reduced_motion() {
+            self.installed_tab_position = self.installed_tab_target;
+            self.installed_tab_velocity = 0.;
+            return;
+        }
+        (self.installed_tab_position, self.installed_tab_velocity) =
+            horizon_client::ui_theme::launcher_preset_pack::spring_position(
+                horizon_client::ui_theme::active_theme().experience,
+                self.installed_tab_position,
+                self.installed_tab_velocity,
+                self.installed_tab_target,
+                self.animation_dt,
+            );
     }
 
     pub fn trigger_page_transition(&mut self) {
@@ -230,6 +260,8 @@ impl AnimState {
             || self.page_slide.abs() > 0.35
             || (self.nav_pill_y - self.target_nav_y).abs() > 0.5
             || self.nav_velocity.abs() > 0.2
+            || (self.installed_tab_position - self.installed_tab_target).abs() > 0.003
+            || self.installed_tab_velocity.abs() > 0.005
             || (self.modal_anim > 0.01 && self.modal_anim < 0.99)
             || self.theme_pulse < 0.99
             || self.section_expand.iter().any(|v| *v > 0.01 && *v < 0.99)
@@ -491,22 +523,7 @@ fn toggle(
     );
     let track_x = x + w - 52.0;
     let track_y = y + (h - 26.0) * 0.5;
-    ui.rounded(
-        track_x,
-        track_y,
-        50.0,
-        26.0,
-        13.0,
-        if on { my3_accent() } else { my3_track() },
-    );
-    ui.rounded(
-        track_x + if on { 26.0 } else { 4.0 },
-        track_y + 3.0,
-        20.0,
-        20.0,
-        10.0,
-        if on { my3_on_accent() } else { my3_muted() },
-    );
+    visual::glass_switch(ui, [track_x, track_y, 50., 26.], on);
     if let Some(c) = ui.clip_rect([x, y, w, h]) {
         targets.push((c, action));
     }
@@ -1151,12 +1168,25 @@ impl Launcher {
             || self.exit_confirmation
             || self.diagnostics_modal_open
             || self.status_details;
+        // Old School selects across X; Liquid Glass selects across Y. The
+        // existing physical spring now drives a real rendered indicator.
+        let selected_nav = layout.nav_rect(w, h, selected_idx, Page::ALL.len());
+        let nav_position = if layout.console && !layout.portrait {
+            selected_nav[0]
+        } else {
+            selected_nav[1]
+        };
         self.anim.step(
             self.catalog.page,
             self.catalog.settings_category,
-            layout.nav_rect(w, h, selected_idx, Page::ALL.len())[1],
+            nav_position,
             has_any_modal,
             self.catalog.sections,
+        );
+        self.anim.step_installed_tab(
+            if self.catalog.installed_sub_tab == crate::catalog::InstalledSubTab::FileManager {
+                1
+            } else { 0 },
         );
         let account_name = self
             .login
@@ -1167,13 +1197,14 @@ impl Launcher {
             .iter()
             .map(|p| (p.name(), page_icon(*p)))
             .collect();
-        visual::shell(
+        visual::shell_animated(
             &mut ui,
             &items,
             selected_idx,
             &account_name,
             self.login.signed_in,
             &format!("Android {}", crate::backend::VERSION),
+            Some(self.anim.nav_pill_y),
             |rect, action| {
                 let action = match action {
                     visual::ShellAction::Page(index) => Action::Page(Page::ALL[index]),
@@ -1324,7 +1355,10 @@ impl Launcher {
                 };
                 let is_console = layout.console && !layout.portrait;
                 let home_top = if is_console { 130.0 } else { 76.0 };
-                let home_reserved_bottom = if is_console { 35.0 } else { 40.0 };
+                // Keep a real gap between bottom utility actions and the
+                // full-height dashboard. Previously the 32dp status button
+                // overlapped the play hero on shorter landscape screens.
+                let home_reserved_bottom = if is_console { 67.0 } else { 66.0 };
                 visual::home(
                     &mut ui,
                     [content_x, home_top + slide_y, content_w,
@@ -1860,8 +1894,32 @@ impl Launcher {
             let height = bottom - top;
             let thumb = (height * height / (height + maximum)).max(20.0).min(height);
             let y = top + (height - thumb) * (scroll / maximum).clamp(0.0, 1.0);
-            ui.rounded(w - 10.0, top, 4.0, height, 2.0, my3_border());
-            ui.rounded(w - 10.0, y, 4.0, thumb, 2.0, my3_muted());
+            // Scroll material is part of each experience. A matte hairline
+            // marks the track; the thumb itself uses real GPU glass/chrome.
+            // Keep the thumb aligned with the actual content scroll (no
+            // independent animation that would misrepresent its position).
+            let experience = horizon_client::ui_theme::active_theme().experience;
+            if matches!(
+                experience,
+                horizon_client::ui_theme::ExperiencePreset::LiquidGlass
+                    | horizon_client::ui_theme::ExperiencePreset::OldSchool
+            ) {
+                let track_x = w - 17.0;
+                ui.rounded(track_x + 4.0, top, 3.0, height, 1.5,
+                    color::hex(0xC4D3E6, 45));
+                let thumb_w = if experience
+                    == horizon_client::ui_theme::ExperiencePreset::OldSchool {
+                    11.0
+                } else {
+                    9.0
+                };
+                visual::panel(&mut ui, [track_x, y, thumb_w, thumb], thumb_w * 0.5, false);
+                ui.fill(track_x + 3.0, y + 6.0, 1.0, (thumb - 12.0).max(0.0),
+                    color::hex(0xF9FAFF, 72));
+            } else {
+                ui.rounded(w - 10.0, top, 4.0, height, 2.0, my3_border());
+                ui.rounded(w - 10.0, y, 4.0, thumb, 2.0, my3_muted());
+            }
         }
         if self.catalog.fm_modal.is_some() {
             self.draw_fm_modal(&mut ui, w, h, ime_top_dp);
@@ -2063,6 +2121,8 @@ impl Launcher {
         use horizon_client::content_files::Kind;
 
         let header_y = 60.0 + slide_y;
+        // Compact screens place the tab group below the title, never over it.
+        let section_shift = if compact { 42.0 } else { 0.0 };
         ui.text(
             Face::SemiBold,
             19.0,
@@ -2076,35 +2136,26 @@ impl Launcher {
             },
         );
 
-        // Top right segmented sub-tab switcher (Library vs File Manager)
+        // A genuine Glass Lab V7 segmented control: one animated refracting
+        // selector, no double buttons that refract one another's labels.
         let tab_w = if compact { 104.0 } else { 126.0 };
-        let lib_rect = [
-            content_x + content_w - tab_w * 2.0 - 6.0,
-            header_y - 1.0,
-            tab_w,
-            32.0,
-        ];
-        let fm_rect = [content_x + content_w - tab_w, header_y - 1.0, tab_w, 32.0];
-        button(
-            ui,
-            &mut self.targets,
-            lib_rect,
-            "Library",
-            Action::SetInstalledSubTab(InstalledSubTab::Library),
-            self.catalog.installed_sub_tab == InstalledSubTab::Library,
-        );
-        button(
-            ui,
-            &mut self.targets,
-            fm_rect,
-            "File Manager",
-            Action::SetInstalledSubTab(InstalledSubTab::FileManager),
-            self.catalog.installed_sub_tab == InstalledSubTab::FileManager,
-        );
+        let group = [content_x + content_w - tab_w * 2.0 - 6.0,
+            if compact { header_y + 30.0 } else { header_y - 1.0 },
+            tab_w * 2.0 + 6.0, 33.0];
+        let selected = if self.catalog.installed_sub_tab == InstalledSubTab::Library {
+            0
+        } else { 1 };
+        let rects = visual::segmented_tabs(ui, group,
+            &["Library", "Files"], selected, self.anim.installed_tab_position);
+        for (i, rect) in rects.into_iter().enumerate() {
+            self.targets.push((rect, Action::SetInstalledSubTab(
+                if i == 0 { InstalledSubTab::Library } else { InstalledSubTab::FileManager }
+            )));
+        }
 
         if self.catalog.installed_sub_tab == InstalledSubTab::Library {
             // Row 1: Search filter input + Sort selector + Quick Import CTA
-            let row1_y = 96.0 + slide_y;
+            let row1_y = 96.0 + slide_y + section_shift;
             let sort_w = if compact { 96.0 } else { 114.0 };
             let imp_w = if compact { 78.0 } else { 94.0 };
             let search_w = (content_w - sort_w - imp_w - 14.0).max(100.0);
@@ -2147,7 +2198,7 @@ impl Launcher {
             );
 
             // Row 2: Category filter pills (All, Mods, Resource Packs, Shaders)
-            let row2_y = 136.0 + slide_y;
+            let row2_y = 136.0 + slide_y + section_shift;
             let pill_gap = 6.0;
             let pill_w = ((content_w - pill_gap * 3.0) / 4.0).max(64.0);
             for (i, filter) in InstalledFilter::ALL.into_iter().enumerate() {
@@ -2168,14 +2219,8 @@ impl Launcher {
                     pill_w,
                     28.0,
                 ];
-                button(
-                    ui,
-                    &mut self.targets,
-                    pr,
-                    &lbl,
-                    Action::SetInstalledFilter(filter),
-                    self.catalog.installed_filter == filter,
-                );
+                visual::filter_chip(ui, pr, &lbl, self.catalog.installed_filter == filter);
+                self.targets.push((pr, Action::SetInstalledFilter(filter)));
             }
 
             // Filtered items list
@@ -2195,7 +2240,7 @@ impl Launcher {
                 })
                 .collect();
 
-            let top = 172.0 + slide_y;
+            let top = 172.0 + slide_y + section_shift;
             let bottom = h - 42.0;
             if filtered.is_empty() {
                 self.list_view = None;
@@ -2425,7 +2470,7 @@ impl Launcher {
 
         // ---- Sub-View 2: Integrated Mini File Manager (`InstalledSubTab::FileManager`) ----
         // Row 1: Back, Forward, Up + Clickable Breadcrumb Trail + Import & New Folder CTAs
-        let nav_y = 94.0 + slide_y;
+        let nav_y = 94.0 + slide_y + section_shift;
         let nav_btn_w = 32.0;
         let has_back = !self.catalog.fm_back_stack.is_empty();
         let has_fwd = !self.catalog.fm_forward_stack.is_empty();
@@ -2548,7 +2593,7 @@ impl Launcher {
         }
 
         // Row 2: Quick Root Folder Pills (Root, Worlds, Mods, Packs, Shaders, Controls, Shots, Reports)
-        let root_y = 128.0 + slide_y;
+        let root_y = 128.0 + slide_y + section_shift;
         let root_dirs = crate::document_store::FM_ROOT_DIRS;
         let r_gap = 4.0;
         let r_w = ((content_w - r_gap * (root_dirs.len() as f32 - 1.0)) / root_dirs.len() as f32)
@@ -2573,7 +2618,7 @@ impl Launcher {
         }
 
         // Row 3: Multi-Select & Clipboard Action Toolbar
-        let tool_y = 158.0 + slide_y;
+        let tool_y = 158.0 + slide_y + section_shift;
         let sel_count = self.catalog.fm_selected.len();
         let clip_count = self
             .catalog
@@ -2608,7 +2653,7 @@ impl Launcher {
         }
 
         // Scrollable File & Directory Rows
-        let top = 190.0 + slide_y;
+        let top = 190.0 + slide_y + section_shift;
         let bottom = h - 42.0;
         if self.catalog.fm_entries.is_empty() {
             self.list_view = None;
@@ -3770,9 +3815,20 @@ impl Launcher {
                 self.catalog.config.disable_launcher_animations,
                 self.catalog.scroll,
                 |r, a| {
-                    self.targets.push((r, Action::Appearance(a)));
+                    let action = Action::Appearance(a);
+                    self.targets.push((r, action));
                     if a != visual::AppearanceAction::Back {
-                        self.list_targets.push((r, Action::Appearance(a)));
+                        self.list_targets.push((r, action));
+                    }
+                    if matches!(a,
+                        visual::AppearanceAction::Transparency
+                        | visual::AppearanceAction::Blur
+                        | visual::AppearanceAction::Refraction)
+                    {
+                        // Native gesture routing owns this track: moving the
+                        // finger changes the optical uniform continuously.
+                        SLIDER_TRACK_TARGETS.with(|tracks| tracks.borrow_mut()
+                            .push((r, action, r[0], r[2])));
                     }
                 },
             );
@@ -6356,34 +6412,27 @@ impl Launcher {
                             !self.catalog.config.theme.glass_effects
                     }
                     A::Transparency => {
-                        let opacity = self.catalog.config.theme.glass.normalized().opacity;
-                        self.catalog.config.theme.glass.opacity = if opacity < 0.10 {
+                        let mut optics = self.catalog.config.theme.current_optics();
+                        optics.opacity = if optics.opacity < 0.10 {
                             0.14
-                        } else if opacity < 0.20 {
+                        } else if optics.opacity < 0.20 {
                             0.30
-                        } else {
-                            0.08
-                        };
+                        } else { 0.08 };
+                        self.catalog.config.theme.set_current_optics(optics);
                     }
                     A::Blur => {
-                        let blur = self.catalog.config.theme.glass.normalized().blur;
-                        self.catalog.config.theme.glass.blur = if blur < 0.1 {
+                        let mut optics = self.catalog.config.theme.current_optics();
+                        optics.blur = if optics.blur < 0.1 {
                             2.
-                        } else if blur < 6. {
-                            8.
-                        } else {
-                            0.
-                        };
+                        } else if optics.blur < 6. { 8. } else { 0. };
+                        self.catalog.config.theme.set_current_optics(optics);
                     }
                     A::Refraction => {
-                        let refraction = self.catalog.config.theme.glass.normalized().refraction;
-                        self.catalog.config.theme.glass.refraction = if refraction < 0.1 {
+                        let mut optics = self.catalog.config.theme.current_optics();
+                        optics.refraction = if optics.refraction < 0.1 {
                             14.
-                        } else if refraction < 18. {
-                            24.
-                        } else {
-                            0.
-                        };
+                        } else if optics.refraction < 18. { 24. } else { 0. };
+                        self.catalog.config.theme.set_current_optics(optics);
                     }
                     A::Sounds => {
                         self.catalog.config.theme.interface_sounds =
@@ -6854,6 +6903,20 @@ impl Launcher {
     fn apply_slider_fraction(&mut self, action: Action, frac: f32) {
         let t = frac.clamp(0.0, 1.0);
         match action {
+            Action::Appearance(a) if matches!(a,
+                visual::AppearanceAction::Transparency
+                | visual::AppearanceAction::Blur
+                | visual::AppearanceAction::Refraction) => {
+                let mut optics = self.catalog.config.theme.current_optics();
+                match a {
+                    visual::AppearanceAction::Transparency => optics.opacity = 0.06 + 0.44 * t,
+                    visual::AppearanceAction::Blur => optics.blur = 10. * t,
+                    visual::AppearanceAction::Refraction => optics.refraction = 24. * t,
+                    _ => {}
+                }
+                self.catalog.config.theme.set_current_optics(optics);
+                horizon_client::ui_theme::set_active_theme(self.catalog.config.theme.resolve());
+            }
             Action::RenderScaleDelta(_) => {
                 let next_pct = (25.0 + t * 75.0).round() as u32;
                 let scale = crate::display::RenderScale::new(next_pct);
@@ -7043,7 +7106,11 @@ impl Launcher {
                 }
             }
             TouchPhase::Ended => {
-                if ACTIVE_SLIDER_DRAG.with(|c| c.take()).is_some() {
+                if let Some((action, _, _)) = ACTIVE_SLIDER_DRAG.with(|c| c.take()) {
+                    if matches!(action, Action::Appearance(_)) {
+                        // Persist once on release, not on every movement.
+                        self.catalog.config.save(&self.home)?;
+                    }
                     self.drag = None;
                     self.taps.cancel();
                 } else {
