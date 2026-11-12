@@ -15,6 +15,8 @@ pub struct GlassSurface {
     pub tint: u32,
     /// Local interaction direction; only the reflected light moves, never text.
     pub light: [f32; 2],
+    /// Six optical vec4s from the user's exported Glass Lab V7 presets.
+    pub profile: [[f32; 4]; 6],
 }
 
 #[repr(C)]
@@ -25,6 +27,7 @@ struct Uniform {
     clip: [f32; 4],
     tint: [f32; 4],
     optics: [f32; 4],
+    profile: [[f32; 4]; 6],
 }
 
 fn uniform_stride(alignment: usize) -> usize {
@@ -81,7 +84,7 @@ impl GlassRenderer {
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: true,
-                        min_binding_size: wgpu::BufferSize::new(80),
+                        min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<Uniform>() as u64),
                     },
                     count: None,
                 },
@@ -139,7 +142,7 @@ impl GlassRenderer {
                 cache: None,
             })
         };
-        // The adapter's alignment can be smaller than this 80-byte uniform.
+        // Dynamic uniform alignment must accommodate the full optical profile.
         // With 64-byte alignment the next lens must start at 128, not at 80.
         // The capture's default 256-byte limit masked that validation error.
         let stride = uniform_stride(device.limits().min_uniform_buffer_offset_alignment as usize);
@@ -260,8 +263,9 @@ impl GlassRenderer {
                     lens.refraction * scale,
                     scale,
                 ],
+                profile: lens.profile,
             };
-            bytes[i * self.stride..i * self.stride + 80]
+            bytes[i * self.stride..i * self.stride + std::mem::size_of::<Uniform>()]
                 .copy_from_slice(bytemuck::bytes_of(&uniform));
         }
         uploads.buffer(encoder, &self.uniforms, 0, &bytes);
@@ -323,7 +327,8 @@ impl GlassRenderer {
             // The physical lens bends the backdrop up to 2.1x refraction.
             // Include blur, chromatic split and specular environment lookups
             // so the source snapshot never exposes an uninitialised black rim.
-            let halo = (lens.refraction * 2.1 + lens.blur * 1.5 + 13.) * scale;
+            // Chrome environment probes can reach 50-70 dp beyond the lens.
+            let halo = (lens.refraction * 2.6 + lens.blur * 1.5 + 72.) * scale;
             if let Some([x, y, w, h]) = copy_region(rect, clip, size, halo) {
                 let origin = wgpu::Origin3d { x, y, z: 0 };
                 let info = |texture| wgpu::TexelCopyTextureInfo {
