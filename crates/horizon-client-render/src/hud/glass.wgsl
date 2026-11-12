@@ -171,7 +171,11 @@ fn normal_for(q: vec2<f32>, outside: vec2<f32>, p: vec2<f32>) -> vec2<f32> {
         let rim_key = pow(max(dot(outward, normalize(vec2(-0.74, -0.67))), 0.), 7.);
         let rim_fill = pow(max(dot(outward, normalize(vec2(0.68, 0.72))), 0.), 11.);
         let inside = (1. - front) * 0.19 + inner * 0.12 * (1. - rim_key);
-        color = mix(base, color, transmission);
+        // The Old School calibration adjusts metal solidity without painting
+        // a second flat rectangle over the refractive chrome. A low setting
+        // preserves the original Glass Lab V7 transmission and highlights.
+        let calibrated_solidness = clamp(lens.profile[5].y, 0., 0.56);
+        color = mix(base, color, transmission * (1. - calibrated_solidness));
         if finish > 1.5 && finish < 2.5 {
             color = mix(color, vec3(0.09, 0.12, 0.16), 0.10);
         }
