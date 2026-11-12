@@ -1,4 +1,4 @@
-name: Glass Lab 2.1 Readability APK
+name: Glass Lab 3.0 Motion and Materials APK
 on:
   workflow_dispatch:
   pull_request:
@@ -35,6 +35,18 @@ jobs:
           "$sdkmanager" --sdk_root="$ANDROID_HOME" 'platforms;android-35' 'build-tools;35.0.0'
       - name: Extract independent Glass Lab
         run: unzip -q experiments/glass-lab/source.zip -d "$RUNNER_TEMP"
+      - name: Verify independent styles, dynamics and valid JavaScript
+        shell: bash
+        run: |
+          node --check "$RUNNER_TEMP/glass_lab_project/web-demo/app.js"
+          python3 - <<'PYTEST'
+          from pathlib import Path
+          import os
+          script=(Path(os.environ['RUNNER_TEMP'])/'glass_lab_project/web-demo/app.js').read_text()
+          for marker in ['GLASS_LAB_PRESET_V3', 'uDynamics[4]', 'uStyle', 'directional-viscoelastic-gel', 'console-mechanical']:
+              assert marker in script, marker
+          print('Dual material systems, directional physics and export v3 verified')
+          PYTEST
       - name: Validate live GLSL glass shader
         shell: bash
         run: |
@@ -54,9 +66,9 @@ jobs:
       - name: Prepare APK
         run: |
           mkdir -p dist
-          cp "$RUNNER_TEMP/glass_lab_project/app/build/outputs/apk/debug/app-debug.apk" dist/GlassLab-2.1-Readability.apk
+          cp "$RUNNER_TEMP/glass_lab_project/app/build/outputs/apk/debug/app-debug.apk" dist/GlassLab-3.0-Motion-Materials.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: GlassLab-2.1-Android-APK
-          path: dist/GlassLab-2.1-Readability.apk
+          name: GlassLab-3.0-Android-APK
+          path: dist/GlassLab-3.0-Motion-Materials.apk
           retention-days: 14
