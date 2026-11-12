@@ -561,6 +561,80 @@ pub fn panel(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, emphasized: bool) {
     );
 }
 
+/// GLASS_LAB_PRESET_V7: a true filter chip, not a generic full-height button.
+/// The optically raised pill is drawn only when selected; text stays crisp.
+pub fn filter_chip(ui: &mut Ui<'_>, rect: [f32; 4], label: &str, selected: bool) {
+    let theme = active_theme();
+    let radius = rect[3] * 0.5;
+    if selected {
+        panel(ui, rect, radius, true);
+    } else {
+        ui.rounded(rect[0], rect[1], rect[2], rect[3], radius,
+            if theme.experience == ExperiencePreset::OldSchool {
+                color::hex(0xE2E8F8, 20)
+            } else { color::hex(0xD9F5FF, 15) });
+        ui.stroke_rounded(rect[0], rect[1], rect[2], rect[3], radius,
+            0.8, color::hex(0xE4F1FF, 65));
+    }
+    ui.centered_fit(Face::Medium, 12.5,
+        [rect[0] + 7., rect[1] + 1., rect[2] - 14., rect[3] - 2.],
+        if selected { theme.text_primary } else { theme.text_muted }, label);
+}
+
+/// One shared slider track, separate GPU material for the movable knob.
+/// Returns the drag hitbox (in dp). The Android gesture layer takes ownership
+/// of touches there; tapping outside it does not accidentally change settings.
+pub fn optic_slider(ui: &mut Ui<'_>, rect: [f32; 4],
+    label: &str, value: &str, fraction: f32) -> [f32; 4] {
+    let theme = active_theme();
+    let [x, y, w, h] = rect;
+    ui.rounded(x, y, w, h, 15., color::hex(0xB9CCD9, 13));
+    ui.stroke_rounded(x, y, w, h, 15., 0.65, color::hex(0xE7F0FF, 52));
+    ui.text(Face::Medium, 13., x + 16., y + 8., theme.text_primary, label);
+    let v = ui.fit_text(Face::Medium, 12., value, (w * 0.40).max(40.));
+    let tw = ui.measure(Face::Medium, 12., &v);
+    ui.text(Face::Medium, 12., x + w - tw - 17., y + 9., theme.text_muted, &v);
+    let track_x = x + 28.;
+    let track_w = (w - 56.).max(32.);
+    let track_y = y + h - 20.;
+    let t = fraction.clamp(0., 1.);
+    ui.rounded(track_x, track_y, track_w, 5., 2.5,
+        color::hex(0xEFF8FF, if theme.experience == ExperiencePreset::OldSchool { 45 } else { 39 }));
+    if t > 0.01 {
+        ui.rounded(track_x, track_y, (track_w * t).max(3.), 5., 2.5,
+            color::hex(0xE8F4FF, if theme.experience == ExperiencePreset::OldSchool { 159 } else { 121 }));
+    }
+    let thumb = [track_x + track_w * t - 10., track_y - 8., 20., 20.];
+    panel(ui, thumb, 10., true);
+    ui.rounded(thumb[0] + 7., thumb[1] + 7., 6., 6., 3.,
+        color::hex(0xFFFFFF, if theme.experience == ExperiencePreset::OldSchool { 213 } else { 133 }));
+    [track_x, track_y - 12., track_w, 29.]
+}
+
+/// Glass Lab's tab component: a neutral track with one optical slider. Tabs
+/// share a single moving indicator and cannot create nested overlapping lenses.
+/// `travel` is 0..(N-1), optionally spring-animated by the launcher.
+pub fn segmented_tabs(ui: &mut Ui<'_>, rect: [f32; 4],
+    labels: &[&str], selected: usize, travel: f32) -> Vec<[f32; 4]> {
+    if labels.is_empty() { return Vec::new(); }
+    let theme = active_theme();
+    let [x, y, w, h] = rect;
+    let step = w / labels.len() as f32;
+    let radius = h * 0.5;
+    ui.rounded(x, y, w, h, radius, color::hex(0xC5D9F4, 20));
+    ui.stroke_rounded(x, y, w, h, radius, 0.75, color::hex(0xE4F1FF, 69));
+    let focus = travel.clamp(0., (labels.len() - 1) as f32);
+    let lens = [x + focus * step + 3., y + 3., (step - 6.).max(8.), h - 6.];
+    panel(ui, lens, (h - 6.) * 0.5, true);
+    labels.iter().enumerate().map(|(i, label)| {
+        let tab = [x + i as f32 * step, y, step, h];
+        ui.centered_fit(Face::Medium, 12.5,
+            [tab[0] + 5., tab[1] + 1., tab[2] - 10., tab[3] - 2.],
+            if i == selected { theme.text_primary } else { theme.text_muted }, label);
+        tab
+    }).collect()
+}
+
 pub fn button(ui: &mut Ui<'_>, rect: [f32; 4], label: &str, icon: Option<Icon>, accent: bool) {
     // A true semicircular cap, not an old-style frosted rounded rectangle.
     let th = active_theme();
