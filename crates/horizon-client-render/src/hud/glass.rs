@@ -320,8 +320,9 @@ impl GlassRenderer {
             );
             let rect = lens.rect.map(|v| v * scale);
             let clip = lens.clip.map(|v| v * scale);
-            // The shader caps the lens displacement at 1.5 times its strength.
-            let halo = (lens.refraction * 1.5 + lens.blur * 1.5 + 3.) * scale;
+            // The physical lens bends the scene by up to 1.75x strength.
+            // Keep all edge samples inside the copied snapshot (no black rims).
+            let halo = (lens.refraction * 1.75 + lens.blur * 1.6 + 5.) * scale;
             if let Some([x, y, w, h]) = copy_region(rect, clip, size, halo) {
                 let origin = wgpu::Origin3d { x, y, z: 0 };
                 let info = |texture| wgpu::TexelCopyTextureInfo {
