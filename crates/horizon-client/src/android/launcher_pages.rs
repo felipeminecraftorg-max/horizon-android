@@ -89,6 +89,7 @@ pub(crate) struct AnimState {
     pub last_category: SettingsCategory,
     pub last_has_modal: bool,
     pub nav_pill_y: f32,
+    pub nav_velocity: f32,
     pub target_nav_y: f32,
     pub page_fade: f32,
     pub page_slide: f32,
@@ -110,6 +111,7 @@ impl Default for AnimState {
             last_category: SettingsCategory::Overview,
             last_has_modal: false,
             nav_pill_y: 62.0,
+            nav_velocity: 0.,
             target_nav_y: 62.0,
             page_fade: 1.0,
             page_slide: 0.0,
@@ -150,6 +152,7 @@ impl AnimState {
             self.last_category = category;
             self.last_has_modal = has_modal;
             self.nav_pill_y = target_nav_y;
+            self.nav_velocity = 0.;
             self.page_fade = 1.0;
             self.page_slide = 0.0;
             self.modal_anim = if has_modal { 1.0 } else { 0.0 };
@@ -184,7 +187,11 @@ impl AnimState {
         };
 
         let speed = (dt * 14.0).min(1.0);
-        self.nav_pill_y += (target_nav_y - self.nav_pill_y) * (dt * 18.0).min(1.0);
+        let experience = horizon_client::ui_theme::active_theme().experience;
+        (self.nav_pill_y, self.nav_velocity) =
+            horizon_client::ui_theme::launcher_preset_pack::spring_position(
+                experience, self.nav_pill_y, self.nav_velocity, target_nav_y, dt,
+            );
         self.page_fade = (self.page_fade + dt * 7.5).min(1.0);
         self.page_slide *= (1.0 - speed).max(0.0);
         let modal_target = if has_modal { 1.0 } else { 0.0 };
@@ -222,6 +229,7 @@ impl AnimState {
         self.page_fade < 0.99
             || self.page_slide.abs() > 0.35
             || (self.nav_pill_y - self.target_nav_y).abs() > 0.5
+            || self.nav_velocity.abs() > 0.2
             || (self.modal_anim > 0.01 && self.modal_anim < 0.99)
             || self.theme_pulse < 0.99
             || self.section_expand.iter().any(|v| *v > 0.01 && *v < 0.99)
