@@ -979,7 +979,25 @@ impl<'a> Ui<'a> {
                 ((self.cursor.0 - x - w * 0.5) / (w * 0.5).max(1.)).clamp(-1., 1.),
                 ((self.cursor.1 - y - h * 0.5) / (h * 0.5).max(1.)).clamp(-1., 1.),
             ],
-            profile: launcher_preset_pack::uniform_profile(active_theme().experience),
+            profile: {
+                // Preserve the exported V7 material identity, but let the
+                // native drag sliders modify its optical uniforms live.
+                let theme = active_theme();
+                let tune = theme.glass.normalized();
+                let mut profile = launcher_preset_pack::uniform_profile(theme.experience);
+                if matches!(theme.experience,
+                    ExperiencePreset::LiquidGlass | ExperiencePreset::OldSchool)
+                {
+                    profile[2][0] *= (tune.refraction / 20.).clamp(0., 1.5);
+                    profile[5][0] = (profile[5][0] + (tune.blur - 1.) * 0.14)
+                        .clamp(0., 2.2);
+                    if theme.experience == ExperiencePreset::OldSchool {
+                        profile[5][1] = ((tune.opacity - 0.06) / 0.44)
+                            .clamp(0., 1.) * 0.56;
+                    }
+                }
+                profile
+            },
         });
     }
     fn px_x(&self, v: f32) -> f32 {
