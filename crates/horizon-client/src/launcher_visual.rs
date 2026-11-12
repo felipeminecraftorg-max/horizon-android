@@ -869,7 +869,8 @@ fn home_old_school(
     let poster_w = if narrow { w } else { w * 0.505 };
     let poster_h = if narrow { (h * 0.49).max(173.) } else { h };
     let poster = [x, y, poster_w, poster_h];
-    scene(ui, poster, 9., true);
+    // Drop the placeholder voxel image. Real GPU chrome samples the Graphite wallpaper.
+    panel(ui, poster, 16., false);
     ui.stroke_rounded(x, y, poster_w, poster_h, 9., 1.1, color::hex(0xE2E5FA, 138));
     ui.rounded(x + 13., y + 15., (poster_w - 27.).min(280.), 64., 6., color::hex(0x101425, 137));
     ui.text(Face::SemiBold, if narrow { 22. } else { 28. },
@@ -949,7 +950,7 @@ fn home_liquid(
     let hero_h = (h - tiles_h - 14.).max(145.);
     let hero = [x, y, w, hero_h];
 
-    scene(ui, hero, 25., false);
+    // No synthetic pixel-art backdrop: true refraction samples the live theme wallpaper.
     // Background imagery remains visible. The lens is light and only bends at
     // the edge; central text is never baked into the background texture.
     panel(ui, hero, 25., false);
