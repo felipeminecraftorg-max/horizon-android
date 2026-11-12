@@ -1,4 +1,4 @@
-name: Glass Lab 4.0 Retro Optics APK
+name: Glass Lab 5.0 Dark Aero Studio APK
 on:
   workflow_dispatch:
   pull_request:
@@ -43,12 +43,24 @@ jobs:
           from pathlib import Path
           import os
           script=(Path(os.environ['RUNNER_TEMP'])/'glass_lab_project/web-demo/app.js').read_text()
-          for marker in ['GLASS_LAB_PRESET_V4', 'uDynamics[4]', 'uStyle', 'directional-viscoelastic-gel', 'console-dielectric-metal-spring', 'shadeConsole', 'uRetroMetal', 'springStep']:
+          for marker in ['GLASS_LAB_PRESET_V5', 'GLASS_LAB_PACK_V5', 'darkAero', 'makeZip', 'downloadPack', 'GLOBAL_LOOK', 'ggxDistribution', 'uRetroChrome', 'uRetroEdge', 'uDynamics[4]', 'uStyle', 'directional-viscoelastic-gel', 'console-dark-aero-chrome-spring', 'shadeConsole', 'uRetroMetal', 'springStep']:
               assert marker in script, marker
-          print('Dual material systems, directional physics and export v4 verified')
+          print('Dual material systems, directional physics and export v5 verified')
           PYTEST
       - name: Validate spring dynamics at 30 / 60 / 120 Hz
         run: node "$RUNNER_TEMP/glass_lab_project/test_physics.mjs"
+      - name: Verify 20 component ZIP and global material propagation
+        run: |
+          node "$RUNNER_TEMP/glass_lab_project/test_pack_runtime.cjs"
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          with ZipFile('/tmp/GlassLab_5_Runtime_Validation.zip') as archive:
+              assert archive.testzip() is None
+              presets=[p for p in archive.namelist() if p.startswith('presets/')]
+              assert len(presets)==20, len(presets)
+              assert 'shaders/glasslab-v5.frag.glsl' in archive.namelist()
+          print('All 20 presets, both styles and shader validated in ZIP')
+          PY
       - name: Validate live GLSL glass shader
         shell: bash
         run: |
@@ -68,9 +80,9 @@ jobs:
       - name: Prepare APK
         run: |
           mkdir -p dist
-          cp "$RUNNER_TEMP/glass_lab_project/app/build/outputs/apk/debug/app-debug.apk" dist/GlassLab-4.0-Retro-Optics.apk
+          cp "$RUNNER_TEMP/glass_lab_project/app/build/outputs/apk/debug/app-debug.apk" dist/GlassLab-5.0-DarkAero-Studio.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: GlassLab-4.0-Android-APK
-          path: dist/GlassLab-4.0-Retro-Optics.apk
+          name: GlassLab-5.0-Android-APK
+          path: dist/GlassLab-5.0-DarkAero-Studio.apk
           retention-days: 14
