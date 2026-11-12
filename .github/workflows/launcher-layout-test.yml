@@ -3,6 +3,11 @@ on:
   pull_request:
     paths:
       - 'crates/horizon-client/src/launcher_visual.rs'
+      - 'crates/horizon-client/src/launcher_preset_pack.rs'
+      - 'crates/horizon-client/src/android/launcher_sfx.rs'
+      - 'crates/horizon-client-render/src/hud/glass.wgsl'
+      - 'crates/horizon-client-render/src/hud/glass.rs'
+      - 'crates/horizon-client-render/src/audio.rs'
       - 'crates/horizon-client/src/android/launcher_pages.rs'
       - 'crates/horizon-client/src/ui_theme.rs'
       - '.github/workflows/launcher-layout-test.yml'
@@ -32,3 +37,6 @@ jobs:
         run: |
           rustup show
           cargo test -p horizon-client --lib launcher_visual::tests -- --test-threads=1
+          cargo test -p horizon-client --lib launcher_preset_pack::tests
+          cargo test -p horizon-client-render --lib physical_glass_shader_validates_with_naga
+          cargo check -p horizon-client-render --lib
