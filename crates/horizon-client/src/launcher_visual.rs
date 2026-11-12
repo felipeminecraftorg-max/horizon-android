@@ -575,6 +575,7 @@ pub enum HomeAction {
     Packs,
     Shaders,
     Files,
+    Skins,
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ShellAction {
@@ -850,62 +851,167 @@ fn home_old_school(
     let [x, y, w, h] = rect;
     let th = active_theme();
     let narrow = w < 430.;
-    let stage_h = if narrow { 198. } else { (h - 165.).clamp(150., 210.) };
-    let side_w = if narrow { 0. } else { (w * 0.31).clamp(132., 232.) };
-    let main_w = if narrow { w } else { w - side_w - 12. };
-    panel(ui, [x, y, main_w, stage_h], 18., false);
-    ui.fill(x + 19., y + 13., (main_w - 38.).max(0.), 1., color::hex(0xD6E4F4, 76));
-    ui.text(Face::Medium, 11., x + 20., y + 20., th.text_muted, "CHANNEL 01  /  GAME");
-    ui.text(
-        Face::SemiBold,
-        if narrow { 24. } else { 28. },
-        x + 20.,
-        y + 48.,
-        th.text_primary,
-        "Minecraft 26.3",
-    );
-    let status = if view.installed { "READY TO LAUNCH" } else { "INSTALLATION REQUIRED" };
-    ui.text(Face::Medium, 11., x + 21., y + 91., th.text_muted, status);
-    let play = [x + 18., y + stage_h - 65., main_w - 36., 49.];
-    button(ui, play, if view.launching { "Getting ready..." } else if view.installed { "Start game" } else { "Install Minecraft" }, Some(Icon::Play), true);
+    // Genuine console tile dashboard: game cover occupies the left half and
+    // the functional shortcuts form a 3x2 grid, not cards below a modern hero.
+    let poster_w = if narrow { w } else { w * 0.505 };
+    let poster_h = if narrow { (h * 0.49).max(173.) } else { h };
+    let poster = [x, y, poster_w, poster_h];
+    scene(ui, poster, 9., true);
+    ui.stroke_rounded(x, y, poster_w, poster_h, 9., 1.1, color::hex(0xE2E5FA, 138));
+    ui.rounded(x + 13., y + 15., (poster_w - 27.).min(280.), 64., 6., color::hex(0x101425, 137));
+    ui.text(Face::SemiBold, if narrow { 22. } else { 28. },
+        x + 23., y + 22., color::hex(0xFFFFFF, 255), "MINECRAFT");
+    ui.text(Face::Medium, 16., x + 24., y + 57., color::hex(0xE4E6F5, 255), "26.3");
+    let small = if view.installed { "Ready to play" } else { "Installation required" };
+    ui.text(Face::Regular, 11., x + 23., y + 85., color::hex(0xFAFAFF, 236), small);
+    // A small profile selector belongs to the poster, not the utility cards.
+    let profile = [x + poster_w - 119., y + 13., 105., 37.];
+    ui.rounded(profile[0], profile[1], profile[2], profile[3], 8., color::hex(0x050714, 159));
+    ui.text(Face::Medium, 11., profile[0] + 9., profile[1] + 11.,
+        color::hex(0xF2F6FF, 245), &format!("Profile {}", view.profile + 1));
+    target(profile, HomeAction::Profile);
+
+    let play = [x, y + poster_h - 58., poster_w, 58.];
+    ui.rounded(play[0], play[1], play[2], play[3], 9., color::hex(0x497638, 243));
+    // An angular, satin green footer recalls the Xbox 360 NXE dashboard.
+    ui.fill(play[0] + 7., play[1] + 3., poster_w - 14., 1.,
+        color::hex(0xDAF7C9, 124));
+    ui.icon(Icon::Play, play[0] + 19., play[1] + 14., 27., color::hex(0xFFFFFF, 255));
+    let label = if view.launching { "Getting ready..." } else if view.installed {
+        "Play Minecraft"
+    } else { "Install Minecraft" };
+    let fitted = ui.fit_text(Face::Medium, 22., label, poster_w - 66.);
+    ui.text(Face::Medium, 22., play[0] + 57., play[1] + 15.,
+        color::hex(0xFFFFFF, 255), &fitted);
     if !view.launching { target(play, HomeAction::Play); }
 
-    if !narrow {
-        let side_x = x + main_w + 12.;
-        panel(ui, [side_x, y, side_w, stage_h], 13., false);
-        ui.text(Face::Medium, 10.5, side_x + 15., y + 20., th.text_muted, "SYSTEM / PROFILE");
-        ui.text(Face::Medium, 13., side_x + 15., y + 48., th.text_primary, &format!("Slot {:02}", view.profile + 1));
-        let mode = ui.fit_text(Face::Regular, 11., view.renderer, side_w - 29.);
-        ui.text(Face::Regular, 11., side_x + 15., y + 79., th.text_muted, &mode);
-        let profile = [side_x + 12., y + stage_h - 57., side_w - 24., 42.];
-        button(ui, profile, &format!("Profile {}", view.profile + 1), Some(Icon::ChevronDown), false);
-        target(profile, HomeAction::Profile);
+    let gap = 7.;
+    let cols = if narrow { 2 } else { 3 };
+    let tx = if narrow { x } else { x + poster_w + 10. };
+    let ty = if narrow { y + poster_h + gap } else { y };
+    let available = if narrow { w } else { w - poster_w - 10. };
+    let card_w = (available - gap * (cols - 1) as f32) / cols as f32;
+    let card_h = if narrow { ((h - poster_h - 2. * gap) / 3.).max(39.) }
+        else { (h - gap) * 0.5 };
+    let shortcuts = [
+        ("Mods", Icon::Mods, HomeAction::Mods, 0x59466F_u32),
+        ("Packs", Icon::Packs, HomeAction::Packs, 0x36567B_u32),
+        ("Shaders", Icon::Shaders, HomeAction::Shaders, 0x79613D_u32),
+        ("My files", Icon::Folder, HomeAction::Files, 0x34547C_u32),
+        ("Skins", Icon::Person, HomeAction::Skins, 0x456A47_u32),
+        ("Settings", Icon::Gear, HomeAction::Appearance, 0x494A57_u32),
+    ];
+    for (i, (name, icon, action, rgb)) in shortcuts.into_iter().enumerate() {
+        let row = (i / cols) as f32;
+        let col = (i % cols) as f32;
+        let card = [tx + col * (card_w + gap), ty + row * (card_h + gap), card_w, card_h];
+        if card[1] + card[3] > y + h + 1. { continue; }
+        ui.rounded(card[0], card[1], card[2], card[3], 7., color::hex(rgb, 246));
+        // Satin upper edge and discreet diagonal reflection.
+        ui.fill(card[0] + 6., card[1] + 3., card_w - 12., 1., color::hex(0xFFFFFF, 65));
+        ui.stroke_rounded(card[0], card[1], card_w, card_h, 7., 0.8, color::hex(0xEBF5FF, 89));
+        let icon_size = if narrow { 21. } else { (card_h * 0.30).min(33.) };
+        ui.icon(icon, card[0] + (card_w - icon_size) * 0.5,
+            card[1] + (card_h * 0.23).min(35.), icon_size, color::hex(0xF5F7FF, 243));
+        let font = if narrow { 12. } else { 15. };
+        ui.centered_fit(Face::Medium, font,
+            [card[0] + 4., card[1] + card_h - if narrow { 26. } else { 38. }, card_w - 8., 29.],
+            color::hex(0xF4F5FB, 255), name);
+        target(card, action);
+    }
+}
+
+/// Clean modern Liquid Glass: a single wide image and six simple translucent
+/// shortcuts, with real refracting surfaces only where there are controls.
+fn home_liquid(
+    ui: &mut Ui<'_>,
+    rect: [f32; 4],
+    view: &HomeView<'_>,
+    mut target: impl FnMut([f32; 4], HomeAction),
+) {
+    let [x, y, w, h] = rect;
+    let th = active_theme();
+    let gap = 10.;
+    let tiles_h = (h * 0.25).clamp(58., 95.);
+    let hero_h = (h - tiles_h - 14.).max(145.);
+    let hero = [x, y, w, hero_h];
+
+    scene(ui, hero, 25., false);
+    // Background imagery remains visible. The lens is light and only bends at
+    // the edge; central text is never baked into the background texture.
+    panel(ui, hero, 25., false);
+    // Soft left-side scrim (not another frosted panel) preserves contrast.
+    for i in 0..8 {
+        let fraction = i as f32 / 8.;
+        ui.fill(x + 6. + fraction * w * 0.51, y + 18.,
+            w * 0.068, hero_h - 36.,
+            color::hex(0x071321, ((1. - fraction) * 27.) as u8));
     }
 
-    let row_y = y + stage_h + 13.;
-    let cols = if narrow { 2 } else { 4 };
-    let gap = 9.;
-    let card_w = (w - gap * (cols - 1) as f32) / cols as f32;
+    // Icon tile plus title and clear status.
+    let icon_r = [x + 25., y + 44., 75., 75.];
+    ui.rounded(icon_r[0], icon_r[1], 75., 75., 18., color::hex(0x121D22, 165));
+    ui.border(icon_r[0], icon_r[1], 75., 75., 18., color::hex(0xE3F7FF, 67));
+    ui.icon(Icon::Gamepad, icon_r[0] + 21., icon_r[1] + 21., 33.,
+        color::hex(0xE9F5F7, 250));
+    ui.text(Face::SemiBold, 27., x + 117., y + 50., color::hex(0xFFFFFF, 255),
+        "Minecraft 26.3");
+    let ready = if view.installed { "Ready to play" } else { "Installation required" };
+    ui.icon(if view.installed { Icon::Check } else { Icon::Installed },
+        x + 120., y + 94., 18., if view.installed { th.success } else { th.text_muted });
+    ui.text(Face::Medium, 13., x + 147., y + 97.,
+        color::hex(0xEDF6FA, 243), ready);
+
+    // The main action and profile picker live inside the hero, as in the
+    // submitted mockup, with a real gap and disjoint touch areas.
+    let buttons_y = y + hero_h - 67.;
+    let play_width = (w * 0.35).clamp(193., 310.);
+    let profile_width = (w * 0.26).clamp(137., 222.);
+    let play = [x + 25., buttons_y, play_width, 49.];
+    let profile = [play[0] + play_width + 14., buttons_y, profile_width, 49.];
+    panel(ui, play, 24.5, true);
+    ui.icon(Icon::Play, play[0] + 17., play[1] + 14., 21., color::hex(0xFFFFFF, 255));
+    let title = if view.launching { "Getting ready..." } else if view.installed {
+        "Play Minecraft"
+    } else { "Install Minecraft" };
+    let title = ui.fit_text(Face::Medium, 14., title, play_width - 55.);
+    ui.text(Face::Medium, 14., play[0] + 48., play[1] + 15.,
+        color::hex(0xFFFFFF, 255), &title);
+    if !view.launching { target(play, HomeAction::Play); }
+    panel(ui, profile, 24.5, false);
+    ui.icon(Icon::ChevronDown, profile[0] + profile_width - 27.,
+        profile[1] + 16., 15., th.text_primary);
+    let label = ui.fit_text(Face::Medium, 12.,
+        &format!("Profile {}", view.profile + 1), profile_width - 48.);
+    ui.text(Face::Medium, 12., profile[0] + 17., profile[1] + 17., th.text_primary, &label);
+    target(profile, HomeAction::Profile);
+
+    let renderer = ui.fit_text(Face::Regular, 10., view.renderer, 152.);
+    let rw = (ui.measure(Face::Regular, 10., &renderer) + 22.).min(w * 0.22);
+    let render_x = x + w - rw - 19.;
+    // This label never overlaps the Minecraft title or the launch buttons.
+    ui.text(Face::Regular, 10., render_x, y + 15., color::hex(0xEBF7FB, 194), &renderer);
+
+    let tiles_y = y + hero_h + 14.;
+    let tile_w = (w - gap * 5.) / 6.;
     for (i, (label, icon, action)) in [
         ("Mods", Icon::Mods, HomeAction::Mods),
         ("Packs", Icon::Packs, HomeAction::Packs),
         ("Shaders", Icon::Shaders, HomeAction::Shaders),
         ("My files", Icon::Folder, HomeAction::Files),
+        ("Settings", Icon::Gear, HomeAction::Appearance),
+        ("Skins", Icon::Person, HomeAction::Skins),
     ].into_iter().enumerate() {
-        let r = [x + (i % cols) as f32 * (card_w + gap), row_y + (i / cols) as f32 * 65., card_w, 57.];
-        if r[1] + r[3] > y + h { continue; }
-        panel(ui, r, 12., false);
-        ui.icon(icon, r[0] + 12., r[1] + 17., 20., th.text_primary);
-        let caption = ui.fit_text(Face::Medium, 12., label, (r[2] - 50.).max(25.));
-        ui.text(Face::Medium, 12., r[0] + 42., r[1] + 18., th.text_primary, &caption);
+        let r = [x + i as f32 * (tile_w + gap), tiles_y, tile_w, tiles_h];
+        // Independent, restrained physical controls; no stacked nested glass.
+        panel(ui, r, 20., false);
+        let size = (tiles_h * 0.36).min(28.);
+        ui.icon(icon, r[0] + (tile_w - size) * 0.5,
+            r[1] + tiles_h * 0.22, size, th.text_primary);
+        ui.centered_fit(Face::Medium, 11.5,
+            [r[0] + 4., r[1] + tiles_h - 27., tile_w - 8., 22.],
+            th.text_primary, label);
         target(r, action);
-    }
-    if narrow {
-        let profile = [x, row_y + 135., (w - 9.) / 2., 42.];
-        if profile[1] + profile[3] < y + h {
-            button(ui, profile, &format!("Profile {}", view.profile + 1), Some(Icon::ChevronDown), false);
-            target(profile, HomeAction::Profile);
-        }
     }
 }
 
@@ -920,6 +1026,9 @@ pub fn home(
     let th = active_theme();
     if th.experience == ExperiencePreset::OldSchool {
         return home_old_school(ui, rect, view, target);
+    }
+    if th.experience == ExperiencePreset::LiquidGlass && w >= 620. {
+        return home_liquid(ui, rect, view, target);
     }
     let portrait = w < 430.;
     let hero_h = if portrait {
