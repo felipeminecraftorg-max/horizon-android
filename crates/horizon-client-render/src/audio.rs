@@ -277,6 +277,8 @@ pub struct Audio {
     pub stopped: std::collections::BTreeMap<String, u32>,
     /// The volume sliders' `SoundPreviewHandler`.
     preview: crate::sound_preview::SoundPreview,
+    /// At most one launcher UI sample plays at once: no accidental stacking.
+    ui_pack_channel: Option<ChannelId>,
     /// `SoundEngine.lastSeenDevices`: the system default output last seen.
     #[cfg(feature = "audio")]
     default_seen: Option<String>,
@@ -299,12 +301,21 @@ pub struct Audio {
 /// A sound file's samples, rate and channel count. A stereo file keeps its two channels
 /// interleaved (OpenAL plays a stereo buffer as it is); any other layout is mixed to mono.
 fn decode(path: &Path) -> Option<(Vec<f32>, u32, u16)> {
+    let file = fs::File::open(path).ok()?;
+    decode_stream(symphonia::core::io::MediaSourceStream::new(
+        Box::new(file), Default::default(),
+    ))
+}
+fn decode_bytes(bytes: Vec<u8>) -> Option<(Vec<f32>, u32, u16)> {
+    decode_stream(symphonia::core::io::MediaSourceStream::new(
+        Box::new(std::io::Cursor::new(bytes)), Default::default(),
+    ))
+}
+fn decode_stream(stream: symphonia::core::io::MediaSourceStream) -> Option<(Vec<f32>, u32, u16)> {
     use symphonia::core::{
-        audio::SampleBuffer, codecs::DecoderOptions, formats::FormatOptions, io::MediaSourceStream,
+        audio::SampleBuffer, codecs::DecoderOptions, formats::FormatOptions,
         meta::MetadataOptions, probe::Hint,
     };
-    let file = fs::File::open(path).ok()?;
-    let stream = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     hint.with_extension("ogg");
     let probed = symphonia::default::get_probe()
@@ -1339,6 +1350,7 @@ impl Audio {
             heard: Default::default(),
             stopped: Default::default(),
             preview: Default::default(),
+            ui_pack_channel: None,
             #[cfg(feature = "audio")]
             default_seen: None,
             #[cfg(feature = "audio")]
@@ -1566,6 +1578,7 @@ impl Audio {
             heard: Default::default(),
             stopped: Default::default(),
             preview: Default::default(),
+            ui_pack_channel: None,
             // The device belongs to the first player's output, which looks after it.
             #[cfg(feature = "audio")]
             default_seen: self.default_seen.clone(),
@@ -1719,6 +1732,9 @@ impl Audio {
     }
     /// `SoundManager.stop()`: every sound.
     pub fn stop_all(&mut self) {
+        if let Some(ui) = self.ui_pack_channel.take() {
+            self.backend.destroy(ui);
+        }
         self.engine.stop_all(&mut self.backend);
     }
     /// `SoundManager.reload` (resource packs changed): stop every sound, then
@@ -1786,6 +1802,62 @@ impl Audio {
         self.play(event, at, volume, pitch);
         self.capture = capture;
     }
+    /// Play precisely one Glass Lab V7 sample selected for this component.
+    ///
+    /// Bundled Ogg/Vorbis is derived from the user's original 66 Ogg/Opus
+    /// effects, which the native Symphonia decoder cannot play directly.
+    /// No files are written and no random Minecraft sounds are substituted.
+    pub fn play_embedded_ui_sfx(&mut self, sample: &'static str, volume: f32) {
+        if !self.backend.live || volume <= 0. {
+            return;
+        }
+        let Some(file) = sample.strip_prefix("sfx/") else { return; };
+        if !file.ends_with(".ogg") || !file.bytes().all(|b| {
+            b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b'.')
+        }) {
+            return;
+        }
+        // Destroy the previous UI channel even if its decode has not completed.
+        // This makes rapid taps deterministic and prevents two effects at once.
+        if let Some(old) = self.ui_pack_channel.take() {
+            self.backend.destroy(old);
+        }
+        let Some(channel) = self.backend.create(false) else { return; };
+        self.backend.set_relative(channel, true);
+        self.backend.set_volume(channel, volume.clamp(0., 1.) * self.master.clamp(0., 1.));
+        self.ui_pack_channel = Some(channel);
+        let mixer = self.backend.mixer.clone();
+        std::thread::Builder::new()
+            .name("launcher ui sample".into())
+            .spawn(move || {
+                static UI_CACHE: std::sync::OnceLock<Mutex<HashMap<&'static str, Samples>>> =
+                    std::sync::OnceLock::new();
+                let cache = UI_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+                let existing = cache.lock().ok().and_then(|values| values.get(sample).cloned());
+                let samples = if let Some(cached) = existing {
+                    cached
+                } else {
+                    let decoded = (|| {
+                        use std::io::Read;
+                        let zip_bytes: &'static [u8] =
+                            include_bytes!("../assets/glasslab-v7-ui-vorbis.zip");
+                        let mut archive =
+                            zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)).ok()?;
+                        let mut bytes = Vec::new();
+                        archive.by_name(&format!("audio/files/{file}"))
+                            .ok()?.read_to_end(&mut bytes).ok()?;
+                        decode_bytes(bytes).map(|(s, r, w)| (Arc::new(s), r, w))
+                    })();
+                    if let Ok(mut values) = cache.lock() {
+                        values.insert(sample, decoded.clone());
+                    }
+                    decoded
+                };
+                attach(&mixer, channel, samples, false);
+            })
+            .ok();
+    }
+
     /// `AbstractWidget.playButtonClickSound`: an unseeded, relative UI sound.
     pub fn play_button_click(&mut self) {
         self.play_instance(
