@@ -169,6 +169,145 @@ fn texture(ui: &mut Ui<'_>, paper: Wallpaper, blur: bool) -> Option<super::Rect>
     })
 }
 
+
+// Small, original Minecraft-inspired landscapes, painted once in the native
+// atlas. No external CDN, copyrighted game screenshot, or Android asset request.
+const SCENE_W: u32 = 384;
+const SCENE_H: u32 = 200;
+thread_local! {
+    static SCENES: RefCell<HashMap<bool, Vec<u8>>> = RefCell::new(HashMap::new());
+}
+fn scene_pixels(sunset: bool) -> Vec<u8> {
+    let mut pixels = Vec::with_capacity((SCENE_W * SCENE_H * 4) as usize);
+    let mix = |a: f32, b: f32, v: f32| a + (b - a) * v.clamp(0., 1.);
+    for y in 0..SCENE_H {
+        for x in 0..SCENE_W {
+            // Quantization gives the landscape the deliberately blocky silhouette
+            // of a voxel game, even when displayed as a soft photographic hero.
+            let bx = (x / 4) as f32 * 4.;
+            let by = (y / 4) as f32 * 4.;
+            let u = bx / SCENE_W as f32;
+            let v = by / SCENE_H as f32;
+            let noise = (((x / 4).wrapping_mul(15427)
+                ^ (y / 4).wrapping_mul(64901)
+                ^ 0x4D3B19) % 31) as f32 - 15.;
+            let top = if sunset { [37., 39., 78.] } else { [30., 61., 82.] };
+            let low = if sunset { [243., 163., 123.] } else { [136., 168., 174.] };
+            let sky_t = (v * 1.4).clamp(0., 1.);
+            let mut rgb = [
+                mix(top[0], low[0], sky_t),
+                mix(top[1], low[1], sky_t),
+                mix(top[2], low[2], sky_t),
+            ];
+            // Striped block-clouds, intentionally subtle in the dark variant.
+            let cloud = (u * 11. + v * 4.).sin() + (u * 21. - v * 5.).cos() * 0.5;
+            if v > 0.12 && v < 0.47 && cloud > 1.22 {
+                for component in &mut rgb { *component = mix(*component, 210., 0.17); }
+            }
+            let sun_x = if sunset { 0.71 } else { 0.79 };
+            let sun_y = if sunset { 0.53 } else { 0.47 };
+            let sun_dist = ((u - sun_x).powi(2) * 1.2 + (v - sun_y).powi(2) * 3.).sqrt();
+            let warm = (1. - sun_dist / 0.18).clamp(0., 1.);
+            for k in 0..3 {
+                rgb[k] = mix(rgb[k], [250., 216., 175.][k], warm * 0.68);
+            }
+            let ridge = 0.48
+                + (u * 10.1).sin() * 0.047
+                + (u * 29.7).sin() * 0.019
+                - (u - 0.77).max(0.).powi(2) * 2.4;
+            let ridge = (ridge * 40.).floor() / 40.;
+            if v > ridge {
+                rgb = if sunset {
+                    [65. - 13. * v, 81. - 12. * v, 106. - 14. * v]
+                } else {
+                    [46. - 13. * v, 78. - 18. * v, 85. - 12. * v]
+                };
+            }
+            let grass = 0.74 + (u * 11.).sin() * 0.028
+                + (u * 37.).sin() * 0.013
+                - (u - 0.3).powi(2) * 0.08;
+            if v > grass {
+                rgb = if sunset { [46., 85., 47.] } else { [30., 73., 51.] };
+                let soil = ((v - grass) * 10.).floor() as i32 % 5;
+                if soil == 3 { rgb = [44., 53., 45.]; }
+                if (v - grass) < 0.025 { rgb = [70., 121., 54.]; }
+            }
+            // Layered square-canopy trees and dark thin trunks.
+            for &cx in &[0.08_f32, 0.19, 0.31, 0.46, 0.60, 0.89] {
+                let cy = grass + (cx * 11.).sin() * 0.01;
+                let th = 0.10 + (cx * 19.).sin().abs() * 0.05;
+                let trunk_top = cy - th;
+                if (u - cx).abs() < 0.010 && v >= trunk_top && v < cy + 0.04 {
+                    rgb = [48., 44., 35.];
+                }
+                let du = (u - cx).abs();
+                if (du < 0.055 && v > trunk_top - 0.070 && v < trunk_top + 0.045)
+                    || (du < 0.038 && v > trunk_top - 0.095 && v < trunk_top + 0.065)
+                {
+                    rgb = if sunset { [37., 68., 47.] } else { [30., 77., 56.] };
+                    rgb[1] += noise.abs() * 0.55;
+                }
+            }
+            // Quiet reflective inlet; the reflection stretches toward the sun.
+            let inlet = v > 0.755 && u > 0.49 && u < 0.88
+                && v < 0.94 + (u * 22.).sin() * 0.02;
+            if inlet {
+                rgb = if sunset { [43., 78., 102.] } else { [26., 69., 83.] };
+                let ripple = ((v * 96. + u * 22.).sin().abs() * 0.5
+                    + (u * 44.).cos().abs() * 0.3).clamp(0., 1.);
+                let glint = (1. - (u - sun_x).abs() * 5.0).clamp(0., 1.);
+                rgb[0] += ripple * glint * if sunset { 95. } else { 39. };
+                rgb[1] += ripple * glint * 70.;
+                rgb[2] += ripple * glint * 47.;
+            }
+            for k in 0..3 {
+                rgb[k] = (rgb[k] + noise * if v > ridge { 0.20 } else { 0.07 })
+                    .clamp(0., 255.);
+                pixels.push(rgb[k] as u8);
+            }
+            pixels.push(255);
+        }
+    }
+    pixels
+}
+fn scene_texture(ui: &mut Ui<'_>, sunset: bool) -> Option<super::Rect> {
+    SCENES.with(|scenes| {
+        let mut scenes = scenes.borrow_mut();
+        let pixels = scenes.entry(sunset).or_insert_with(|| scene_pixels(sunset));
+        let key = if sunset { "launcher-wallpaper:scene:console" }
+            else { "launcher-wallpaper:scene:liquid" };
+        super::with_cache(ui.atlas, |cache| {
+            cache.image(ui.atlas, key, SCENE_W, SCENE_H, pixels)
+        })
+    })
+}
+/// Draw a cached original world-like scene inside a rounded rectangle.
+/// Rounded pixels are clipped by symmetric bands, without covering text.
+fn scene(ui: &mut Ui<'_>, r: [f32; 4], corner: f32, sunset: bool) {
+    let Some(t) = scene_texture(ui, sunset) else { return; };
+    let [x, y, w, h] = r;
+    if w <= 0. || h <= 0. { return; }
+    let corner = corner.min(w * 0.5).min(h * 0.5);
+    let mut band = |top: f32, height: f32, inset: f32| {
+        let u0 = t.u0 + (t.u1 - t.u0) * (inset / w);
+        let u1 = t.u1 - (t.u1 - t.u0) * (inset / w);
+        let v0 = t.v0 + (t.v1 - t.v0) * ((top - y) / h);
+        let v1 = t.v0 + (t.v1 - t.v0) * ((top + height - y) / h);
+        ui.emit_clipped_uv(
+            ui.px_x(x + inset), ui.px_y(top), ui.px_x(x + w - inset),
+            ui.px_y(top + height), u0, v0, u1, v1, u32::MAX,
+        );
+    };
+    for i in 0..12 {
+        let dh = corner / 12.;
+        let d = corner - (i as f32 + 0.5) * dh;
+        let inset = corner - (corner * corner - d * d).max(0.).sqrt();
+        band(y + i as f32 * dh, dh, inset);
+        band(y + h - (i as f32 + 1.) * dh, dh, inset);
+    }
+    band(y + corner, (h - 2. * corner).max(0.), 0.);
+}
+
 pub fn background(ui: &mut Ui<'_>, r: [f32; 4], paper: Wallpaper) {
     if let Some(t) = texture(ui, paper, false) {
         let [x, y, w, h] = r;
@@ -432,10 +571,12 @@ pub enum HomeAction {
     Play,
     Profile,
     Appearance,
+    Settings,
     Mods,
     Packs,
     Shaders,
     Files,
+    Skins,
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ShellAction {
@@ -456,13 +597,22 @@ pub struct Layout {
 impl Layout {
     pub fn new(w: f32, h: f32) -> Self {
         let portrait = h > w || w < 620.;
-        let console = active_theme().experience == ExperiencePreset::OldSchool;
-        let x = if portrait { 16. } else if console { 230. } else { 210. };
+        let experience = active_theme().experience;
+        let console = experience == ExperiencePreset::OldSchool;
+        let x = if portrait {
+            16.
+        } else if console {
+            24. // Full-width console dashboard beneath the horizontal tabs.
+        } else if experience == ExperiencePreset::LiquidGlass {
+            119. // Narrow icon rail, like the modern reference.
+        } else {
+            210.
+        };
         Self {
             portrait,
             console,
             x,
-            width: (w - x - 20.).max(200.),
+            width: (w - x - if console { 24. } else { 20. }).max(200.),
             bottom: if portrait { h - 84. } else { h },
         }
     }
@@ -471,9 +621,11 @@ impl Layout {
             let step = (w - 32.) / count as f32;
             [16. + index as f32 * step, h - 72., step, 56.]
         } else if self.console {
-            // Wide metallic channels, independent of the Liquid Glass bubble rail.
-            let step = ((h - 125.) / count as f32).clamp(33., 48.);
-            [20., 105. + index as f32 * step, 188., (step - 3.).min(44.)]
+            let step = (w - 48.) / count.max(1) as f32;
+            [24. + index as f32 * step, 73., step, 44.]
+        } else if active_theme().experience == ExperiencePreset::LiquidGlass {
+            let step = ((h - 114.) / count.max(1) as f32).clamp(44., 52.);
+            [32., 90. + index as f32 * step, 55., 44.]
         } else {
             [
                 20.,
@@ -483,6 +635,65 @@ impl Layout {
             ]
         }
     }
+}
+
+
+/// Late-2000s console interface: no sidebar, no oversized rounded capsules.
+/// Tabs form a real horizontal navigation row; home supplies a tile dashboard.
+#[allow(clippy::too_many_arguments)]
+fn shell_console(
+    ui: &mut Ui<'_>,
+    items: &[(&str, Icon)],
+    selected: usize,
+    account: &str,
+    signed_in: bool,
+    version: &str,
+    mut target: impl FnMut([f32; 4], ShellAction),
+) -> Layout {
+    let th = active_theme();
+    let (w, h) = (ui.w, ui.h);
+    let layout = Layout::new(w, h);
+    ui.horizon_logo(24., 15., 30.);
+    ui.text(Face::SemiBold, 20., 62., 12., th.text_primary, "Horizon");
+    ui.text(Face::Regular, 9.5, 62., 38., th.text_muted, version);
+
+    let aw = (w * 0.22).clamp(138., 196.);
+    let account_r = [w - aw - 66., 13., aw, 39.];
+    ui.rounded(account_r[0], account_r[1], aw, 39., 9., color::hex(0xECF3FF, 27));
+    ui.stroke_rounded(account_r[0], account_r[1], aw, 39., 9., 0.9, color::hex(0xFFFFFF, 85));
+    ui.avatar_head_2d(account_r[0] + 6., 19., 27., account);
+    if signed_in {
+        ui.rounded(account_r[0] + 29., 40., 5., 5., 2.5, th.success);
+    }
+    let name = ui.fit_text(Face::Medium, 12., account, aw - 51.);
+    ui.text(Face::Medium, 12., account_r[0] + 42., 24., th.text_primary, &name);
+    target(account_r, ShellAction::Account);
+    let settings = [w - 53., 13., 38., 39.];
+    ui.icon(Icon::Gear, settings[0] + 10., settings[1] + 9., 19., th.text_primary);
+    target(settings, ShellAction::Appearance);
+    ui.fill(24., 117., w - 48., 1., color::hex(0xD4D8EB, 72));
+
+    for (i, (label, _icon)) in items.iter().enumerate() {
+        let tab = layout.nav_rect(w, h, i, items.len());
+        let chosen = i == selected;
+        let fitted = ui.fit_text(Face::Medium, 13., label, tab[2] - 12.);
+        let tw = ui.measure(Face::Medium, 13., &fitted);
+        ui.text(
+            Face::Medium, 13.,
+            tab[0] + (tab[2] - tw) * 0.5,
+            tab[1] + 8.,
+            if chosen { th.text_primary } else { th.text_muted },
+            &fitted,
+        );
+        if chosen {
+            let underline_w = (tw + 16.).min(tab[2] - 8.);
+            let underline_x = tab[0] + (tab[2] - underline_w) * 0.5;
+            ui.rounded(underline_x - 12., tab[1] + 36., underline_w + 24., 3., 1.5, color::hex(0xB4A9FF, 35));
+            ui.fill(underline_x, tab[1] + 37., underline_w, 1., color::hex(0xEAE8FF, 230));
+        }
+        target(tab, ShellAction::Page(i));
+    }
+    layout
 }
 
 /// Header and adaptive navigation shared by the app and the native captures.
@@ -499,6 +710,9 @@ pub fn shell(
     let th = active_theme();
     let (w, h) = (ui.w, ui.h);
     let layout = Layout::new(w, h);
+    if layout.console && !layout.portrait {
+        return shell_console(ui, items, selected, account, signed_in, version, target);
+    }
     ui.horizon_logo(18., 17., 31.);
     ui.text(Face::SemiBold, 17., 58., 13., th.text_primary, "Horizon");
     ui.text(Face::Regular, 10.5, 58., 37., th.text_muted, version);
@@ -524,8 +738,23 @@ pub fn shell(
     panel(ui, gear, 22., false);
     ui.icon(Icon::Gear, gear[0] + 12., 24., 20., th.text_primary);
     target(gear, ShellAction::Appearance);
-    // The navigation rail is no longer one giant frosted sheet for Liquid
-    // Glass. Each selected icon is an individual physical lens instead.
+    // Liquid Glass: an entirely different narrow icon dock. Keep tab content
+    // outside the glass layer; the icons and their hitboxes remain crisp.
+    if th.experience == ExperiencePreset::LiquidGlass && !layout.portrait {
+        panel(ui, [19., 83., 81., (h - 99.).max(80.)], 31., false);
+        for (i, (_, icon)) in items.iter().enumerate() {
+            let r = layout.nav_rect(w, h, i, items.len());
+            if i == selected {
+                panel(ui, [r[0] + 3., r[1] + 1., r[2] - 6., 42.], 18., true);
+            }
+            ui.icon(
+                *icon, r[0] + (r[2] - 21.) / 2., r[1] + 11., 21.,
+                if i == selected { th.text_primary } else { th.text_muted },
+            );
+            target(r, ShellAction::Page(i));
+        }
+        return layout;
+    }
     if th.material != Material::Glass {
         if layout.portrait {
             panel(ui, [12., h - 78., w - 24., 68.], if layout.console { 12. } else { 23. }, false);
@@ -623,62 +852,167 @@ fn home_old_school(
     let [x, y, w, h] = rect;
     let th = active_theme();
     let narrow = w < 430.;
-    let stage_h = if narrow { 198. } else { (h - 165.).clamp(150., 210.) };
-    let side_w = if narrow { 0. } else { (w * 0.31).clamp(132., 232.) };
-    let main_w = if narrow { w } else { w - side_w - 12. };
-    panel(ui, [x, y, main_w, stage_h], 18., false);
-    ui.fill(x + 19., y + 13., (main_w - 38.).max(0.), 1., color::hex(0xD6E4F4, 76));
-    ui.text(Face::Medium, 11., x + 20., y + 20., th.text_muted, "CHANNEL 01  /  GAME");
-    ui.text(
-        Face::SemiBold,
-        if narrow { 24. } else { 28. },
-        x + 20.,
-        y + 48.,
-        th.text_primary,
-        "Minecraft 26.3",
-    );
-    let status = if view.installed { "READY TO LAUNCH" } else { "INSTALLATION REQUIRED" };
-    ui.text(Face::Medium, 11., x + 21., y + 91., th.text_muted, status);
-    let play = [x + 18., y + stage_h - 65., main_w - 36., 49.];
-    button(ui, play, if view.launching { "Getting ready..." } else if view.installed { "Start game" } else { "Install Minecraft" }, Some(Icon::Play), true);
+    // Genuine console tile dashboard: game cover occupies the left half and
+    // the functional shortcuts form a 3x2 grid, not cards below a modern hero.
+    let poster_w = if narrow { w } else { w * 0.505 };
+    let poster_h = if narrow { (h * 0.49).max(173.) } else { h };
+    let poster = [x, y, poster_w, poster_h];
+    scene(ui, poster, 9., true);
+    ui.stroke_rounded(x, y, poster_w, poster_h, 9., 1.1, color::hex(0xE2E5FA, 138));
+    ui.rounded(x + 13., y + 15., (poster_w - 27.).min(280.), 64., 6., color::hex(0x101425, 137));
+    ui.text(Face::SemiBold, if narrow { 22. } else { 28. },
+        x + 23., y + 22., color::hex(0xFFFFFF, 255), "MINECRAFT");
+    ui.text(Face::Medium, 16., x + 24., y + 57., color::hex(0xE4E6F5, 255), "26.3");
+    let small = if view.installed { "Ready to play" } else { "Installation required" };
+    ui.text(Face::Regular, 11., x + 23., y + 85., color::hex(0xFAFAFF, 236), small);
+    // A small profile selector belongs to the poster, not the utility cards.
+    let profile = [x + poster_w - 119., y + 13., 105., 37.];
+    ui.rounded(profile[0], profile[1], profile[2], profile[3], 8., color::hex(0x050714, 159));
+    ui.text(Face::Medium, 11., profile[0] + 9., profile[1] + 11.,
+        color::hex(0xF2F6FF, 245), &format!("Profile {}", view.profile + 1));
+    target(profile, HomeAction::Profile);
+
+    let play = [x, y + poster_h - 58., poster_w, 58.];
+    ui.rounded(play[0], play[1], play[2], play[3], 9., color::hex(0x497638, 243));
+    // An angular, satin green footer recalls the Xbox 360 NXE dashboard.
+    ui.fill(play[0] + 7., play[1] + 3., poster_w - 14., 1.,
+        color::hex(0xDAF7C9, 124));
+    ui.icon(Icon::Play, play[0] + 19., play[1] + 14., 27., color::hex(0xFFFFFF, 255));
+    let label = if view.launching { "Getting ready..." } else if view.installed {
+        "Play Minecraft"
+    } else { "Install Minecraft" };
+    let fitted = ui.fit_text(Face::Medium, 22., label, poster_w - 66.);
+    ui.text(Face::Medium, 22., play[0] + 57., play[1] + 15.,
+        color::hex(0xFFFFFF, 255), &fitted);
     if !view.launching { target(play, HomeAction::Play); }
 
-    if !narrow {
-        let side_x = x + main_w + 12.;
-        panel(ui, [side_x, y, side_w, stage_h], 13., false);
-        ui.text(Face::Medium, 10.5, side_x + 15., y + 20., th.text_muted, "SYSTEM / PROFILE");
-        ui.text(Face::Medium, 13., side_x + 15., y + 48., th.text_primary, &format!("Slot {:02}", view.profile + 1));
-        let mode = ui.fit_text(Face::Regular, 11., view.renderer, side_w - 29.);
-        ui.text(Face::Regular, 11., side_x + 15., y + 79., th.text_muted, &mode);
-        let profile = [side_x + 12., y + stage_h - 57., side_w - 24., 42.];
-        button(ui, profile, &format!("Profile {}", view.profile + 1), Some(Icon::ChevronDown), false);
-        target(profile, HomeAction::Profile);
+    let gap = 7.;
+    let cols = if narrow { 2 } else { 3 };
+    let tx = if narrow { x } else { x + poster_w + 10. };
+    let ty = if narrow { y + poster_h + gap } else { y };
+    let available = if narrow { w } else { w - poster_w - 10. };
+    let card_w = (available - gap * (cols - 1) as f32) / cols as f32;
+    let card_h = if narrow { ((h - poster_h - 3. * gap) / 3.).max(39.) }
+        else { (h - gap) * 0.5 };
+    let shortcuts = [
+        ("Mods", Icon::Mods, HomeAction::Mods, 0x59466F_u32),
+        ("Packs", Icon::Packs, HomeAction::Packs, 0x36567B_u32),
+        ("Shaders", Icon::Shaders, HomeAction::Shaders, 0x79613D_u32),
+        ("My files", Icon::Folder, HomeAction::Files, 0x34547C_u32),
+        ("Skins", Icon::Person, HomeAction::Skins, 0x456A47_u32),
+        ("Settings", Icon::Gear, HomeAction::Settings, 0x494A57_u32),
+    ];
+    for (i, (name, icon, action, rgb)) in shortcuts.into_iter().enumerate() {
+        let row = (i / cols) as f32;
+        let col = (i % cols) as f32;
+        let card = [tx + col * (card_w + gap), ty + row * (card_h + gap), card_w, card_h];
+        if card[1] + card[3] > y + h + 1. { continue; }
+        ui.rounded(card[0], card[1], card[2], card[3], 7., color::hex(rgb, 246));
+        // Satin upper edge and discreet diagonal reflection.
+        ui.fill(card[0] + 6., card[1] + 3., card_w - 12., 1., color::hex(0xFFFFFF, 65));
+        ui.stroke_rounded(card[0], card[1], card_w, card_h, 7., 0.8, color::hex(0xEBF5FF, 89));
+        let icon_size = if narrow { 21. } else { (card_h * 0.30).min(33.) };
+        ui.icon(icon, card[0] + (card_w - icon_size) * 0.5,
+            card[1] + (card_h * 0.23).min(35.), icon_size, color::hex(0xF5F7FF, 243));
+        let font = if narrow { 12. } else { 15. };
+        ui.centered_fit(Face::Medium, font,
+            [card[0] + 4., card[1] + card_h - if narrow { 26. } else { 38. }, card_w - 8., 29.],
+            color::hex(0xF4F5FB, 255), name);
+        target(card, action);
+    }
+}
+
+/// Clean modern Liquid Glass: a single wide image and six simple translucent
+/// shortcuts, with real refracting surfaces only where there are controls.
+fn home_liquid(
+    ui: &mut Ui<'_>,
+    rect: [f32; 4],
+    view: &HomeView<'_>,
+    mut target: impl FnMut([f32; 4], HomeAction),
+) {
+    let [x, y, w, h] = rect;
+    let th = active_theme();
+    let gap = 10.;
+    let tiles_h = (h * 0.25).clamp(58., 95.);
+    let hero_h = (h - tiles_h - 14.).max(145.);
+    let hero = [x, y, w, hero_h];
+
+    scene(ui, hero, 25., false);
+    // Background imagery remains visible. The lens is light and only bends at
+    // the edge; central text is never baked into the background texture.
+    panel(ui, hero, 25., false);
+    // Soft left-side scrim (not another frosted panel) preserves contrast.
+    for i in 0..8 {
+        let fraction = i as f32 / 8.;
+        ui.fill(x + 6. + fraction * w * 0.51, y + 18.,
+            w * 0.068, hero_h - 36.,
+            color::hex(0x071321, ((1. - fraction) * 27.) as u8));
     }
 
-    let row_y = y + stage_h + 13.;
-    let cols = if narrow { 2 } else { 4 };
-    let gap = 9.;
-    let card_w = (w - gap * (cols - 1) as f32) / cols as f32;
+    // Icon tile plus title and clear status.
+    let icon_r = [x + 25., y + 44., 75., 75.];
+    ui.rounded(icon_r[0], icon_r[1], 75., 75., 18., color::hex(0x121D22, 165));
+    ui.border(icon_r[0], icon_r[1], 75., 75., 18., color::hex(0xE3F7FF, 67));
+    ui.icon(Icon::Gamepad, icon_r[0] + 21., icon_r[1] + 21., 33.,
+        color::hex(0xE9F5F7, 250));
+    ui.text(Face::SemiBold, 27., x + 117., y + 50., color::hex(0xFFFFFF, 255),
+        "Minecraft 26.3");
+    let ready = if view.installed { "Ready to play" } else { "Installation required" };
+    ui.icon(if view.installed { Icon::Check } else { Icon::Installed },
+        x + 120., y + 94., 18., if view.installed { th.success } else { th.text_muted });
+    ui.text(Face::Medium, 13., x + 147., y + 97.,
+        color::hex(0xEDF6FA, 243), ready);
+
+    // The main action and profile picker live inside the hero, as in the
+    // submitted mockup, with a real gap and disjoint touch areas.
+    let buttons_y = y + hero_h - 67.;
+    let play_width = (w * 0.35).clamp(193., 310.);
+    let profile_width = (w * 0.26).clamp(137., 222.);
+    let play = [x + 25., buttons_y, play_width, 49.];
+    let profile = [play[0] + play_width + 14., buttons_y, profile_width, 49.];
+    panel(ui, play, 24.5, true);
+    ui.icon(Icon::Play, play[0] + 17., play[1] + 14., 21., color::hex(0xFFFFFF, 255));
+    let title = if view.launching { "Getting ready..." } else if view.installed {
+        "Play Minecraft"
+    } else { "Install Minecraft" };
+    let title = ui.fit_text(Face::Medium, 14., title, play_width - 55.);
+    ui.text(Face::Medium, 14., play[0] + 48., play[1] + 15.,
+        color::hex(0xFFFFFF, 255), &title);
+    if !view.launching { target(play, HomeAction::Play); }
+    panel(ui, profile, 24.5, false);
+    ui.icon(Icon::ChevronDown, profile[0] + profile_width - 27.,
+        profile[1] + 16., 15., th.text_primary);
+    let label = ui.fit_text(Face::Medium, 12.,
+        &format!("Profile {}", view.profile + 1), profile_width - 48.);
+    ui.text(Face::Medium, 12., profile[0] + 17., profile[1] + 17., th.text_primary, &label);
+    target(profile, HomeAction::Profile);
+
+    let renderer = ui.fit_text(Face::Regular, 10., view.renderer, 152.);
+    let rw = (ui.measure(Face::Regular, 10., &renderer) + 22.).min(w * 0.22);
+    let render_x = x + w - rw - 19.;
+    // This label never overlaps the Minecraft title or the launch buttons.
+    ui.text(Face::Regular, 10., render_x, y + 15., color::hex(0xEBF7FB, 194), &renderer);
+
+    let tiles_y = y + hero_h + 14.;
+    let tile_w = (w - gap * 5.) / 6.;
     for (i, (label, icon, action)) in [
         ("Mods", Icon::Mods, HomeAction::Mods),
         ("Packs", Icon::Packs, HomeAction::Packs),
         ("Shaders", Icon::Shaders, HomeAction::Shaders),
         ("My files", Icon::Folder, HomeAction::Files),
+        ("Settings", Icon::Gear, HomeAction::Settings),
+        ("Skins", Icon::Person, HomeAction::Skins),
     ].into_iter().enumerate() {
-        let r = [x + (i % cols) as f32 * (card_w + gap), row_y + (i / cols) as f32 * 65., card_w, 57.];
-        if r[1] + r[3] > y + h { continue; }
-        panel(ui, r, 12., false);
-        ui.icon(icon, r[0] + 12., r[1] + 17., 20., th.text_primary);
-        let caption = ui.fit_text(Face::Medium, 12., label, (r[2] - 50.).max(25.));
-        ui.text(Face::Medium, 12., r[0] + 42., r[1] + 18., th.text_primary, &caption);
+        let r = [x + i as f32 * (tile_w + gap), tiles_y, tile_w, tiles_h];
+        // Independent, restrained physical controls; no stacked nested glass.
+        panel(ui, r, 20., false);
+        let size = (tiles_h * 0.36).min(28.);
+        ui.icon(icon, r[0] + (tile_w - size) * 0.5,
+            r[1] + tiles_h * 0.22, size, th.text_primary);
+        ui.centered_fit(Face::Medium, 11.5,
+            [r[0] + 4., r[1] + tiles_h - 27., tile_w - 8., 22.],
+            th.text_primary, label);
         target(r, action);
-    }
-    if narrow {
-        let profile = [x, row_y + 135., (w - 9.) / 2., 42.];
-        if profile[1] + profile[3] < y + h {
-            button(ui, profile, &format!("Profile {}", view.profile + 1), Some(Icon::ChevronDown), false);
-            target(profile, HomeAction::Profile);
-        }
     }
 }
 
@@ -693,6 +1027,9 @@ pub fn home(
     let th = active_theme();
     if th.experience == ExperiencePreset::OldSchool {
         return home_old_school(ui, rect, view, target);
+    }
+    if th.experience == ExperiencePreset::LiquidGlass && w >= 620. {
+        return home_liquid(ui, rect, view, target);
     }
     let portrait = w < 430.;
     let hero_h = if portrait {
@@ -1141,7 +1478,7 @@ pub fn appearance(
     let cw = (w - 8. * (cols - 1) as f32) / cols as f32;
     for (i, preset) in ThemePreset::ALL
         .into_iter()
-        .filter(|p| !matches!(p, ThemePreset::LiquidGlass | ThemePreset::DarkAero))
+        .filter(|p| !matches!(p, ThemePreset::LiquidGlass | ThemePreset::OldSchool))
         .enumerate()
     {
         let r = [
@@ -1223,6 +1560,76 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn both_landscape_mockups_keep_all_six_tiles_and_disjoint_hitboxes() {
+        for preset in [ThemePreset::OldSchool, ThemePreset::LiquidGlass] {
+            let mut cfg = LauncherThemeConfig::default();
+            cfg.apply_preset(preset);
+            set_active_for_test(&cfg);
+            for (width, height) in [(760., 410.), (900., 480.)] {
+                let layout = Layout::new(width, height);
+                let y = if layout.console { 130. } else { 76. };
+                let reserved = if layout.console { 35. } else { 40. };
+                let bounds = [layout.x, y, layout.width, height - y - reserved];
+                let atlas = HudAtlas::boot();
+                let mut batch = HudBatch::new([width as u32, height as u32]);
+                let mut ui = Ui::new(&atlas, &mut batch, (0., 0.));
+                let mut actions = Vec::new();
+                home(
+                    &mut ui,
+                    bounds,
+                    &HomeView { installed: true, launching: false, profile: 0,
+                        renderer: "Vulkan / compatibility" },
+                    |r, action| actions.push((r, action)),
+                );
+                assert!(actions.len() >= 8, "{preset:?} {width}x{height}");
+                for wanted in [
+                    HomeAction::Play, HomeAction::Profile, HomeAction::Mods,
+                    HomeAction::Packs, HomeAction::Shaders, HomeAction::Files,
+                    HomeAction::Settings, HomeAction::Skins,
+                ] {
+                    assert!(actions.iter().any(|(_, action)| *action == wanted),
+                        "{preset:?} {width}x{height} {wanted:?}");
+                }
+                for (i, (r, _)) in actions.iter().enumerate() {
+                    assert!(r[0] >= bounds[0] && r[1] >= bounds[1]);
+                    assert!(r[0] + r[2] <= bounds[0] + bounds[2] + 0.1);
+                    assert!(r[1] + r[3] <= bounds[1] + bounds[3] + 0.1);
+                    for (other, _) in actions.iter().take(i) {
+                        assert!(r[0] >= other[0] + other[2]
+                            || other[0] >= r[0] + r[2]
+                            || r[1] >= other[1] + other[3]
+                            || other[1] >= r[1] + r[3],
+                            "overlap {preset:?} {width}x{height}: {r:?} and {other:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn reference_experiences_have_independent_navigation_and_hero_art() {
+        let mut cfg = LauncherThemeConfig::default();
+        cfg.apply_preset(ThemePreset::LiquidGlass);
+        set_active_for_test(&cfg);
+        let liquid = Layout::new(900., 480.);
+        assert!(!liquid.console);
+        assert_eq!(liquid.x, 119.);
+        assert!(liquid.nav_rect(900., 480., 0, 7)[2] < 65.);
+        let liquid_scene = scene_pixels(false);
+        assert_eq!(liquid_scene.len(), (SCENE_W * SCENE_H * 4) as usize);
+        cfg.apply_preset(ThemePreset::OldSchool);
+        set_active_for_test(&cfg);
+        let old = Layout::new(900., 480.);
+        assert!(old.console);
+        assert_eq!(old.x, 24.);
+        assert_eq!(old.nav_rect(900., 480., 0, 7)[1], 73.);
+        assert_eq!(old.nav_rect(900., 480., 0, 7)[3], 44.);
+        let old_scene = scene_pixels(true);
+        assert_eq!(old_scene.len(), liquid_scene.len());
+        assert_ne!(liquid_scene, old_scene);
     }
 
     #[test]

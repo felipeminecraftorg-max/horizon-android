@@ -1121,6 +1121,12 @@ impl Launcher {
         let (w, h) = (ui.w, ui.h);
         let active_th = horizon_client::ui_theme::active_theme();
         ui.draw_theme_background(0.0, 0.0, w, h, &active_th);
+        if active_th.experience == horizon_client::ui_theme::ExperiencePreset::OldSchool
+            && w > h && w >= 620. {
+            // Mild amethyst tint over the Graphite PS3-style background ribbons.
+            // It doesn't change the preserved Dark Aero wallpaper.
+            ui.fill(0., 0., w, h, color::hex(0x211730, 43));
+        }
 
         // The same native shell is used in portrait, landscape and capture fixtures.
         let selected_idx = Page::ALL
@@ -1306,9 +1312,13 @@ impl Launcher {
                     profile: self.catalog.config.profile,
                     renderer: self.catalog.config.renderer.label(),
                 };
+                let is_console = layout.console && !layout.portrait;
+                let home_top = if is_console { 130.0 } else { 76.0 };
+                let home_reserved_bottom = if is_console { 35.0 } else { 40.0 };
                 visual::home(
                     &mut ui,
-                    [content_x, 76.0 + slide_y, content_w, (h - 116.0).max(0.0)],
+                    [content_x, home_top + slide_y, content_w,
+                        (h - home_top - home_reserved_bottom).max(0.0)],
                     &view,
                     |rect, action| {
                         let action = match action {
@@ -1317,12 +1327,16 @@ impl Launcher {
                             visual::HomeAction::Appearance => {
                                 Action::SettingsCat(SettingsCategory::Theme)
                             }
+                            visual::HomeAction::Settings => {
+                                Action::SettingsCat(SettingsCategory::Overview)
+                            }
                             visual::HomeAction::Mods => Action::Page(Page::Mods),
                             visual::HomeAction::Packs => Action::Page(Page::Packs),
                             visual::HomeAction::Shaders => Action::Page(Page::Shaders),
                             visual::HomeAction::Files => Action::SetInstalledSubTab(
                                 crate::catalog::InstalledSubTab::FileManager,
                             ),
+                            visual::HomeAction::Skins => Action::Page(Page::Skins),
                         };
                         self.targets.push((rect, action));
                     },
@@ -1335,11 +1349,12 @@ impl Launcher {
                 self.catalog.scroll,
                 content_x,
                 content_w,
-                62.0 + slide_y,
+                if layout.console && !layout.portrait { 130.0 + slide_y } else { 62.0 + slide_y },
             );
             self.list_view = Some(self.wardrobe.view);
             self.catalog.scroll = self.catalog.scroll.min(self.wardrobe.view[2]);
         } else if page.is_catalog() {
+            let slide_y = slide_y + if layout.console && !layout.portrait { 68.0 } else { 0.0 };
             let header_y = 62.0 + slide_y;
             ui.text(
                 Face::SemiBold,
@@ -1750,10 +1765,12 @@ impl Launcher {
                 false,
             );
         } else if page == Page::Installed {
-            self.draw_installed(&mut ui, content_x, content_w, h, compact, slide_y);
+            let offset = if layout.console && !layout.portrait { 67.0 } else { 0.0 };
+            self.draw_installed(&mut ui, content_x, content_w, h, compact, slide_y + offset);
         } else {
+            let offset = if layout.console && !layout.portrait { 67.0 } else { 0.0 };
             self.draw_settings_page(
-                &mut ui, content_x, content_w, h, compact, slide_y, ime_top_dp,
+                &mut ui, content_x, content_w, h, compact, slide_y + offset, ime_top_dp,
             );
         }
 
