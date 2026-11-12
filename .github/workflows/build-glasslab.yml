@@ -1,4 +1,4 @@
-name: Glass Lab 3.0 Motion and Materials APK
+name: Glass Lab 4.0 Retro Optics APK
 on:
   workflow_dispatch:
   pull_request:
@@ -43,10 +43,12 @@ jobs:
           from pathlib import Path
           import os
           script=(Path(os.environ['RUNNER_TEMP'])/'glass_lab_project/web-demo/app.js').read_text()
-          for marker in ['GLASS_LAB_PRESET_V3', 'uDynamics[4]', 'uStyle', 'directional-viscoelastic-gel', 'console-mechanical']:
+          for marker in ['GLASS_LAB_PRESET_V4', 'uDynamics[4]', 'uStyle', 'directional-viscoelastic-gel', 'console-dielectric-metal-spring', 'shadeConsole', 'uRetroMetal', 'springStep']:
               assert marker in script, marker
-          print('Dual material systems, directional physics and export v3 verified')
+          print('Dual material systems, directional physics and export v4 verified')
           PYTEST
+      - name: Validate spring dynamics at 30 / 60 / 120 Hz
+        run: node "$RUNNER_TEMP/glass_lab_project/test_physics.mjs"
       - name: Validate live GLSL glass shader
         shell: bash
         run: |
@@ -66,9 +68,9 @@ jobs:
       - name: Prepare APK
         run: |
           mkdir -p dist
-          cp "$RUNNER_TEMP/glass_lab_project/app/build/outputs/apk/debug/app-debug.apk" dist/GlassLab-3.0-Motion-Materials.apk
+          cp "$RUNNER_TEMP/glass_lab_project/app/build/outputs/apk/debug/app-debug.apk" dist/GlassLab-4.0-Retro-Optics.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: GlassLab-3.0-Android-APK
-          path: dist/GlassLab-3.0-Motion-Materials.apk
+          name: GlassLab-4.0-Android-APK
+          path: dist/GlassLab-4.0-Retro-Optics.apk
           retention-days: 14
