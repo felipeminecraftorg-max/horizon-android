@@ -596,6 +596,125 @@ pub fn button(ui: &mut Ui<'_>, rect: [f32; 4], label: &str, icon: Option<Icon>, 
     );
 }
 
+/// Glass Lab V7 components adapted to the native Horizon HUD.
+/// These are actual interactive surfaces: callers keep their existing hitboxes,
+/// state and touch handlers rather than replacing them with visual mockups.
+/// The material in panel() is rasterized by the WGSL backdrop-lens pipeline.
+pub fn component_card(ui: &mut Ui<'_>, rect: [f32; 4], emphasized: bool) {
+    let th = active_theme();
+    let [x, y, w, h] = rect;
+    if th.experience == ExperiencePreset::OldSchool {
+        // A wide settings/catalog card should remain readable, not repeat
+        // previously composited text as a giant refractive lens.
+        ui.rounded(x, y, w, h, 12., color::hex(0x101927, if emphasized { 192 } else { 174 }));
+        ui.stroke_rounded(x, y, w, h, 12., 0.75, color::hex(0xC8DAF0, 65));
+        ui.fill(x + 13., y + 2., (w - 26.).max(0.), 0.8,
+            color::hex(0xEFF5FF, 62));
+    } else if th.experience == ExperiencePreset::LiquidGlass {
+        ui.rounded(x, y, w, h, 15., color::hex(0x162A32, if emphasized { 105 } else { 77 }));
+        ui.stroke_rounded(x, y, w, h, 15., 0.8, color::hex(0xE2F7FF, 84));
+    } else {
+        ui.rounded(x, y, w, h, 14., th.surface);
+    }
+}
+
+/// V7 pill/chip: translucent text-bearing object, small enough for GPU optics.
+pub fn component_chip(ui: &mut Ui<'_>, rect: [f32; 4], selected: bool) {
+    let th = active_theme();
+    let [x, y, w, h] = rect;
+    if th.experience == ExperiencePreset::Standard {
+        ui.rounded(x, y, w, h, h / 2., if selected { th.accent } else { th.surface });
+    } else {
+        // The chip's backdrop is a single real lens; the label is emitted
+        // afterwards so glyphs aren't sampled twice by adjacent lenses.
+        panel(ui, rect, if th.experience == ExperiencePreset::OldSchool { 9. } else { h / 2. }, selected);
+        if selected {
+            ui.stroke_rounded(x + 1., y + 1., w - 2., h - 2.,
+                if th.experience == ExperiencePreset::OldSchool { 8. } else { h / 2. - 1. },
+                0.85, color::hex(0xF1F5FF, 137));
+        }
+    }
+}
+
+/// Slider uses the same fraction as the native settings gesture handler.
+/// Its thumb is intentionally legible (satin white / aluminium), while the
+/// track stays partially transparent. Works on both Android touch and mouse.
+pub fn component_slider(ui: &mut Ui<'_>, rect: [f32; 4], value: f32, value_label: &str) {
+    let th = active_theme();
+    let [x, y, w, h] = rect;
+    let old = th.experience == ExperiencePreset::OldSchool;
+    panel(ui, rect, if old { 10. } else { h * 0.5 }, false);
+    let caption = ui.fit_text(Face::SemiBold, 12., value_label, w - 16.);
+    ui.centered_fit(Face::SemiBold, 12.,
+        [x + 6., y + 2., w - 12., 18.], color::hex(0xF0F5FC, 245), &caption);
+    let bar_x = x + 10.;
+    let bar_y = y + h - 12.;
+    let bar_w = (w - 20.).max(24.);
+    let t = value.clamp(0., 1.);
+    ui.rounded(bar_x, bar_y, bar_w, 5., 2.5,
+        color::hex(if old { 0x71849B } else { 0xDCE9F5 }, 83));
+    ui.rounded(bar_x, bar_y, (bar_w * t).max(2.), 5., 2.5,
+        color::hex(if old { 0xCAD7EA } else { 0xEDF9FF }, if old { 185 } else { 128 }));
+    let thumb_w = if old { 9. } else { 11. };
+    let thumb_x = (bar_x + bar_w * t - thumb_w * 0.5)
+        .clamp(bar_x - 1., bar_x + bar_w - thumb_w + 1.);
+    ui.rounded(thumb_x, bar_y - 4., thumb_w, 13.,
+        if old { 3.5 } else { thumb_w * 0.5 },
+        color::hex(if old { 0xE1E7EF } else { 0xF7FCFF }, 229));
+    ui.stroke_rounded(thumb_x, bar_y - 4., thumb_w, 13.,
+        if old { 3.5 } else { thumb_w * 0.5 },
+        0.8, color::hex(0xFFFFFF, 155));
+}
+
+/// Toggle: selectable translucent track with an opaque, touch-readable thumb.
+/// The caller owns on/off state and actual click target.
+pub fn component_switch(ui: &mut Ui<'_>, x: f32, y: f32, on: bool) {
+    let th = active_theme();
+    let old = th.experience == ExperiencePreset::OldSchool;
+    let rect = [x, y, 52., 28.];
+    panel(ui, rect, if old { 10. } else { 14. }, on);
+    let travel = if on { 26. } else { 4. };
+    let thumb_d = 20.;
+    ui.rounded(x + travel, y + 4., thumb_d, thumb_d,
+        if old { 6. } else { 10. },
+        color::hex(if old { 0xEBEEF3 } else { 0xF7FBFF }, 236));
+    if on {
+        ui.icon(Icon::Check, x + travel + 4., y + 8., 12.,
+            color::hex(if old { 0x253243 } else { 0x3E6872 }, 245));
+    }
+}
+
+/// Track containing *one* active lens; all tab labels remain crisp. The focus
+/// fraction may be supplied by a spring; touch targets are registered by caller.
+pub fn component_tabs(ui: &mut Ui<'_>, rect: [f32; 4],
+    labels: [&str; 2], focused: f32) {
+    let th = active_theme();
+    let [x, y, w, h] = rect;
+    let old = th.experience == ExperiencePreset::OldSchool;
+    ui.rounded(x, y, w, h, if old { 11. } else { h / 2. },
+        color::hex(if old { 0x171C2D } else { 0xB9D5DE }, if old { 144 } else { 34 }));
+    let part_w = w / 2.;
+    let fx = x + part_w * focused.clamp(0., 1.);
+    panel(ui, [fx + 2., y + 2., part_w - 4., h - 4.],
+        if old { 9. } else { (h - 4.) / 2. }, true);
+    for (i, label) in labels.into_iter().enumerate() {
+        let selected = (focused - i as f32).abs() < 0.5;
+        ui.centered_fit(Face::Medium, 13.,
+            [x + i as f32 * part_w + 5., y + 2., part_w - 10., h - 4.],
+            if selected { th.text_primary } else { th.text_muted }, label);
+    }
+}
+
+/// Sidebar selected bubble shares the same V7 optical surface as controls;
+/// scrolling and navigation never draw glyphs into the lens framebuffer.
+pub fn component_circular_icon(ui: &mut Ui<'_>, rect: [f32; 4], icon: Icon) {
+    let th = active_theme();
+    panel(ui, rect, rect[3] / 2., true);
+    let size = (rect[3] * 0.46).clamp(16., 24.);
+    ui.icon(icon, rect[0] + (rect[2] - size) / 2.,
+        rect[1] + (rect[3] - size) / 2., size, th.text_primary);
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum HomeAction {
     Play,
