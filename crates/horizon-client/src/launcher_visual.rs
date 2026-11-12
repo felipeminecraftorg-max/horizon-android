@@ -439,6 +439,15 @@ pub fn panel(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, emphasized: bool) {
         return;
     }
     if th.experience == ExperiencePreset::OldSchool && th.material == Material::Aero {
+        // Large content areas need a quiet base, not a refractive lens.
+        // Lens-on-lens overdraw made neighbouring labels appear at card edges.
+        // Interactive controls and utility tiles retain real WGSL chrome.
+        if w > 370. && h > 155. {
+            ui.rounded(x, y, w, h, radius, color::hex(0x121722, 108));
+            ui.stroke_rounded(x, y, w, h, radius, 0.95, color::hex(0xE2E7F6, 75));
+            ui.fill(x + radius, y + 2., (w - radius * 2.).max(0.), 1., color::hex(0xFFFFFF, 51));
+            return;
+        }
         // Actual GPU-composited chrome: WGSL samples the live framebuffer and
         // evaluates the PS3 pearl surface from the exported Glass Lab profile.
         // The controls are not opaque rounded rectangles with fake highlights.
@@ -660,6 +669,7 @@ fn shell_console(
     account: &str,
     signed_in: bool,
     version: &str,
+    animated_nav: Option<f32>,
     mut target: impl FnMut([f32; 4], ShellAction),
 ) -> Layout {
     let th = active_theme();
@@ -684,6 +694,15 @@ fn shell_console(
     ui.icon(Icon::Gear, settings[0] + 10., settings[1] + 9., 19., th.text_primary);
     target(settings, ShellAction::Appearance);
     ui.fill(24., 117., w - 48., 1., color::hex(0xD4D8EB, 72));
+    // The selection lens is a single, continuous control; labels stay above
+    // it and the material can glide between tabs without capturing their text.
+    let selected_rect = layout.nav_rect(w, h, selected, items.len());
+    let selected_x = animated_nav
+        .unwrap_or(selected_rect[0])
+        .clamp(24., (w - selected_rect[2] - 24.).max(24.));
+    let selection = [selected_x + 7., 107., (selected_rect[2] - 14.).max(20.), 9.];
+    panel(ui, selection, 4.5, true);
+    ui.fill(selection[0] + 13., selection[1] + 6., (selection[2] - 26.).max(0.), 1., color::hex(0xE7EFFF, 175));
 
     for (i, (label, _icon)) in items.iter().enumerate() {
         let tab = layout.nav_rect(w, h, i, items.len());
@@ -697,18 +716,12 @@ fn shell_console(
             if chosen { th.text_primary } else { th.text_muted },
             &fitted,
         );
-        if chosen {
-            let underline_w = (tw + 16.).min(tab[2] - 8.);
-            let underline_x = tab[0] + (tab[2] - underline_w) * 0.5;
-            ui.rounded(underline_x - 12., tab[1] + 36., underline_w + 24., 3., 1.5, color::hex(0xB4A9FF, 35));
-            ui.fill(underline_x, tab[1] + 37., underline_w, 1., color::hex(0xEAE8FF, 230));
-        }
         target(tab, ShellAction::Page(i));
     }
     layout
 }
 
-/// Header and adaptive navigation shared by the app and the native captures.
+/// Public capture API; captures use the settled selected state.
 #[allow(clippy::too_many_arguments)]
 pub fn shell(
     ui: &mut Ui<'_>,
@@ -717,13 +730,29 @@ pub fn shell(
     account: &str,
     signed_in: bool,
     version: &str,
+    target: impl FnMut([f32; 4], ShellAction),
+) -> Layout {
+    shell_animated(ui, items, selected, account, signed_in, version, None, target)
+}
+
+/// Launcher-only continuous navigation selection, driven by the existing
+/// V7 spring state. Neither routes nor hitboxes move with the animation.
+#[allow(clippy::too_many_arguments)]
+pub fn shell_animated(
+    ui: &mut Ui<'_>,
+    items: &[(&str, Icon)],
+    selected: usize,
+    account: &str,
+    signed_in: bool,
+    version: &str,
+    animated_nav: Option<f32>,
     mut target: impl FnMut([f32; 4], ShellAction),
 ) -> Layout {
     let th = active_theme();
     let (w, h) = (ui.w, ui.h);
     let layout = Layout::new(w, h);
     if layout.console && !layout.portrait {
-        return shell_console(ui, items, selected, account, signed_in, version, target);
+        return shell_console(ui, items, selected, account, signed_in, version, animated_nav, target);
     }
     ui.horizon_logo(18., 17., 31.);
     ui.text(Face::SemiBold, 17., 58., 13., th.text_primary, "Horizon");
@@ -753,14 +782,19 @@ pub fn shell(
     // Liquid Glass: an entirely different narrow icon dock. Keep tab content
     // outside the glass layer; the icons and their hitboxes remain crisp.
     if th.experience == ExperiencePreset::LiquidGlass && !layout.portrait {
-        panel(ui, [19., 83., 81., (h - 99.).max(80.)], 31., false);
+        // Underlay is NOT a second live lens. This prevents bright seams from
+        // stacking, while keeping each active icon an optical control.
+        let rail = [19., 83., 81., (h - 99.).max(80.)];
+        ui.rounded(rail[0], rail[1], rail[2], rail[3], 28., color::hex(0xE9F6FF, 16));
+        ui.stroke_rounded(rail[0], rail[1], rail[2], rail[3], 28., 0.7, color::hex(0xEAF6FF, 65));
+        let focus_r = layout.nav_rect(w, h, selected, items.len());
+        let pill_y = animated_nav.unwrap_or(focus_r[1])
+            .clamp(84., (h - 59.).max(84.));
+        panel(ui, [focus_r[0] + 3., pill_y + 1., focus_r[2] - 6., 42.], 18., true);
         for (i, (_, icon)) in items.iter().enumerate() {
             let r = layout.nav_rect(w, h, i, items.len());
-            if i == selected {
-                panel(ui, [r[0] + 3., r[1] + 1., r[2] - 6., 42.], 18., true);
-            }
             ui.icon(
-                *icon, r[0] + (r[2] - 21.) / 2., r[1] + 11., 21.,
+                *icon, r[0] + (r[2] - 23.) / 2., r[1] + 10., 23.,
                 if i == selected { th.text_primary } else { th.text_muted },
             );
             target(r, ShellAction::Page(i));
@@ -907,29 +941,30 @@ fn home_old_school(
     let card_w = (available - gap * (cols - 1) as f32) / cols as f32;
     let card_h = if narrow { ((h - poster_h - 3. * gap) / 3.).max(39.) }
         else { (h - gap) * 0.5 };
+    // Muted PS3/Xbox-era tinted acrylic: 10-15% pigment rather than loud,
+    // flat dashboard paint. The chrome specular stays visible underneath.
     let shortcuts = [
-        ("Mods", Icon::Mods, HomeAction::Mods),
-        ("Packs", Icon::Packs, HomeAction::Packs),
-        ("Shaders", Icon::Shaders, HomeAction::Shaders),
-        ("My files", Icon::Folder, HomeAction::Files),
-        ("Skins", Icon::Person, HomeAction::Skins),
-        ("Settings", Icon::Gear, HomeAction::Settings),
+        ("Mods", Icon::Mods, HomeAction::Mods, 0xAE8CC2_u32),
+        ("Packs", Icon::Packs, HomeAction::Packs, 0x7AA7CF_u32),
+        ("Shaders", Icon::Shaders, HomeAction::Shaders, 0xC4A878_u32),
+        ("My files", Icon::Folder, HomeAction::Files, 0x779BB3_u32),
+        ("Skins", Icon::Person, HomeAction::Skins, 0x80AE92_u32),
+        ("Settings", Icon::Gear, HomeAction::Settings, 0xA2A8B7_u32),
     ];
-    for (i, (name, icon, action)) in shortcuts.into_iter().enumerate() {
+    for (i, (name, icon, action, tint)) in shortcuts.into_iter().enumerate() {
         let row = (i / cols) as f32;
         let col = (i % cols) as f32;
         let card = [tx + col * (card_w + gap), ty + row * (card_h + gap), card_w, card_h];
         if card[1] + card[3] > y + h + 1. { continue; }
         panel(ui, card, 10., false);
-        // Satin upper edge and discreet diagonal reflection.
-        ui.fill(card[0] + 6., card[1] + 3., card_w - 12., 1., color::hex(0xFFFFFF, 65));
-        ui.stroke_rounded(card[0], card[1], card_w, card_h, 7., 0.8, color::hex(0xEBF5FF, 89));
-        let icon_size = if narrow { 21. } else { (card_h * 0.30).min(33.) };
+        ui.rounded(card[0] + 3., card[1] + 3., card_w - 6., card_h - 6.,
+            8., color::hex(tint, 34));
+        let icon_size = if narrow { 24. } else { (card_h * 0.32).clamp(27., 35.) };
         ui.icon(icon, card[0] + (card_w - icon_size) * 0.5,
-            card[1] + (card_h * 0.23).min(35.), icon_size, color::hex(0xF5F7FF, 243));
-        let font = if narrow { 12. } else { 15. };
+            card[1] + (card_h * 0.22).min(34.), icon_size, color::hex(0xF5F7FF, 243));
+        let font = if narrow { 12.5 } else { 14.5 };
         ui.centered_fit(Face::Medium, font,
-            [card[0] + 4., card[1] + card_h - if narrow { 26. } else { 38. }, card_w - 8., 29.],
+            [card[0] + 6., card[1] + card_h - if narrow { 28. } else { 39. }, card_w - 12., 30.],
             color::hex(0xF4F5FB, 255), name);
         target(card, action);
     }
@@ -953,7 +988,10 @@ fn home_liquid(
     // No synthetic pixel-art backdrop: true refraction samples the live theme wallpaper.
     // Background imagery remains visible. The lens is light and only bends at
     // the edge; central text is never baked into the background texture.
-    panel(ui, hero, 25., false);
+    // Spacious content must remain visually quiet. Reserve true lenses for
+    // Play/Profile and the utility controls instead of stacking glass over glass.
+    ui.rounded(x, y, w, hero_h, 25., color::hex(0x0B1721, 67));
+    ui.stroke_rounded(x, y, w, hero_h, 25., 0.9, color::hex(0xE5FAFF, 72));
     // Soft left-side scrim (not another frosted panel) preserves contrast.
     for i in 0..8 {
         let fraction = i as f32 / 8.;
@@ -964,8 +1002,8 @@ fn home_liquid(
 
     // Icon tile plus title and clear status.
     let icon_r = [x + 25., y + 44., 75., 75.];
-    ui.rounded(icon_r[0], icon_r[1], 75., 75., 18., color::hex(0x121D22, 165));
-    ui.border(icon_r[0], icon_r[1], 75., 75., 18., color::hex(0xE3F7FF, 67));
+    ui.rounded(icon_r[0], icon_r[1], 75., 75., 18., color::hex(0xCFE8EA, 21));
+    ui.border(icon_r[0], icon_r[1], 75., 75., 18., color::hex(0xE3F7FF, 83));
     ui.icon(Icon::Gamepad, icon_r[0] + 21., icon_r[1] + 21., 33.,
         color::hex(0xE9F5F7, 250));
     ui.text(Face::SemiBold, 27., x + 117., y + 50., color::hex(0xFFFFFF, 255),
@@ -1019,10 +1057,10 @@ fn home_liquid(
         let r = [x + i as f32 * (tile_w + gap), tiles_y, tile_w, tiles_h];
         // Independent, restrained physical controls; no stacked nested glass.
         panel(ui, r, 20., false);
-        let size = (tiles_h * 0.36).min(28.);
+        let size = (tiles_h * 0.39).clamp(23., 30.);
         ui.icon(icon, r[0] + (tile_w - size) * 0.5,
             r[1] + tiles_h * 0.22, size, th.text_primary);
-        ui.centered_fit(Face::Medium, 11.5,
+        ui.centered_fit(Face::Medium, 12.5,
             [r[0] + 4., r[1] + tiles_h - 27., tile_w - 8., 22.],
             th.text_primary, label);
         target(r, action);
