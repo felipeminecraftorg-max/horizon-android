@@ -396,7 +396,8 @@ pub fn panel(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, emphasized: bool) {
 }
 
 pub fn button(ui: &mut Ui<'_>, rect: [f32; 4], label: &str, icon: Option<Icon>, accent: bool) {
-    panel(ui, rect, rect[3] * 0.46, accent);
+    // A true semicircular cap, not an old-style frosted rounded rectangle.
+    panel(ui, rect, rect[3] * 0.5, accent);
     let th = active_theme();
     let fg = if accent && th.material == Material::Opaque {
         th.on_accent
@@ -509,21 +510,34 @@ pub fn shell(
     panel(ui, gear, 22., false);
     ui.icon(Icon::Gear, gear[0] + 12., 24., 20., th.text_primary);
     target(gear, ShellAction::Appearance);
-    if layout.portrait {
-        panel(ui, [12., h - 78., w - 24., 68.], 23., false);
-    } else {
-        panel(ui, [12., 72., 180., (h - 84.).max(10.)], 24., false);
+    // The navigation rail is no longer one giant frosted sheet for Liquid
+    // Glass. Each selected icon is an individual physical lens instead.
+    if th.material != Material::Glass {
+        if layout.portrait {
+            panel(ui, [12., h - 78., w - 24., 68.], 23., false);
+        } else {
+            panel(ui, [12., 72., 180., (h - 84.).max(10.)], 24., false);
+        }
     }
     for (i, (label, icon)) in items.iter().enumerate() {
         let r = layout.nav_rect(w, h, i, items.len());
         let chosen = i == selected;
         if chosen {
-            panel(
-                ui,
-                [r[0] + 2., r[1] + 2., r[2] - 4., r[3] - 4.],
-                if layout.portrait { 17. } else { 21. },
-                true,
-            );
+            if th.material == Material::Glass {
+                let bubble = if layout.portrait {
+                    [r[0] + (r[2] - 36.) * 0.5, r[1] + 2., 36., 36.]
+                } else {
+                    [r[0] + 7., r[1] + 5., 38., 38.]
+                };
+                panel(ui, bubble, bubble[3] * 0.5, true);
+            } else {
+                panel(
+                    ui,
+                    [r[0] + 2., r[1] + 2., r[2] - 4., r[3] - 4.],
+                    if layout.portrait { 17. } else { 21. },
+                    true,
+                );
+            }
         }
         let fg = if chosen {
             th.text_primary
@@ -531,18 +545,37 @@ pub fn shell(
             th.text_muted
         };
         if layout.portrait {
-            ui.icon(*icon, r[0] + (r[2] - 20.) / 2., r[1] + 7., 20., fg);
+            ui.icon(
+                *icon,
+                r[0] + (r[2] - 20.) / 2.,
+                r[1] + if th.material == Material::Glass { 10. } else { 7. },
+                20.,
+                fg,
+            );
             let text = ui.fit_text(Face::Medium, 9., label, r[2] - 4.);
             ui.centered_fit(
                 Face::Medium,
                 9.,
-                [r[0] + 2., r[1] + 32., r[2] - 4., 16.],
+                [r[0] + 2., r[1] + if th.material == Material::Glass { 40. } else { 32. }, r[2] - 4., 16.],
                 fg,
                 &text,
             );
         } else {
-            ui.icon(*icon, r[0] + 16., r[1] + 13., 20., fg);
-            ui.text(Face::Medium, 13., r[0] + 47., r[1] + 13., fg, label);
+            ui.icon(
+                *icon,
+                r[0] + if th.material == Material::Glass { 16. } else { 16. },
+                r[1] + if th.material == Material::Glass { 14. } else { 13. },
+                20.,
+                fg,
+            );
+            ui.text(
+                Face::Medium,
+                13.,
+                r[0] + if th.material == Material::Glass { 55. } else { 47. },
+                r[1] + 13.,
+                fg,
+                label,
+            );
         }
         target(r, ShellAction::Page(i));
     }
@@ -571,7 +604,21 @@ pub fn home(
     } else {
         (h - 174.).clamp(146., 204.)
     };
-    panel(ui, [x, y, w, hero_h], 24., false);
+    // Realistic glass does not cover the entire page in a blue tinted sheet.
+    // Content floats directly above the wallpaper. A compact status lens
+    // anchors the section instead of a giant frosted content rectangle.
+    if th.material != Material::Glass {
+        panel(ui, [x, y, w, hero_h], 24., false);
+    } else {
+        let status_width = (ui.measure(Face::Regular, 12., view.renderer) + 49.)
+            .clamp(82., (w - 34.).max(82.));
+        panel(
+            ui,
+            [x + 17., y + hero_h - 47., status_width, 37.],
+            18.5,
+            false,
+        );
+    }
     ui.text(
         Face::Medium,
         11.,
@@ -671,16 +718,33 @@ pub fn home(
         if r[1] + r[3] > y + h {
             continue;
         }
-        panel(ui, r, 17., false);
-        ui.icon(icon, r[0] + 14., r[1] + 12., 18., th.text_muted);
-        ui.text(
-            Face::Medium,
-            12.,
-            r[0] + 14.,
-            r[1] + 36.,
-            th.text_primary,
-            label,
-        );
+        if th.material == Material::Glass {
+            // Each shortcut is a tangible lens. The label remains crisp
+            // outside the optical surface, so glass never blurs the text.
+            let bubble = [r[0] + 11., r[1] + 11., 44., 44.];
+            panel(ui, bubble, 22., false);
+            ui.icon(icon, bubble[0] + 13., bubble[1] + 13., 18., th.text_primary);
+            let label = ui.fit_text(Face::Medium, 12., label, (r[2] - 74.).max(24.));
+            ui.text(
+                Face::Medium,
+                12.,
+                r[0] + 65.,
+                r[1] + 21.,
+                th.text_primary,
+                &label,
+            );
+        } else {
+            panel(ui, r, 17., false);
+            ui.icon(icon, r[0] + 14., r[1] + 12., 18., th.text_muted);
+            ui.text(
+                Face::Medium,
+                12.,
+                r[0] + 14.,
+                r[1] + 36.,
+                th.text_primary,
+                label,
+            );
+        }
         target(r, action);
     }
     if portrait && qy + 172. < y + h {
