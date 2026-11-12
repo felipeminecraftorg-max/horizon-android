@@ -18,9 +18,9 @@ pub struct GlassTuning {
 impl Default for GlassTuning {
     fn default() -> Self {
         Self {
-            opacity: 0.08,
-            blur: 2.,
-            refraction: 14.,
+            opacity: 0.06,
+            blur: 1.0,
+            refraction: 20.,
         }
     }
 }
@@ -377,6 +377,12 @@ pub fn panel(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, emphasized: bool) {
     };
     ui.rounded(x, y, w, h, radius, tint);
     sheen(ui, r, radius, aero);
+    if th.experience == ExperiencePreset::OldSchool {
+        // The console style has metal insets and a bottom chrome reflection.
+        // These are real per-component details, not a tinted glass skin.
+        ui.fill(x + radius, y + h - 2., (w - 2. * radius).max(0.), 1., color::hex(0xCFD9E6, if emphasized { 94 } else { 42 }));
+        ui.fill(x + radius, y + 2., (w - 2. * radius).max(0.), 0.7, color::hex(0xF7FAFF, if emphasized { 125 } else { 66 }));
+    }
     ui.stroke_rounded(
         x,
         y,
@@ -397,8 +403,8 @@ pub fn panel(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, emphasized: bool) {
 
 pub fn button(ui: &mut Ui<'_>, rect: [f32; 4], label: &str, icon: Option<Icon>, accent: bool) {
     // A true semicircular cap, not an old-style frosted rounded rectangle.
-    panel(ui, rect, rect[3] * 0.5, accent);
     let th = active_theme();
+    panel(ui, rect, if th.experience == ExperiencePreset::OldSchool { 10. } else { rect[3] * 0.5 }, accent);
     let fg = if accent && th.material == Material::Opaque {
         th.on_accent
     } else {
