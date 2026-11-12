@@ -2151,6 +2151,8 @@ impl Launcher {
         use horizon_client::content_files::Kind;
 
         let header_y = 60.0 + slide_y;
+        // Compact screens place the tab group below the title, never over it.
+        let section_shift = if compact { 42.0 } else { 0.0 };
         ui.text(
             Face::SemiBold,
             19.0,
@@ -2168,7 +2170,8 @@ impl Launcher {
         // selector, no double buttons that refract one another's labels.
         let tab_w = if compact { 104.0 } else { 126.0 };
         let group = [content_x + content_w - tab_w * 2.0 - 6.0,
-            header_y - 1.0, tab_w * 2.0 + 6.0, 33.0];
+            if compact { header_y + 30.0 } else { header_y - 1.0 },
+            tab_w * 2.0 + 6.0, 33.0];
         let selected = if self.catalog.installed_sub_tab == InstalledSubTab::Library {
             0
         } else { 1 };
@@ -2182,7 +2185,7 @@ impl Launcher {
 
         if self.catalog.installed_sub_tab == InstalledSubTab::Library {
             // Row 1: Search filter input + Sort selector + Quick Import CTA
-            let row1_y = 96.0 + slide_y;
+            let row1_y = 96.0 + slide_y + section_shift;
             let sort_w = if compact { 96.0 } else { 114.0 };
             let imp_w = if compact { 78.0 } else { 94.0 };
             let search_w = (content_w - sort_w - imp_w - 14.0).max(100.0);
@@ -2225,7 +2228,7 @@ impl Launcher {
             );
 
             // Row 2: Category filter pills (All, Mods, Resource Packs, Shaders)
-            let row2_y = 136.0 + slide_y;
+            let row2_y = 136.0 + slide_y + section_shift;
             let pill_gap = 6.0;
             let pill_w = ((content_w - pill_gap * 3.0) / 4.0).max(64.0);
             for (i, filter) in InstalledFilter::ALL.into_iter().enumerate() {
@@ -2267,7 +2270,7 @@ impl Launcher {
                 })
                 .collect();
 
-            let top = 172.0 + slide_y;
+            let top = 172.0 + slide_y + section_shift;
             let bottom = h - 42.0;
             if filtered.is_empty() {
                 self.list_view = None;
@@ -2497,7 +2500,7 @@ impl Launcher {
 
         // ---- Sub-View 2: Integrated Mini File Manager (`InstalledSubTab::FileManager`) ----
         // Row 1: Back, Forward, Up + Clickable Breadcrumb Trail + Import & New Folder CTAs
-        let nav_y = 94.0 + slide_y;
+        let nav_y = 94.0 + slide_y + section_shift;
         let nav_btn_w = 32.0;
         let has_back = !self.catalog.fm_back_stack.is_empty();
         let has_fwd = !self.catalog.fm_forward_stack.is_empty();
@@ -2620,7 +2623,7 @@ impl Launcher {
         }
 
         // Row 2: Quick Root Folder Pills (Root, Worlds, Mods, Packs, Shaders, Controls, Shots, Reports)
-        let root_y = 128.0 + slide_y;
+        let root_y = 128.0 + slide_y + section_shift;
         let root_dirs = crate::document_store::FM_ROOT_DIRS;
         let r_gap = 4.0;
         let r_w = ((content_w - r_gap * (root_dirs.len() as f32 - 1.0)) / root_dirs.len() as f32)
@@ -2645,7 +2648,7 @@ impl Launcher {
         }
 
         // Row 3: Multi-Select & Clipboard Action Toolbar
-        let tool_y = 158.0 + slide_y;
+        let tool_y = 158.0 + slide_y + section_shift;
         let sel_count = self.catalog.fm_selected.len();
         let clip_count = self
             .catalog
@@ -2680,7 +2683,7 @@ impl Launcher {
         }
 
         // Scrollable File & Directory Rows
-        let top = 190.0 + slide_y;
+        let top = 190.0 + slide_y + section_shift;
         let bottom = h - 42.0;
         if self.catalog.fm_entries.is_empty() {
             self.list_view = None;
