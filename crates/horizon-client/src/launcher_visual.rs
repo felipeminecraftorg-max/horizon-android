@@ -1538,7 +1538,7 @@ pub fn appearance(
     let tuning_height = if cfg.glass_effects
         && matches!(cfg.preset, ThemePreset::LiquidGlass | ThemePreset::OldSchool)
     {
-        let optics = cfg.glass.normalized();
+        let optics = cfg.current_optics();
         for (i, (label, value, fraction, action)) in [
             (
                 "Opacidade",
