@@ -571,6 +571,7 @@ pub enum HomeAction {
     Play,
     Profile,
     Appearance,
+    Settings,
     Mods,
     Packs,
     Shaders,
@@ -899,7 +900,7 @@ fn home_old_school(
         ("Shaders", Icon::Shaders, HomeAction::Shaders, 0x79613D_u32),
         ("My files", Icon::Folder, HomeAction::Files, 0x34547C_u32),
         ("Skins", Icon::Person, HomeAction::Skins, 0x456A47_u32),
-        ("Settings", Icon::Gear, HomeAction::Appearance, 0x494A57_u32),
+        ("Settings", Icon::Gear, HomeAction::Settings, 0x494A57_u32),
     ];
     for (i, (name, icon, action, rgb)) in shortcuts.into_iter().enumerate() {
         let row = (i / cols) as f32;
@@ -999,7 +1000,7 @@ fn home_liquid(
         ("Packs", Icon::Packs, HomeAction::Packs),
         ("Shaders", Icon::Shaders, HomeAction::Shaders),
         ("My files", Icon::Folder, HomeAction::Files),
-        ("Settings", Icon::Gear, HomeAction::Appearance),
+        ("Settings", Icon::Gear, HomeAction::Settings),
         ("Skins", Icon::Person, HomeAction::Skins),
     ].into_iter().enumerate() {
         let r = [x + i as f32 * (tile_w + gap), tiles_y, tile_w, tiles_h];
@@ -1587,7 +1588,7 @@ mod tests {
                 for wanted in [
                     HomeAction::Play, HomeAction::Profile, HomeAction::Mods,
                     HomeAction::Packs, HomeAction::Shaders, HomeAction::Files,
-                    HomeAction::Appearance, HomeAction::Skins,
+                    HomeAction::Settings, HomeAction::Skins,
                 ] {
                     assert!(actions.iter().any(|(_, action)| *action == wanted),
                         "{preset:?} {width}x{height} {wanted:?}");
