@@ -515,8 +515,14 @@ fn draw_setting_card(
     subtitle: &str,
     right_control: SettingControl<'_>,
 ) {
+    let experience = horizon_client::ui_theme::active_theme().experience;
+    let console = experience == horizon_client::ui_theme::ExperiencePreset::OldSchool;
     if let SettingControl::SectionHeader(badge, icon) = right_control {
-        ui.rounded(x, y + 6.0, w, h - 10.0, 16.0, my3_surface());
+        if console {
+            visual::panel(ui, [x, y + 6.0, w, h - 10.0], 10.0, true);
+        } else {
+            ui.rounded(x, y + 6.0, w, h - 10.0, 16.0, my3_surface());
+        }
         ui.border(x, y + 6.0, w, h - 10.0, 16.0, my3_border());
         ui.rounded(x + 12.0, y + 13.0, 34.0, 34.0, 11.0, my3_accent_soft());
         ui.icon(icon, x + 20.0, y + 21.0, 18.0, my3_accent());
@@ -560,18 +566,23 @@ fn draw_setting_card(
             | SettingControl::Button(_, _, true)
             | SettingControl::TextField { active: true, .. }
     );
-    ui.rounded(
-        x,
-        y,
-        w,
-        h,
-        18.0,
-        if is_active_card {
+    if console {
+        // Console-channel rows are tighter, rectangular brushed-metal plates.
+        visual::panel(ui, [x, y, w, h], 10., is_active_card);
+    } else if experience == horizon_client::ui_theme::ExperiencePreset::LiquidGlass {
+        // Keep content surfaces lightweight; only true controls get optical
+        // lenses. Avoid glass-on-glass and expensive passes on every settings row.
+        ui.rounded(x, y, w, h, 14., if is_active_card {
             my3_surface_high()
         } else {
-            my3_card_bg()
-        },
-    );
+            color::with_alpha(my3_card_bg(), 0.54)
+        });
+    } else {
+        ui.rounded(
+            x, y, w, h, 18.0,
+            if is_active_card { my3_surface_high() } else { my3_card_bg() },
+        );
+    }
     if is_active_card {
         ui.rounded(
             x + 4.0,
