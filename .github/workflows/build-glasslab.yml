@@ -1,0 +1,42 @@
+name: Glass Lab independent APK
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'experiments/glass-lab/source.zip'
+      - '.github/workflows/build-glasslab.yml'
+  push:
+    paths:
+      - 'experiments/glass-lab/source.zip'
+      - '.github/workflows/build-glasslab.yml'
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Install Android SDK 35
+        run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Extract standalone project
+        run: unzip -q experiments/glass-lab/source.zip -d "$RUNNER_TEMP"
+      - name: Compile standalone Glass Lab APK
+        run: cd "$RUNNER_TEMP/glass_lab_project" && gradle :app:assembleDebug --no-daemon --stacktrace
+      - name: Stage APK
+        run: |
+          mkdir -p dist
+          cp "$RUNNER_TEMP/glass_lab_project/app/build/outputs/apk/debug/app-debug.apk" dist/GlassLab-1.0-Android.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GlassLab-Android-APK
+          path: dist/GlassLab-1.0-Android.apk
+          retention-days: 14
