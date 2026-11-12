@@ -49,6 +49,15 @@ fn ggx_distribution(nh: f32, rough: f32) -> f32 {
     let den = nh * nh * (a2 - 1.) + 1.;
     return a2 / max(3.14159265 * den * den, 0.00008);
 }
+// Old School has separate neighbouring tiles. Never refract text from another
+// tile through the next tile's chrome edge; sample only its own interior.
+// Liquid Glass keeps free-space environmental refraction as designed.
+fn confined_sample_pos(point: vec2<f32>, oldschool: bool) -> vec2<f32> {
+    let pad = max(2.5 * lens.optics.w, 2.0);
+    let lo = lens.rect.xy + vec2(pad);
+    let hi = max(lo, lens.rect.xy + lens.rect.zw - vec2(pad));
+    return select(point, clamp(point, lo, hi), oldschool);
+}
 fn normal_for(q: vec2<f32>, outside: vec2<f32>, p: vec2<f32>) -> vec2<f32> {
     if length(outside) > 0.001 { return normalize(outside) * sign(p); }
     return select(vec2(0., sign(p.y)), vec2(sign(p.x), 0.), q.x > q.y);
@@ -98,16 +107,16 @@ fn normal_for(q: vec2<f32>, outside: vec2<f32>, p: vec2<f32>) -> vec2<f32> {
     let max_bend = min(min(half_size.x, half_size.y) * 0.66,
         select(11. * dp + strength * 38. * dp, 45. * dp, oldschool));
     bend *= min(1., max_bend / max(length(bend), 0.001));
-    let refracted = pos + bend;
+    let refracted = confined_sample_pos(pos + bend, oldschool);
     let blur_radius = lens.profile[5].x * dp * (0.12 + wall * wall);
     var color = blur_scene(refracted, blur_radius);
     if wall > 0.02 {
         let fringe = outward * (wall * wall * lens.profile[2].w * dp);
-        color.r = mix(color.r, sample_scene(refracted + fringe).r, wall * 0.72);
-        color.b = mix(color.b, sample_scene(refracted - fringe).b, wall * 0.72);
+        color.r = mix(color.r, sample_scene(confined_sample_pos(refracted + fringe, oldschool)).r, wall * 0.72);
+        color.b = mix(color.b, sample_scene(confined_sample_pos(refracted - fringe, oldschool)).b, wall * 0.72);
     }
-    let ambient = sample_scene(pos + outward * (7. * dp + roll * 0.14));
-    let bounced = sample_scene(pos - outward * (6. * dp + roll * 0.25));
+    let ambient = sample_scene(confined_sample_pos(pos + outward * (7. * dp + roll * 0.14), oldschool));
+    let bounced = sample_scene(confined_sample_pos(pos - outward * (6. * dp + roll * 0.25), oldschool));
     let L = normalize(vec3(light_dir, lens.profile[1].z));
     let V = vec3(0., 0., 1.);
     let H = normalize(L + V);
@@ -157,7 +166,7 @@ fn normal_for(q: vec2<f32>, outside: vec2<f32>, p: vec2<f32>) -> vec2<f32> {
         }
         let fresnel = f0 + (vec3(1.) - f0) * pow(1. - nv, 5.);
         let reflected = reflect(incident, normal);
-        let reflected_scene = sample_scene(pos + reflected.xy * (17. * dp + roll * 0.76));
+        let reflected_scene = sample_scene(confined_sample_pos(pos + reflected.xy * (17. * dp + roll * 0.76), true));
         let env = mix(vec3(0.10, 0.13, 0.18), reflected_scene, 0.70);
         let reflection_amount = clamp(0.25 + 0.56 * chrome + 0.23 * metal, 0., 0.97);
         let strip_a = pow(max(dot(normal, normalize(vec3(-0.75, 0.34, 1.35)
