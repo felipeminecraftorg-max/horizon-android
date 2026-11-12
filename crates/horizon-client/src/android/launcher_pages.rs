@@ -91,6 +91,10 @@ pub(crate) struct AnimState {
     pub nav_pill_y: f32,
     pub nav_velocity: f32,
     pub target_nav_y: f32,
+    pub installed_tab_position: f32,
+    pub installed_tab_velocity: f32,
+    pub installed_tab_target: f32,
+    pub animation_dt: f32,
     pub page_fade: f32,
     pub page_slide: f32,
     pub progress_smooth: f32,
@@ -113,6 +117,10 @@ impl Default for AnimState {
             nav_pill_y: 62.0,
             nav_velocity: 0.,
             target_nav_y: 62.0,
+            installed_tab_position: 0.0,
+            installed_tab_velocity: 0.0,
+            installed_tab_target: 0.0,
+            animation_dt: 1. / 60.,
             page_fade: 1.0,
             page_slide: 0.0,
             progress_smooth: 0.0,
@@ -153,6 +161,8 @@ impl AnimState {
             self.last_has_modal = has_modal;
             self.nav_pill_y = target_nav_y;
             self.nav_velocity = 0.;
+            self.installed_tab_position = self.installed_tab_target;
+            self.installed_tab_velocity = 0.;
             self.page_fade = 1.0;
             self.page_slide = 0.0;
             self.modal_anim = if has_modal { 1.0 } else { 0.0 };
@@ -186,6 +196,7 @@ impl AnimState {
             raw_dt
         };
 
+        self.animation_dt = dt;
         let speed = (dt * 14.0).min(1.0);
         let experience = horizon_client::ui_theme::active_theme().experience;
         (self.nav_pill_y, self.nav_velocity) =
@@ -202,6 +213,25 @@ impl AnimState {
             self.section_expand[i] += (target - self.section_expand[i]) * (dt * 14.0).min(1.0);
         }
         self.shimmer_phase = (self.shimmer_phase + dt * 0.95) % 1.0;
+    }
+
+    /// Tab movement has independent momentum, unlike the primary navigation
+    /// rail. Its highlight is animated; actual tab targets stay fixed.
+    pub fn step_installed_tab(&mut self, selected_index: usize) {
+        self.installed_tab_target = selected_index.min(1) as f32;
+        if horizon_client::ui_theme::motion::reduced_motion() {
+            self.installed_tab_position = self.installed_tab_target;
+            self.installed_tab_velocity = 0.;
+            return;
+        }
+        (self.installed_tab_position, self.installed_tab_velocity) =
+            horizon_client::ui_theme::launcher_preset_pack::spring_position(
+                horizon_client::ui_theme::active_theme().experience,
+                self.installed_tab_position,
+                self.installed_tab_velocity,
+                self.installed_tab_target,
+                self.animation_dt,
+            );
     }
 
     pub fn trigger_page_transition(&mut self) {
@@ -230,6 +260,8 @@ impl AnimState {
             || self.page_slide.abs() > 0.35
             || (self.nav_pill_y - self.target_nav_y).abs() > 0.5
             || self.nav_velocity.abs() > 0.2
+            || (self.installed_tab_position - self.installed_tab_target).abs() > 0.003
+            || self.installed_tab_velocity.abs() > 0.005
             || (self.modal_anim > 0.01 && self.modal_anim < 0.99)
             || self.theme_pulse < 0.99
             || self.section_expand.iter().any(|v| *v > 0.01 && *v < 0.99)
@@ -1181,6 +1213,11 @@ impl Launcher {
             has_any_modal,
             self.catalog.sections,
         );
+        self.anim.step_installed_tab(
+            if self.catalog.installed_sub_tab == crate::catalog::InstalledSubTab::FileManager {
+                1
+            } else { 0 },
+        );
         let account_name = self
             .login
             .profile
@@ -2127,31 +2164,21 @@ impl Launcher {
             },
         );
 
-        // Top right segmented sub-tab switcher (Library vs File Manager)
+        // A genuine Glass Lab V7 segmented control: one animated refracting
+        // selector, no double buttons that refract one another's labels.
         let tab_w = if compact { 104.0 } else { 126.0 };
-        let lib_rect = [
-            content_x + content_w - tab_w * 2.0 - 6.0,
-            header_y - 1.0,
-            tab_w,
-            32.0,
-        ];
-        let fm_rect = [content_x + content_w - tab_w, header_y - 1.0, tab_w, 32.0];
-        button(
-            ui,
-            &mut self.targets,
-            lib_rect,
-            "Library",
-            Action::SetInstalledSubTab(InstalledSubTab::Library),
-            self.catalog.installed_sub_tab == InstalledSubTab::Library,
-        );
-        button(
-            ui,
-            &mut self.targets,
-            fm_rect,
-            "File Manager",
-            Action::SetInstalledSubTab(InstalledSubTab::FileManager),
-            self.catalog.installed_sub_tab == InstalledSubTab::FileManager,
-        );
+        let group = [content_x + content_w - tab_w * 2.0 - 6.0,
+            header_y - 1.0, tab_w * 2.0 + 6.0, 33.0];
+        let selected = if self.catalog.installed_sub_tab == InstalledSubTab::Library {
+            0
+        } else { 1 };
+        let rects = visual::segmented_tabs(ui, group,
+            &["Library", "Files"], selected, self.anim.installed_tab_position);
+        for (i, rect) in rects.into_iter().enumerate() {
+            self.targets.push((rect, Action::SetInstalledSubTab(
+                if i == 0 { InstalledSubTab::Library } else { InstalledSubTab::FileManager }
+            )));
+        }
 
         if self.catalog.installed_sub_tab == InstalledSubTab::Library {
             // Row 1: Search filter input + Sort selector + Quick Import CTA
@@ -2219,14 +2246,8 @@ impl Launcher {
                     pill_w,
                     28.0,
                 ];
-                button(
-                    ui,
-                    &mut self.targets,
-                    pr,
-                    &lbl,
-                    Action::SetInstalledFilter(filter),
-                    self.catalog.installed_filter == filter,
-                );
+                visual::filter_chip(ui, pr, &lbl, self.catalog.installed_filter == filter);
+                self.targets.push((pr, Action::SetInstalledFilter(filter)));
             }
 
             // Filtered items list
