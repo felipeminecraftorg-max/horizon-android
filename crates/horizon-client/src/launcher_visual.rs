@@ -561,6 +561,30 @@ pub fn panel(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, emphasized: bool) {
     );
 }
 
+/// V7's two-part switch: quiet inset track and a distinct optical thumb.
+/// Its knob is deliberately milky for legibility, never an invisible circle.
+pub fn glass_switch(ui: &mut Ui<'_>, rect: [f32; 4], on: bool) {
+    let theme = active_theme();
+    if theme.experience == ExperiencePreset::Standard {
+        ui.m3_switch(rect[0], rect[1], on);
+        return;
+    }
+    let [x, y, w, h] = rect;
+    let radius = h * 0.5;
+    let retro = theme.experience == ExperiencePreset::OldSchool;
+    ui.rounded(x, y, w, h, radius,
+        color::hex(if retro { 0x141820 } else { 0xC9E3E7 },
+            if retro { 184 } else { 35 }));
+    ui.stroke_rounded(x, y, w, h, radius, 0.85,
+        color::hex(0xEFF6FF, if on { 153 } else { 79 }));
+    let knob = h - 6.;
+    let knob_x = x + if on { w - knob - 3. } else { 3. };
+    panel(ui, [knob_x, y + 3., knob, knob], knob * 0.5, on);
+    ui.rounded(knob_x + knob * 0.33, y + 3. + knob * 0.33,
+        knob * 0.34, knob * 0.34, knob * 0.17,
+        color::hex(0xF5F9FF, if retro { 178 } else { 115 }));
+}
+
 /// GLASS_LAB_PRESET_V7: a true filter chip, not a generic full-height button.
 /// The optically raised pill is drawn only when selected; text stays crisp.
 pub fn filter_chip(ui: &mut Ui<'_>, rect: [f32; 4], label: &str, selected: bool) {
@@ -1529,7 +1553,7 @@ pub fn appearance(
         );
         let sub = ui.fit_text(Face::Regular, 11., subtitle, w - 98.);
         ui.text(Face::Regular, 11., x + 16., r[1] + 35., th.text_muted, &sub);
-        ui.m3_switch(x + w - 62., r[1] + 18., on);
+        glass_switch(ui, [x + w - 64., r[1] + 19., 48., 26.], on);
         if let Some(r) = ui.clip_rect(r) {
             target(r, action);
         }
