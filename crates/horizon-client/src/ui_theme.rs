@@ -979,6 +979,7 @@ impl<'a> Ui<'a> {
                 ((self.cursor.0 - x - w * 0.5) / (w * 0.5).max(1.)).clamp(-1., 1.),
                 ((self.cursor.1 - y - h * 0.5) / (h * 0.5).max(1.)).clamp(-1., 1.),
             ],
+            profile: launcher_preset_pack::uniform_profile(active_theme().experience),
         });
     }
     fn px_x(&self, v: f32) -> f32 {
@@ -3077,3 +3078,5 @@ mod tests {
 
 #[path = "launcher_visual.rs"]
 pub mod launcher_visual;
+#[path = "launcher_preset_pack.rs"]
+pub mod launcher_preset_pack;
