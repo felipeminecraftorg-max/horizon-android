@@ -98,6 +98,9 @@ pub(crate) struct AnimState {
     pub scroll_thumb_y: Option<f32>,
     pub scroll_thumb_velocity: f32,
     pub scroll_thumb_view: Option<[f32; 2]>,
+    pub installed_tab_position: f32,
+    pub installed_tab_velocity: f32,
+    pub installed_tab_target: f32,
     pub page_fade: f32,
     pub page_slide: f32,
     pub progress_smooth: f32,
@@ -127,6 +130,9 @@ impl Default for AnimState {
             scroll_thumb_y: None,
             scroll_thumb_velocity: 0.,
             scroll_thumb_view: None,
+            installed_tab_position: 0.,
+            installed_tab_velocity: 0.,
+            installed_tab_target: 0.,
             page_fade: 1.0,
             page_slide: 0.0,
             progress_smooth: 0.0,
@@ -173,6 +179,8 @@ impl AnimState {
             self.nav_pill_x = target_nav_x;
             self.nav_velocity_x = 0.;
             self.scroll_thumb_velocity = 0.;
+            self.installed_tab_position = self.installed_tab_target;
+            self.installed_tab_velocity = 0.;
             self.page_fade = 1.0;
             self.page_slide = 0.0;
             self.modal_anim = if has_modal { 1.0 } else { 0.0 };
@@ -215,6 +223,11 @@ impl AnimState {
         (self.nav_pill_x, self.nav_velocity_x) =
             horizon_client::ui_theme::launcher_preset_pack::spring_position(
                 experience, self.nav_pill_x, self.nav_velocity_x, target_nav_x, dt,
+            );
+        (self.installed_tab_position, self.installed_tab_velocity) =
+            horizon_client::ui_theme::launcher_preset_pack::spring_position(
+                experience, self.installed_tab_position, self.installed_tab_velocity,
+                self.installed_tab_target, dt,
             );
         self.page_fade = (self.page_fade + dt * 7.5).min(1.0);
         self.page_slide *= (1.0 - speed).max(0.0);
@@ -287,6 +300,8 @@ impl AnimState {
             || (self.nav_pill_x - self.target_nav_x).abs() > 0.5
             || self.nav_velocity_x.abs() > 0.2
             || self.scroll_thumb_velocity.abs() > 0.2
+            || (self.installed_tab_position - self.installed_tab_target).abs() > 0.003
+            || self.installed_tab_velocity.abs() > 0.01
             || (self.modal_anim > 0.01 && self.modal_anim < 0.99)
             || self.theme_pulse < 0.99
             || self.section_expand.iter().any(|v| *v > 0.01 && *v < 0.99)
@@ -494,7 +509,12 @@ pub(super) fn button(
     accent: bool,
 ) {
     let [x, y, w, h] = rect;
-    let radius = (h * 0.42).clamp(10.0, 22.0);
+    let experience = horizon_client::ui_theme::active_theme().experience;
+    let radius = if experience == horizon_client::ui_theme::ExperiencePreset::OldSchool {
+        (h * 0.27).clamp(8., 14.)
+    } else {
+        h * 0.5
+    };
     visual::panel(ui, rect, radius, accent);
     let padding = (w * 0.10).clamp(8.0, 14.0);
     let font = if w < 90.0 {
@@ -546,24 +566,7 @@ fn toggle(
         if on { my3_accent() } else { my3_muted() },
         if on { "Enabled" } else { "Off" },
     );
-    let track_x = x + w - 52.0;
-    let track_y = y + (h - 26.0) * 0.5;
-    ui.rounded(
-        track_x,
-        track_y,
-        50.0,
-        26.0,
-        13.0,
-        if on { my3_accent() } else { my3_track() },
-    );
-    ui.rounded(
-        track_x + if on { 26.0 } else { 4.0 },
-        track_y + 3.0,
-        20.0,
-        20.0,
-        10.0,
-        if on { my3_on_accent() } else { my3_muted() },
-    );
+    visual::component_switch(ui, x + w - 52., y + (h - 28.) * 0.5, on);
     if let Some(c) = ui.clip_rect([x, y, w, h]) {
         targets.push((c, action));
     }
@@ -615,8 +618,7 @@ fn draw_setting_card(
         let chip_w = (ui.measure(Face::SemiBold, 10.5, badge) + 22.0).clamp(64.0, 124.0);
         let chip_x = x + w - chip_w - 14.0;
         let chip_y = y + (h - 24.0) * 0.5 + 1.0;
-        ui.rounded(chip_x, chip_y, chip_w, 24.0, 12.0, my3_accent_soft());
-        ui.border(chip_x, chip_y, chip_w, 24.0, 12.0, my3_accent());
+        visual::component_chip(ui, [chip_x, chip_y, chip_w, 24.], true);
         ui.centered_fit(
             Face::SemiBold,
             10.0,
@@ -635,15 +637,11 @@ fn draw_setting_card(
     );
     if console {
         // Console-channel rows are tighter, rectangular brushed-metal plates.
-        visual::panel(ui, [x, y, w, h], 10., is_active_card);
+        visual::component_card(ui, [x, y, w, h], is_active_card);
     } else if experience == horizon_client::ui_theme::ExperiencePreset::LiquidGlass {
         // Keep content surfaces lightweight; only true controls get optical
         // lenses. Avoid glass-on-glass and expensive passes on every settings row.
-        ui.rounded(x, y, w, h, 14., if is_active_card {
-            my3_surface_high()
-        } else {
-            color::with_alpha(my3_card_bg(), 0.54)
-        });
+        visual::component_card(ui, [x, y, w, h], is_active_card);
     } else {
         ui.rounded(
             x, y, w, h, 18.0,
@@ -762,30 +760,10 @@ fn draw_setting_card(
             let minus_rect = [track_x - 34.0 - 6.0, y + (h - 34.0) * 0.5, 34.0, 34.0];
 
             let pill_y = y + (h - 36.0) * 0.5;
-            ui.rounded(track_x, pill_y, track_w, 36.0, 12.0, my3_surface());
-            ui.border(track_x, pill_y, track_w, 36.0, 12.0, my3_border());
-
-            // M3 Expressive Value Label + Linear Track Bar with Active Thumb
-            let fitted_v = ui.fit_text(Face::SemiBold, 12.0, value_label, track_w - 12.0);
-            let tw = ui.measure(Face::SemiBold, 12.0, &fitted_v);
-            ui.text(
-                Face::SemiBold,
-                12.0,
-                track_x + (track_w - tw) * 0.5,
-                pill_y + 4.0,
-                my3_accent(),
-                &fitted_v,
-            );
-
-            let bar_x = track_x + 10.0;
-            let bar_w = (track_w - 20.0).max(24.0);
-            let bar_y = pill_y + 24.0;
-            let t = fraction.clamp(0.0, 1.0);
-            ui.rounded(bar_x, bar_y, bar_w, 6.0, 3.0, my3_surface_high());
-            let fill_w = (bar_w * t).max(6.0);
-            ui.rounded(bar_x, bar_y, fill_w, 6.0, 3.0, my3_accent());
-            let thumb_x = (bar_x + bar_w * t - 2.0).clamp(bar_x, bar_x + bar_w - 4.0);
-            ui.rounded(thumb_x, bar_y - 2.0, 4.0, 10.0, 2.0, my3_text());
+            visual::component_slider(ui, [track_x, pill_y, track_w, 36.],
+                fraction, value_label);
+            let bar_x = track_x + 10.;
+            let bar_w = (track_w - 20.).max(24.);
 
             let left_half = [track_x, pill_y, track_w * 0.5, 36.0];
             let right_half = [track_x + track_w * 0.5, pill_y, track_w * 0.5, 36.0];
@@ -1607,8 +1585,7 @@ impl Launcher {
                 if y + 64.0 < top || y > bottom {
                     continue;
                 }
-                ui.rounded(content_x, y, content_w, 64.0, 14.0, my3_card_bg());
-                ui.border(content_x, y, content_w, 64.0, 14.0, my3_card_border());
+                visual::component_card(&mut ui, [content_x, y, content_w, 64.], false);
 
                 // Project icon: fetched Modrinth PFP if available, else MY3 vector icon badge.
                 let drawn_icon = if let Some((iw, ih, rgba)) = self.catalog.icons.get(*id) {
@@ -2172,22 +2149,20 @@ impl Launcher {
             32.0,
         ];
         let fm_rect = [content_x + content_w - tab_w, header_y - 1.0, tab_w, 32.0];
-        button(
-            ui,
-            &mut self.targets,
-            lib_rect,
-            "Library",
-            Action::SetInstalledSubTab(InstalledSubTab::Library),
-            self.catalog.installed_sub_tab == InstalledSubTab::Library,
-        );
-        button(
-            ui,
-            &mut self.targets,
-            fm_rect,
-            "File Manager",
-            Action::SetInstalledSubTab(InstalledSubTab::FileManager),
-            self.catalog.installed_sub_tab == InstalledSubTab::FileManager,
-        );
+        // Real Glass Lab V7 segmented tabs: one shared track and one
+        // spring-driven active capsule. No double-stacked button lenses.
+        self.anim.installed_tab_target =
+            if self.catalog.installed_sub_tab == InstalledSubTab::Library { 0. } else { 1. };
+        visual::component_tabs(ui,
+            [lib_rect[0], lib_rect[1], tab_w * 2. + 6., 32.],
+            ["Library", "File Manager"],
+            self.anim.installed_tab_position);
+        if let Some(rect) = ui.clip_rect(lib_rect) {
+            self.targets.push((rect, Action::SetInstalledSubTab(InstalledSubTab::Library)));
+        }
+        if let Some(rect) = ui.clip_rect(fm_rect) {
+            self.targets.push((rect, Action::SetInstalledSubTab(InstalledSubTab::FileManager)));
+        }
 
         if self.catalog.installed_sub_tab == InstalledSubTab::Library {
             // Row 1: Search filter input + Sort selector + Quick Import CTA
@@ -2450,18 +2425,7 @@ impl Launcher {
                     &fitted_title,
                 );
                 let badge_x = text_x + title_w + 8.0;
-                ui.rounded(
-                    badge_x,
-                    y + 11.0,
-                    status_w,
-                    18.0,
-                    9.0,
-                    if item.enabled {
-                        my3_accent_soft()
-                    } else {
-                        my3_surface_high()
-                    },
-                );
+                visual::component_chip(ui, [badge_x, y + 11., status_w, 18.], item.enabled);
                 ui.centered_fit(
                     Face::SemiBold,
                     8.5,
@@ -2485,7 +2449,7 @@ impl Launcher {
                 );
 
                 // Enable/Disable M3 switch + Export & Delete buttons
-                ui.m3_switch(toggle_r[0] + 2.0, y + 17.0, item.enabled);
+                visual::component_switch(ui, toggle_r[0] + 2., y + 17., item.enabled);
                 if let Some(c) = ui.clip_rect(toggle_r) {
                     self.targets.push((c, Action::ToggleLocal(orig_idx)));
                 }
@@ -5137,18 +5101,8 @@ impl Launcher {
                         }
                         let chip_w = 78.0;
                         let chip_x = rx + half_w - chip_w - 10.0;
-                        ui.rounded(
-                            chip_x,
-                            picker_y + 10.0,
-                            chip_w,
-                            20.0,
-                            10.0,
-                            if selected {
-                                my3_accent_soft()
-                            } else {
-                                my3_surface_high()
-                            },
-                        );
+                        visual::component_chip(ui,
+                            [chip_x, picker_y + 10., chip_w, 20.], selected);
                         ui.centered_fit(
                             Face::SemiBold,
                             8.5,
