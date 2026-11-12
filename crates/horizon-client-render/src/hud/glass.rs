@@ -320,9 +320,10 @@ impl GlassRenderer {
             );
             let rect = lens.rect.map(|v| v * scale);
             let clip = lens.clip.map(|v| v * scale);
-            // The physical lens bends the scene by up to 1.75x strength.
-            // Keep all edge samples inside the copied snapshot (no black rims).
-            let halo = (lens.refraction * 1.75 + lens.blur * 1.6 + 5.) * scale;
+            // The physical lens bends the backdrop up to 2.1x refraction.
+            // Include blur, chromatic split and specular environment lookups
+            // so the source snapshot never exposes an uninitialised black rim.
+            let halo = (lens.refraction * 2.1 + lens.blur * 1.5 + 13.) * scale;
             if let Some([x, y, w, h]) = copy_region(rect, clip, size, halo) {
                 let origin = wgpu::Origin3d { x, y, z: 0 };
                 let info = |texture| wgpu::TexelCopyTextureInfo {
@@ -373,6 +374,18 @@ impl GlassRenderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn physical_glass_shader_validates_with_naga() {
+        let source = include_str!("glass.wgsl");
+        let module = naga::front::wgsl::parse_str(source)
+            .expect("physical glass shader must parse as WGSL");
+        let mut validator = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        );
+        validator.validate(&module)
+            .expect("physical glass shader must satisfy Naga shader validation");
+    }
     #[test]
     fn lens_uniform_offsets_follow_the_device_alignment() {
         for (alignment, expected) in [(16, 80), (32, 96), (64, 128), (128, 128), (256, 256)] {
