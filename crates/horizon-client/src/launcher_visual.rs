@@ -315,8 +315,8 @@ pub fn panel(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, emphasized: bool) {
             if emphasized { 0xCFE4F4 } else { 0xDFECF7 },
             (tint_opacity * 255.) as u8,
         );
-        let blur = optics.blur * if compact { 0.72 } else { 0.34 };
-        let refraction = (optics.refraction * if compact { 1.24 } else { 0.62 })
+        let blur = optics.blur * (if compact { 0.72 } else { 0.34 });
+        let refraction = (optics.refraction * (if compact { 1.24 } else { 0.62 }))
             .min(24.);
         ui.backdrop_lens(r, radius, tint, [blur, refraction]);
         return;
