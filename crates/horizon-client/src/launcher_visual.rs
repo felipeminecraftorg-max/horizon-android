@@ -169,6 +169,145 @@ fn texture(ui: &mut Ui<'_>, paper: Wallpaper, blur: bool) -> Option<super::Rect>
     })
 }
 
+
+// Small, original Minecraft-inspired landscapes, painted once in the native
+// atlas. No external CDN, copyrighted game screenshot, or Android asset request.
+const SCENE_W: u32 = 384;
+const SCENE_H: u32 = 200;
+thread_local! {
+    static SCENES: RefCell<HashMap<bool, Vec<u8>>> = RefCell::new(HashMap::new());
+}
+fn scene_pixels(sunset: bool) -> Vec<u8> {
+    let mut pixels = Vec::with_capacity((SCENE_W * SCENE_H * 4) as usize);
+    let mix = |a: f32, b: f32, v: f32| a + (b - a) * v.clamp(0., 1.);
+    for y in 0..SCENE_H {
+        for x in 0..SCENE_W {
+            // Quantization gives the landscape the deliberately blocky silhouette
+            // of a voxel game, even when displayed as a soft photographic hero.
+            let bx = (x / 4) as f32 * 4.;
+            let by = (y / 4) as f32 * 4.;
+            let u = bx / SCENE_W as f32;
+            let v = by / SCENE_H as f32;
+            let noise = (((x / 4).wrapping_mul(15427)
+                ^ (y / 4).wrapping_mul(64901)
+                ^ 0x4D3B19) % 31) as f32 - 15.;
+            let top = if sunset { [37., 39., 78.] } else { [30., 61., 82.] };
+            let low = if sunset { [243., 163., 123.] } else { [136., 168., 174.] };
+            let sky_t = (v * 1.4).clamp(0., 1.);
+            let mut rgb = [
+                mix(top[0], low[0], sky_t),
+                mix(top[1], low[1], sky_t),
+                mix(top[2], low[2], sky_t),
+            ];
+            // Striped block-clouds, intentionally subtle in the dark variant.
+            let cloud = (u * 11. + v * 4.).sin() + (u * 21. - v * 5.).cos() * 0.5;
+            if v > 0.12 && v < 0.47 && cloud > 1.22 {
+                for component in &mut rgb { *component = mix(*component, 210., 0.17); }
+            }
+            let sun_x = if sunset { 0.71 } else { 0.79 };
+            let sun_y = if sunset { 0.53 } else { 0.47 };
+            let sun_dist = ((u - sun_x).powi(2) * 1.2 + (v - sun_y).powi(2) * 3.).sqrt();
+            let warm = (1. - sun_dist / 0.18).clamp(0., 1.);
+            for k in 0..3 {
+                rgb[k] = mix(rgb[k], [250., 216., 175.][k], warm * 0.68);
+            }
+            let ridge = 0.48
+                + (u * 10.1).sin() * 0.047
+                + (u * 29.7).sin() * 0.019
+                - (u - 0.77).max(0.).powi(2) * 2.4;
+            let ridge = (ridge * 40.).floor() / 40.;
+            if v > ridge {
+                rgb = if sunset {
+                    [65. - 13. * v, 81. - 12. * v, 106. - 14. * v]
+                } else {
+                    [46. - 13. * v, 78. - 18. * v, 85. - 12. * v]
+                };
+            }
+            let grass = 0.74 + (u * 11.).sin() * 0.028
+                + (u * 37.).sin() * 0.013
+                - (u - 0.3).powi(2) * 0.08;
+            if v > grass {
+                rgb = if sunset { [46., 85., 47.] } else { [30., 73., 51.] };
+                let soil = ((v - grass) * 10.).floor() as i32 % 5;
+                if soil == 3 { rgb = [44., 53., 45.]; }
+                if (v - grass) < 0.025 { rgb = [70., 121., 54.]; }
+            }
+            // Layered square-canopy trees and dark thin trunks.
+            for &cx in &[0.08_f32, 0.19, 0.31, 0.46, 0.60, 0.89] {
+                let cy = grass + (cx * 11.).sin() * 0.01;
+                let th = 0.10 + (cx * 19.).sin().abs() * 0.05;
+                let trunk_top = cy - th;
+                if (u - cx).abs() < 0.010 && v >= trunk_top && v < cy + 0.04 {
+                    rgb = [48., 44., 35.];
+                }
+                let du = (u - cx).abs();
+                if (du < 0.055 && v > trunk_top - 0.070 && v < trunk_top + 0.045)
+                    || (du < 0.038 && v > trunk_top - 0.095 && v < trunk_top + 0.065)
+                {
+                    rgb = if sunset { [37., 68., 47.] } else { [30., 77., 56.] };
+                    rgb[1] += noise.abs() * 0.55;
+                }
+            }
+            // Quiet reflective inlet; the reflection stretches toward the sun.
+            let inlet = v > 0.755 && u > 0.49 && u < 0.88
+                && v < 0.94 + (u * 22.).sin() * 0.02;
+            if inlet {
+                rgb = if sunset { [43., 78., 102.] } else { [26., 69., 83.] };
+                let ripple = ((v * 96. + u * 22.).sin().abs() * 0.5
+                    + (u * 44.).cos().abs() * 0.3).clamp(0., 1.);
+                let glint = (1. - (u - sun_x).abs() * 5.0).clamp(0., 1.);
+                rgb[0] += ripple * glint * if sunset { 95. } else { 39. };
+                rgb[1] += ripple * glint * 70.;
+                rgb[2] += ripple * glint * 47.;
+            }
+            for k in 0..3 {
+                rgb[k] = (rgb[k] + noise * if v > ridge { 0.20 } else { 0.07 })
+                    .clamp(0., 255.);
+                pixels.push(rgb[k] as u8);
+            }
+            pixels.push(255);
+        }
+    }
+    pixels
+}
+fn scene_texture(ui: &mut Ui<'_>, sunset: bool) -> Option<super::Rect> {
+    SCENES.with(|scenes| {
+        let mut scenes = scenes.borrow_mut();
+        let pixels = scenes.entry(sunset).or_insert_with(|| scene_pixels(sunset));
+        let key = if sunset { "launcher-wallpaper:scene:console" }
+            else { "launcher-wallpaper:scene:liquid" };
+        super::with_cache(ui.atlas, |cache| {
+            cache.image(ui.atlas, key, SCENE_W, SCENE_H, pixels)
+        })
+    })
+}
+/// Draw a cached original world-like scene inside a rounded rectangle.
+/// Rounded pixels are clipped by symmetric bands, without covering text.
+fn scene(ui: &mut Ui<'_>, r: [f32; 4], corner: f32, sunset: bool) {
+    let Some(t) = scene_texture(ui, sunset) else { return; };
+    let [x, y, w, h] = r;
+    if w <= 0. || h <= 0. { return; }
+    let corner = corner.min(w * 0.5).min(h * 0.5);
+    let mut band = |top: f32, height: f32, inset: f32| {
+        let u0 = t.u0 + (t.u1 - t.u0) * (inset / w);
+        let u1 = t.u1 - (t.u1 - t.u0) * (inset / w);
+        let v0 = t.v0 + (t.v1 - t.v0) * ((top - y) / h);
+        let v1 = t.v0 + (t.v1 - t.v0) * ((top + height - y) / h);
+        ui.emit_clipped_uv(
+            ui.px_x(x + inset), ui.px_y(top), ui.px_x(x + w - inset),
+            ui.px_y(top + height), u0, v0, u1, v1, u32::MAX,
+        );
+    };
+    for i in 0..12 {
+        let dh = corner / 12.;
+        let d = corner - (i as f32 + 0.5) * dh;
+        let inset = corner - (corner * corner - d * d).max(0.).sqrt();
+        band(y + i as f32 * dh, dh, inset);
+        band(y + h - (i as f32 + 1.) * dh, dh, inset);
+    }
+    band(y + corner, (h - 2. * corner).max(0.), 0.);
+}
+
 pub fn background(ui: &mut Ui<'_>, r: [f32; 4], paper: Wallpaper) {
     if let Some(t) = texture(ui, paper, false) {
         let [x, y, w, h] = r;
