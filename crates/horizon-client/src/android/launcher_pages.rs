@@ -1,4 +1,6 @@
 use super::*;
+#[path = "launcher_sfx.rs"]
+mod ui_sfx;
 use crate::catalog::SettingsCategory;
 use horizon_client::ui_theme::launcher_visual as visual;
 use horizon_client::{
@@ -5333,53 +5335,34 @@ impl Launcher {
         }
         self.feedback = action.map(|action| (action, std::time::Instant::now()));
         self.focus = None;
-        if action.is_some()
+        // Every touch maps to ONE of the user's V7 component sounds.
+        // Game-asset availability must not gate independently bundled UI SFX.
+        if let Some(pressed) = action
             && self.catalog.config.theme.interface_sounds
-            && horizon_client::official_install::ready(&self.home)
         {
-            let audio = self.audio.get_or_insert_with(|| {
-                let mut audio = horizon_client::audio::Audio::new(
-                    &self.home.join(".local/horizon-client/26.3"),
-                );
-                let settings = horizon_client::settings::Settings::load(
-                    &self
-                        .catalog
-                        .config
-                        .game_home(&self.home)
-                        .join("options.txt"),
-                );
-                audio.master = settings.volumes[0];
-                let mut volumes = settings.volumes;
-                volumes[0] = 1.0;
-                horizon_client::settings::set_source_volumes(volumes);
-                audio
-            });
-            // Theme-aware UI audio routing. The two experiences never share the
-            // same event profile: Liquid Glass is short, light and crystalline;
-            // Old School has a softer console-era pitched musical confirmation.
-            // No extra sound is fired for focus changes or scroll motion.
-            use horizon_client::ui_theme::ThemePreset;
-            match self.catalog.config.theme.preset {
-                ThemePreset::LiquidGlass => {
-                    let back = matches!(
-                        action,
-                        Some(Action::Appearance(visual::AppearanceAction::Back))
+            let preset = self.catalog.config.theme.preset;
+            let selected = ui_sfx::selection(preset, pressed);
+            if selected.is_some() || horizon_client::official_install::ready(&self.home) {
+                let audio = self.audio.get_or_insert_with(|| {
+                    let mut audio = horizon_client::audio::Audio::new(
+                        &self.home.join(".local/horizon-client/26.3"),
                     );
-                    audio.play("minecraft:ui.button.click", None, 0.12,
-                        if back { 0.86 } else { 1.33 });
+                    let settings = horizon_client::settings::Settings::load(
+                        &self.catalog.config.game_home(&self.home).join("options.txt"),
+                    );
+                    audio.master = settings.volumes[0];
+                    let mut volumes = settings.volumes;
+                    volumes[0] = 1.0;
+                    horizon_client::settings::set_source_volumes(volumes);
+                    audio
+                });
+                if let Some((sample, gain)) = selected {
+                    // The native sound backend decodes one exact Vorbis file from
+                    // the embedded pack. No stacking, random selection or music.
+                    audio.play_embedded_ui_sfx(sample, gain);
+                } else {
+                    audio.play_button_click();
                 }
-                ThemePreset::OldSchool => {
-                    let switch_page = matches!(action, Some(Action::Page(_)) | Some(Action::SettingsCat(_)));
-                    let confirm = matches!(action, Some(Action::Play) | Some(Action::Profile));
-                    if switch_page {
-                        audio.play("minecraft:block.note_block.pling", None, 0.15, 0.72);
-                    } else if confirm {
-                        audio.play("minecraft:block.note_block.pling", None, 0.19, 1.05);
-                    } else {
-                        audio.play("minecraft:ui.button.click", None, 0.16, 0.71);
-                    }
-                }
-                _ => audio.play_button_click(),
             }
         }
         match action {
