@@ -226,7 +226,7 @@ impl GlassRenderer {
                             resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                                 buffer: &self.uniforms,
                                 offset: 0,
-                                size: wgpu::BufferSize::new(80),
+                                size: wgpu::BufferSize::new(std::mem::size_of::<Uniform>() as u64),
                             }),
                         },
                         wgpu::BindGroupEntry {
