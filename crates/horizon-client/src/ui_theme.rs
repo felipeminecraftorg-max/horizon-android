@@ -2490,7 +2490,14 @@ pub const THEME_BG_SWATCHES_LIGHT: [(u32, &str, &str); 6] = [
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct LauncherThemeConfig {
+    /// Legacy global optics, preserved for older saved settings and palettes.
     pub glass: launcher_visual::GlassTuning,
+    /// Each experience stores its own optics. None migrates old settings by
+    /// inheriting the legacy value, without wiping the user's calibration.
+    #[serde(default)]
+    pub glass_liquid: Option<launcher_visual::GlassTuning>,
+    #[serde(default)]
+    pub glass_old_school: Option<launcher_visual::GlassTuning>,
     #[serde(default)]
     pub wallpaper: launcher_visual::Wallpaper,
     #[serde(default = "launcher_visual::default_effects")]
@@ -2515,6 +2522,8 @@ impl Default for LauncherThemeConfig {
     fn default() -> Self {
         Self {
             glass: launcher_visual::GlassTuning::default(),
+            glass_liquid: None,
+            glass_old_school: None,
             wallpaper: launcher_visual::Wallpaper::None,
             glass_effects: true,
             interface_sounds: true,
@@ -2635,6 +2644,23 @@ impl Default for ResolvedTheme {
 }
 
 impl LauncherThemeConfig {
+    pub fn current_optics(&self) -> launcher_visual::GlassTuning {
+        match self.preset {
+            ThemePreset::LiquidGlass => self.glass_liquid.unwrap_or(self.glass),
+            ThemePreset::OldSchool => self.glass_old_school.unwrap_or(self.glass),
+            _ => self.glass,
+        }.normalized()
+    }
+
+    pub fn set_current_optics(&mut self, optics: launcher_visual::GlassTuning) {
+        let optics = optics.normalized();
+        match self.preset {
+            ThemePreset::LiquidGlass => self.glass_liquid = Some(optics),
+            ThemePreset::OldSchool => self.glass_old_school = Some(optics),
+            _ => self.glass = optics,
+        }
+    }
+
     pub fn sanitize(&mut self) {
         if !self.gradient_mid_pos.is_finite() {
             self.gradient_mid_pos = 0.50;
@@ -2803,7 +2829,7 @@ impl LauncherThemeConfig {
 
         ResolvedTheme {
             experience: self.preset.into(),
-            glass: self.glass.normalized(),
+            glass: self.current_optics(),
             wallpaper: self.wallpaper,
             material: if self.glass_effects {
                 match self.preset {
