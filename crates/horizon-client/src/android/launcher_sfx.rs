@@ -73,9 +73,9 @@ mod tests {
     #[test]
     fn distinct_styles_and_control_types_have_exact_user_sounds() {
         assert_eq!(selection(ThemePreset::LiquidGlass, Action::Page(
-            crate::catalog::Page::Home)).unwrap().0, "sfx/ultimate-ui-select-2.ogg");
+            crate::catalog::Page::Play)).unwrap().0, "sfx/ultimate-ui-select-2.ogg");
         assert_eq!(selection(ThemePreset::OldSchool, Action::Page(
-            crate::catalog::Page::Home)).unwrap().0, "sfx/coffee-2.ogg");
+            crate::catalog::Page::Play)).unwrap().0, "sfx/coffee-2.ogg");
         assert_eq!(selection(ThemePreset::OldSchool, Action::Next).unwrap().0, "sfx/modern-12.ogg");
         assert_eq!(selection(ThemePreset::LiquidGlass, Action::Play).unwrap().0, "sfx/modern-7.ogg");
         assert!(selection(ThemePreset::DarkAero, Action::Play).is_none());
