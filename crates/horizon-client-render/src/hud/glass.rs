@@ -393,12 +393,12 @@ mod tests {
     }
     #[test]
     fn lens_uniform_offsets_follow_the_device_alignment() {
-        for (alignment, expected) in [(16, 80), (32, 96), (64, 128), (128, 128), (256, 256)] {
+        for (alignment, expected) in [(16, 176), (32, 192), (64, 192), (128, 256), (256, 256)] {
             let stride = uniform_stride(alignment);
             assert_eq!(stride, expected);
             for lens in 0..24 {
                 assert_eq!((lens * stride) % alignment, 0);
-                assert!((lens + 1) * stride >= lens * stride + 80);
+                assert!((lens + 1) * stride >= lens * stride + std::mem::size_of::<Uniform>());
             }
         }
     }
