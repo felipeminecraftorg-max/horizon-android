@@ -1872,8 +1872,32 @@ impl Launcher {
             let height = bottom - top;
             let thumb = (height * height / (height + maximum)).max(20.0).min(height);
             let y = top + (height - thumb) * (scroll / maximum).clamp(0.0, 1.0);
-            ui.rounded(w - 10.0, top, 4.0, height, 2.0, my3_border());
-            ui.rounded(w - 10.0, y, 4.0, thumb, 2.0, my3_muted());
+            // Scroll material is part of each experience. A matte hairline
+            // marks the track; the thumb itself uses real GPU glass/chrome.
+            // Keep the thumb aligned with the actual content scroll (no
+            // independent animation that would misrepresent its position).
+            let experience = horizon_client::ui_theme::active_theme().experience;
+            if matches!(
+                experience,
+                horizon_client::ui_theme::ExperiencePreset::LiquidGlass
+                    | horizon_client::ui_theme::ExperiencePreset::OldSchool
+            ) {
+                let track_x = w - 17.0;
+                ui.rounded(track_x + 4.0, top, 3.0, height, 1.5,
+                    color::hex(0xC4D3E6, 45));
+                let thumb_w = if experience
+                    == horizon_client::ui_theme::ExperiencePreset::OldSchool {
+                    11.0
+                } else {
+                    9.0
+                };
+                visual::panel(&mut ui, [track_x, y, thumb_w, thumb], thumb_w * 0.5, false);
+                ui.fill(track_x + 3.0, y + 6.0, 1.0, (thumb - 12.0).max(0.0),
+                    color::hex(0xF9FAFF, 72));
+            } else {
+                ui.rounded(w - 10.0, top, 4.0, height, 2.0, my3_border());
+                ui.rounded(w - 10.0, y, 4.0, thumb, 2.0, my3_muted());
+            }
         }
         if self.catalog.fm_modal.is_some() {
             self.draw_fm_modal(&mut ui, w, h, ime_top_dp);
