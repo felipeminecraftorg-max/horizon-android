@@ -1562,6 +1562,53 @@ mod tests {
     }
 
     #[test]
+    fn both_landscape_mockups_keep_all_six_tiles_and_disjoint_hitboxes() {
+        for preset in [ThemePreset::OldSchool, ThemePreset::LiquidGlass] {
+            let mut cfg = LauncherThemeConfig::default();
+            cfg.apply_preset(preset);
+            set_active_for_test(&cfg);
+            for (width, height) in [(760., 410.), (900., 480.)] {
+                let layout = Layout::new(width, height);
+                let y = if layout.console { 130. } else { 76. };
+                let reserved = if layout.console { 35. } else { 40. };
+                let bounds = [layout.x, y, layout.width, height - y - reserved];
+                let atlas = HudAtlas::boot();
+                let mut batch = HudBatch::new([width as u32, height as u32]);
+                let mut ui = Ui::new(&atlas, &mut batch, (0., 0.));
+                let mut actions = Vec::new();
+                home(
+                    &mut ui,
+                    bounds,
+                    &HomeView { installed: true, launching: false, profile: 0,
+                        renderer: "Vulkan / compatibility" },
+                    |r, action| actions.push((r, action)),
+                );
+                assert!(actions.len() >= 8, "{preset:?} {width}x{height}");
+                for wanted in [
+                    HomeAction::Play, HomeAction::Profile, HomeAction::Mods,
+                    HomeAction::Packs, HomeAction::Shaders, HomeAction::Files,
+                    HomeAction::Appearance, HomeAction::Skins,
+                ] {
+                    assert!(actions.iter().any(|(_, action)| *action == wanted),
+                        "{preset:?} {width}x{height} {wanted:?}");
+                }
+                for (i, (r, _)) in actions.iter().enumerate() {
+                    assert!(r[0] >= bounds[0] && r[1] >= bounds[1]);
+                    assert!(r[0] + r[2] <= bounds[0] + bounds[2] + 0.1);
+                    assert!(r[1] + r[3] <= bounds[1] + bounds[3] + 0.1);
+                    for (other, _) in actions.iter().take(i) {
+                        assert!(r[0] >= other[0] + other[2]
+                            || other[0] >= r[0] + r[2]
+                            || r[1] >= other[1] + other[3]
+                            || other[1] >= r[1] + r[3],
+                            "overlap {preset:?} {width}x{height}: {r:?} and {other:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn reference_experiences_have_independent_navigation_and_hero_art() {
         let mut cfg = LauncherThemeConfig::default();
         cfg.apply_preset(ThemePreset::LiquidGlass);
