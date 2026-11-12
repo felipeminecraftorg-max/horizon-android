@@ -621,7 +621,7 @@ impl Layout {
             [16. + index as f32 * step, h - 72., step, 56.]
         } else if self.console {
             let step = (w - 48.) / count.max(1) as f32;
-            [24. + index as f32 * step, 73., step, 43.]
+            [24. + index as f32 * step, 73., step, 44.]
         } else if active_theme().experience == ExperiencePreset::LiquidGlass {
             let step = ((h - 114.) / count.max(1) as f32).clamp(44., 52.);
             [32., 90. + index as f32 * step, 55., 44.]
@@ -1559,6 +1559,29 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn reference_experiences_have_independent_navigation_and_hero_art() {
+        let mut cfg = LauncherThemeConfig::default();
+        cfg.apply_preset(ThemePreset::LiquidGlass);
+        set_active_for_test(&cfg);
+        let liquid = Layout::new(900., 480.);
+        assert!(!liquid.console);
+        assert_eq!(liquid.x, 119.);
+        assert!(liquid.nav_rect(900., 480., 0, 7)[2] < 65.);
+        let liquid_scene = scene_pixels(false);
+        assert_eq!(liquid_scene.len(), (SCENE_W * SCENE_H * 4) as usize);
+        cfg.apply_preset(ThemePreset::OldSchool);
+        set_active_for_test(&cfg);
+        let old = Layout::new(900., 480.);
+        assert!(old.console);
+        assert_eq!(old.x, 24.);
+        assert_eq!(old.nav_rect(900., 480., 0, 7)[1], 73.);
+        assert_eq!(old.nav_rect(900., 480., 0, 7)[3], 44.);
+        let old_scene = scene_pixels(true);
+        assert_eq!(old_scene.len(), liquid_scene.len());
+        assert_ne!(liquid_scene, old_scene);
     }
 
     #[test]
