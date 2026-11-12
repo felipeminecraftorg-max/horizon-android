@@ -1306,9 +1306,13 @@ impl Launcher {
                     profile: self.catalog.config.profile,
                     renderer: self.catalog.config.renderer.label(),
                 };
+                let is_console = layout.console && !layout.portrait;
+                let home_top = if is_console { 130.0 } else { 76.0 };
+                let home_reserved_bottom = if is_console { 35.0 } else { 40.0 };
                 visual::home(
                     &mut ui,
-                    [content_x, 76.0 + slide_y, content_w, (h - 116.0).max(0.0)],
+                    [content_x, home_top + slide_y, content_w,
+                        (h - home_top - home_reserved_bottom).max(0.0)],
                     &view,
                     |rect, action| {
                         let action = match action {
@@ -1323,6 +1327,7 @@ impl Launcher {
                             visual::HomeAction::Files => Action::SetInstalledSubTab(
                                 crate::catalog::InstalledSubTab::FileManager,
                             ),
+                            visual::HomeAction::Skins => Action::Page(Page::Skins),
                         };
                         self.targets.push((rect, action));
                     },
@@ -1335,12 +1340,13 @@ impl Launcher {
                 self.catalog.scroll,
                 content_x,
                 content_w,
-                62.0 + slide_y,
+                if layout.console && !layout.portrait { 130.0 + slide_y } else { 62.0 + slide_y },
             );
             self.list_view = Some(self.wardrobe.view);
             self.catalog.scroll = self.catalog.scroll.min(self.wardrobe.view[2]);
         } else if page.is_catalog() {
-            let header_y = 62.0 + slide_y;
+            let header_y = if layout.console && !layout.portrait { 130.0 + slide_y }
+                else { 62.0 + slide_y };
             ui.text(
                 Face::SemiBold,
                 19.0,
@@ -3755,7 +3761,10 @@ impl Launcher {
         }
 
         // Sub-category Header Bar with hierarchical Back button
-        let header_y = 60.0 + slide_y;
+        let header_y = if horizon_client::ui_theme::active_theme().experience
+            == horizon_client::ui_theme::ExperiencePreset::OldSchool && ui.w >= 620. {
+            127.0 + slide_y
+        } else { 60.0 + slide_y };
         let back_cat = if cat == SettingsCategory::Theme {
             SettingsCategory::Launcher
         } else {
