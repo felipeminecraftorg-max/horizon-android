@@ -2259,10 +2259,12 @@ pub enum ThemePreset {
     Custom,
     LiquidGlass,
     DarkAero,
+    /// Dedicated 2005-2012 console-inspired experience, distinct from Dark Aero.
+    OldSchool,
 }
 
 impl ThemePreset {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::ObsidianViolet,
         Self::CyberCyan,
         Self::EmeraldForest,
@@ -2273,6 +2275,7 @@ impl ThemePreset {
         Self::Custom,
         Self::LiquidGlass,
         Self::DarkAero,
+        Self::OldSchool,
     ];
 
     pub fn label(self) -> &'static str {
@@ -2287,6 +2290,7 @@ impl ThemePreset {
             Self::Custom => "Custom Theme",
             Self::LiquidGlass => "Liquid Glass",
             Self::DarkAero => "Dark Aero",
+            Self::OldSchool => "Old School",
         }
     }
 
@@ -2300,8 +2304,9 @@ impl ThemePreset {
             Self::SakuraRose => "Twilight plum with blossom pink",
             Self::DaylightFrost => "High-contrast Material 3 light",
             Self::Custom => "Personalized colors & gradients",
-            Self::LiquidGlass => "Frosted depth and quiet violet light",
+            Self::LiquidGlass => "Optical lenses and calm modern navigation",
             Self::DarkAero => "Black glass and polished silver",
+            Self::OldSchool => "Console-era silver channels and cinematic focus",
         }
     }
 
@@ -2309,10 +2314,13 @@ impl ThemePreset {
     pub fn palette_rgb(self) -> (u32, u32, u32, u32, u32, u32, bool) {
         match self {
             Self::LiquidGlass => (
-                0x101320, 0x242839, 0xAA98FF, 0x1C203D, 0x282140, 0x0A0C15, false,
+                0x090F1A, 0x15212C, 0xAADDEC, 0x111D28, 0x142533, 0x070D16, false,
             ),
             Self::DarkAero => (
                 0x050607, 0x191B1F, 0xE2E5EC, 0x17191D, 0x090A0D, 0x030405, false,
+            ),
+            Self::OldSchool => (
+                0x080B12, 0x252B32, 0xCEDBE8, 0x1D2430, 0x0B1019, 0x030509, false,
             ),
             Self::ObsidianViolet | Self::Custom => (
                 0x13111C, 0x1D192B, 0x9A7BFF, 0x161129, 0x1E1638, 0x0E0C16, false,
@@ -2335,6 +2343,26 @@ impl ThemePreset {
             Self::DaylightFrost => (
                 0xF3F1FA, 0xFFFFFF, 0x6750A4, 0xEDE8FA, 0xF5F2FC, 0xE4DDF8, true,
             ),
+        }
+    }
+}
+
+/// A whole launcher experience: layout, focus, materials and sound cues.
+/// ThemePreset remains the persistently saved user choice, so older settings
+/// files and all non-experience palettes stay backward compatible.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ExperiencePreset {
+    #[default]
+    Standard,
+    LiquidGlass,
+    OldSchool,
+}
+impl From<ThemePreset> for ExperiencePreset {
+    fn from(preset: ThemePreset) -> Self {
+        match preset {
+            ThemePreset::LiquidGlass => Self::LiquidGlass,
+            ThemePreset::OldSchool => Self::OldSchool,
+            _ => Self::Standard,
         }
     }
 }
@@ -2549,6 +2577,7 @@ pub fn lerp_color(c0: u32, c1: u32, t: f32) -> u32 {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ResolvedTheme {
+    pub experience: ExperiencePreset,
     pub glass: launcher_visual::GlassTuning,
     pub material: launcher_visual::Material,
     pub wallpaper: launcher_visual::Wallpaper,
@@ -2616,7 +2645,7 @@ impl LauncherThemeConfig {
         self.preset = preset;
         self.wallpaper = match preset {
             ThemePreset::LiquidGlass => launcher_visual::Wallpaper::Aurora,
-            ThemePreset::DarkAero => launcher_visual::Wallpaper::Graphite,
+            ThemePreset::DarkAero | ThemePreset::OldSchool => launcher_visual::Wallpaper::Graphite,
             _ => launcher_visual::Wallpaper::None,
         };
         if preset != ThemePreset::Custom {
@@ -2754,12 +2783,13 @@ impl LauncherThemeConfig {
         };
 
         ResolvedTheme {
+            experience: self.preset.into(),
             glass: self.glass.normalized(),
             wallpaper: self.wallpaper,
             material: if self.glass_effects {
                 match self.preset {
                     ThemePreset::LiquidGlass => launcher_visual::Material::Glass,
-                    ThemePreset::DarkAero => launcher_visual::Material::Aero,
+                    ThemePreset::DarkAero | ThemePreset::OldSchool => launcher_visual::Material::Aero,
                     _ => launcher_visual::Material::Opaque,
                 }
             } else {
@@ -2787,7 +2817,7 @@ impl LauncherThemeConfig {
             on_accent: color::hex(on_accent_rgb, 255),
             accent_text: color::hex(on_accent_rgb, 255),
             text_primary: color::hex(
-                if self.preset == ThemePreset::DarkAero {
+                if matches!(self.preset, ThemePreset::DarkAero | ThemePreset::OldSchool) {
                     0xECEEF2
                 } else {
                     text_primary_rgb
@@ -2795,7 +2825,7 @@ impl LauncherThemeConfig {
                 255,
             ),
             text_muted: color::hex(
-                if self.preset == ThemePreset::DarkAero {
+                if matches!(self.preset, ThemePreset::DarkAero | ThemePreset::OldSchool) {
                     0xACB0B8
                 } else {
                     text_muted_rgb

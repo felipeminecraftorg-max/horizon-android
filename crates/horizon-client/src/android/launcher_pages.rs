@@ -515,8 +515,14 @@ fn draw_setting_card(
     subtitle: &str,
     right_control: SettingControl<'_>,
 ) {
+    let experience = horizon_client::ui_theme::active_theme().experience;
+    let console = experience == horizon_client::ui_theme::ExperiencePreset::OldSchool;
     if let SettingControl::SectionHeader(badge, icon) = right_control {
-        ui.rounded(x, y + 6.0, w, h - 10.0, 16.0, my3_surface());
+        if console {
+            visual::panel(ui, [x, y + 6.0, w, h - 10.0], 10.0, true);
+        } else {
+            ui.rounded(x, y + 6.0, w, h - 10.0, 16.0, my3_surface());
+        }
         ui.border(x, y + 6.0, w, h - 10.0, 16.0, my3_border());
         ui.rounded(x + 12.0, y + 13.0, 34.0, 34.0, 11.0, my3_accent_soft());
         ui.icon(icon, x + 20.0, y + 21.0, 18.0, my3_accent());
@@ -560,18 +566,23 @@ fn draw_setting_card(
             | SettingControl::Button(_, _, true)
             | SettingControl::TextField { active: true, .. }
     );
-    ui.rounded(
-        x,
-        y,
-        w,
-        h,
-        18.0,
-        if is_active_card {
+    if console {
+        // Console-channel rows are tighter, rectangular brushed-metal plates.
+        visual::panel(ui, [x, y, w, h], 10., is_active_card);
+    } else if experience == horizon_client::ui_theme::ExperiencePreset::LiquidGlass {
+        // Keep content surfaces lightweight; only true controls get optical
+        // lenses. Avoid glass-on-glass and expensive passes on every settings row.
+        ui.rounded(x, y, w, h, 14., if is_active_card {
             my3_surface_high()
         } else {
-            my3_card_bg()
-        },
-    );
+            color::with_alpha(my3_card_bg(), 0.54)
+        });
+    } else {
+        ui.rounded(
+            x, y, w, h, 18.0,
+            if is_active_card { my3_surface_high() } else { my3_card_bg() },
+        );
+    }
     if is_active_card {
         ui.rounded(
             x + 4.0,
@@ -5326,7 +5337,33 @@ impl Launcher {
                 horizon_client::settings::set_source_volumes(volumes);
                 audio
             });
-            audio.play_button_click();
+            // Theme-aware UI audio routing. The two experiences never share the
+            // same event profile: Liquid Glass is short, light and crystalline;
+            // Old School has a softer console-era pitched musical confirmation.
+            // No extra sound is fired for focus changes or scroll motion.
+            use horizon_client::ui_theme::ThemePreset;
+            match self.catalog.config.theme.preset {
+                ThemePreset::LiquidGlass => {
+                    let back = matches!(
+                        action,
+                        Some(Action::Appearance(visual::AppearanceAction::Back))
+                    );
+                    audio.play("minecraft:ui.button.click", None, 0.12,
+                        if back { 0.86 } else { 1.33 });
+                }
+                ThemePreset::OldSchool => {
+                    let switch_page = matches!(action, Some(Action::Page(_)) | Some(Action::SettingsCat(_)));
+                    let confirm = matches!(action, Some(Action::Play) | Some(Action::Profile));
+                    if switch_page {
+                        audio.play("minecraft:block.note_block.pling", None, 0.15, 0.72);
+                    } else if confirm {
+                        audio.play("minecraft:block.note_block.pling", None, 0.19, 1.05);
+                    } else {
+                        audio.play("minecraft:ui.button.click", None, 0.16, 0.71);
+                    }
+                }
+                _ => audio.play_button_click(),
+            }
         }
         match action {
             Some(Action::PauseInstall) => {

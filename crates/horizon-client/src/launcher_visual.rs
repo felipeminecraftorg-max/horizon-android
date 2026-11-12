@@ -1,7 +1,7 @@
 //! Android launcher materials and shared, captureable native page components.
 //! Wallpaper art is original and cached. Liquid Glass uses GPU backdrop lenses;
 //! Dark Aero retains its cached wallpaper material. Neither reads pixels to the CPU.
-use super::{Face, Icon, LauncherThemeConfig, ThemePreset, Ui, active_theme, color};
+use super::{ExperiencePreset, Face, Icon, LauncherThemeConfig, ThemePreset, Ui, active_theme, color};
 use std::{cell::RefCell, collections::HashMap};
 
 pub fn default_effects() -> bool {
@@ -18,9 +18,9 @@ pub struct GlassTuning {
 impl Default for GlassTuning {
     fn default() -> Self {
         Self {
-            opacity: 0.08,
-            blur: 2.,
-            refraction: 14.,
+            opacity: 0.06,
+            blur: 1.0,
+            refraction: 20.,
         }
     }
 }
@@ -377,6 +377,12 @@ pub fn panel(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, emphasized: bool) {
     };
     ui.rounded(x, y, w, h, radius, tint);
     sheen(ui, r, radius, aero);
+    if th.experience == ExperiencePreset::OldSchool {
+        // The console style has metal insets and a bottom chrome reflection.
+        // These are real per-component details, not a tinted glass skin.
+        ui.fill(x + radius, y + h - 2., (w - 2. * radius).max(0.), 1., color::hex(0xCFD9E6, if emphasized { 94 } else { 42 }));
+        ui.fill(x + radius, y + 2., (w - 2. * radius).max(0.), 0.7, color::hex(0xF7FAFF, if emphasized { 125 } else { 66 }));
+    }
     ui.stroke_rounded(
         x,
         y,
@@ -397,8 +403,8 @@ pub fn panel(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, emphasized: bool) {
 
 pub fn button(ui: &mut Ui<'_>, rect: [f32; 4], label: &str, icon: Option<Icon>, accent: bool) {
     // A true semicircular cap, not an old-style frosted rounded rectangle.
-    panel(ui, rect, rect[3] * 0.5, accent);
     let th = active_theme();
+    panel(ui, rect, if th.experience == ExperiencePreset::OldSchool { 10. } else { rect[3] * 0.5 }, accent);
     let fg = if accent && th.material == Material::Opaque {
         th.on_accent
     } else {
@@ -441,6 +447,8 @@ pub enum ShellAction {
 #[derive(Clone, Copy, Debug)]
 pub struct Layout {
     pub portrait: bool,
+    /// Console-style channel rail, selected by the Old School experience.
+    pub console: bool,
     pub x: f32,
     pub width: f32,
     pub bottom: f32,
@@ -448,9 +456,11 @@ pub struct Layout {
 impl Layout {
     pub fn new(w: f32, h: f32) -> Self {
         let portrait = h > w || w < 620.;
-        let x = if portrait { 16. } else { 210. };
+        let console = active_theme().experience == ExperiencePreset::OldSchool;
+        let x = if portrait { 16. } else if console { 230. } else { 210. };
         Self {
             portrait,
+            console,
             x,
             width: (w - x - 20.).max(200.),
             bottom: if portrait { h - 84. } else { h },
@@ -460,6 +470,10 @@ impl Layout {
         if self.portrait {
             let step = (w - 32.) / count as f32;
             [16. + index as f32 * step, h - 72., step, 56.]
+        } else if self.console {
+            // Wide metallic channels, independent of the Liquid Glass bubble rail.
+            let step = ((h - 125.) / count as f32).clamp(33., 48.);
+            [20., 105. + index as f32 * step, 188., (step - 3.).min(44.)]
         } else {
             [
                 20.,
@@ -514,7 +528,11 @@ pub fn shell(
     // Glass. Each selected icon is an individual physical lens instead.
     if th.material != Material::Glass {
         if layout.portrait {
-            panel(ui, [12., h - 78., w - 24., 68.], 23., false);
+            panel(ui, [12., h - 78., w - 24., 68.], if layout.console { 12. } else { 23. }, false);
+        } else if layout.console {
+            panel(ui, [12., 72., 204., (h - 84.).max(10.)], 13., false);
+            ui.text(Face::SemiBold, 10., 30., 83., th.text_muted, "SYSTEM CHANNELS");
+            ui.fill(28., 101., 171., 1., color::hex(0xE1ECFA, 75));
         } else {
             panel(ui, [12., 72., 180., (h - 84.).max(10.)], 24., false);
         }
@@ -534,9 +552,12 @@ pub fn shell(
                 panel(
                     ui,
                     [r[0] + 2., r[1] + 2., r[2] - 4., r[3] - 4.],
-                    if layout.portrait { 17. } else { 21. },
+                    if layout.console { 10. } else if layout.portrait { 17. } else { 21. },
                     true,
                 );
+                if layout.console && !layout.portrait {
+                    ui.fill(r[0] + 4., r[1] + 7., 2., (r[3] - 14.).max(3.), color::hex(0xF7F9FF, 195));
+                }
             }
         }
         let fg = if chosen {
@@ -589,6 +610,78 @@ pub struct HomeView<'a> {
     pub renderer: &'a str,
 }
 
+
+/// Old School has its own functional composition, not merely different colors.
+/// A console-like two-panel dashboard keeps the same actions/profile data while
+/// giving focus to the selected installation and a separate systems channel.
+fn home_old_school(
+    ui: &mut Ui<'_>,
+    rect: [f32; 4],
+    view: &HomeView<'_>,
+    mut target: impl FnMut([f32; 4], HomeAction),
+) {
+    let [x, y, w, h] = rect;
+    let th = active_theme();
+    let narrow = w < 430.;
+    let stage_h = if narrow { 198. } else { (h - 165.).clamp(150., 210.) };
+    let side_w = if narrow { 0. } else { (w * 0.31).clamp(132., 232.) };
+    let main_w = if narrow { w } else { w - side_w - 12. };
+    panel(ui, [x, y, main_w, stage_h], 18., false);
+    ui.fill(x + 19., y + 13., (main_w - 38.).max(0.), 1., color::hex(0xD6E4F4, 76));
+    ui.text(Face::Medium, 11., x + 20., y + 20., th.text_muted, "CHANNEL 01  /  GAME");
+    ui.text(
+        Face::SemiBold,
+        if narrow { 24. } else { 28. },
+        x + 20.,
+        y + 48.,
+        th.text_primary,
+        "Minecraft 26.3",
+    );
+    let status = if view.installed { "READY TO LAUNCH" } else { "INSTALLATION REQUIRED" };
+    ui.text(Face::Medium, 11., x + 21., y + 91., th.text_muted, status);
+    let play = [x + 18., y + stage_h - 65., main_w - 36., 49.];
+    button(ui, play, if view.launching { "Getting ready..." } else if view.installed { "Start game" } else { "Install Minecraft" }, Some(Icon::Play), true);
+    if !view.launching { target(play, HomeAction::Play); }
+
+    if !narrow {
+        let side_x = x + main_w + 12.;
+        panel(ui, [side_x, y, side_w, stage_h], 13., false);
+        ui.text(Face::Medium, 10.5, side_x + 15., y + 20., th.text_muted, "SYSTEM / PROFILE");
+        ui.text(Face::Medium, 13., side_x + 15., y + 48., th.text_primary, &format!("Slot {:02}", view.profile + 1));
+        let mode = ui.fit_text(Face::Regular, 11., view.renderer, side_w - 29.);
+        ui.text(Face::Regular, 11., side_x + 15., y + 79., th.text_muted, &mode);
+        let profile = [side_x + 12., y + stage_h - 57., side_w - 24., 42.];
+        button(ui, profile, &format!("Profile {}", view.profile + 1), Some(Icon::ChevronDown), false);
+        target(profile, HomeAction::Profile);
+    }
+
+    let row_y = y + stage_h + 13.;
+    let cols = if narrow { 2 } else { 4 };
+    let gap = 9.;
+    let card_w = (w - gap * (cols - 1) as f32) / cols as f32;
+    for (i, (label, icon, action)) in [
+        ("Mods", Icon::Mods, HomeAction::Mods),
+        ("Packs", Icon::Packs, HomeAction::Packs),
+        ("Shaders", Icon::Shaders, HomeAction::Shaders),
+        ("My files", Icon::Folder, HomeAction::Files),
+    ].into_iter().enumerate() {
+        let r = [x + (i % cols) as f32 * (card_w + gap), row_y + (i / cols) as f32 * 65., card_w, 57.];
+        if r[1] + r[3] > y + h { continue; }
+        panel(ui, r, 12., false);
+        ui.icon(icon, r[0] + 12., r[1] + 17., 20., th.text_primary);
+        let caption = ui.fit_text(Face::Medium, 12., label, (r[2] - 50.).max(25.));
+        ui.text(Face::Medium, 12., r[0] + 42., r[1] + 18., th.text_primary, &caption);
+        target(r, action);
+    }
+    if narrow {
+        let profile = [x, row_y + 135., (w - 9.) / 2., 42.];
+        if profile[1] + profile[3] < y + h {
+            button(ui, profile, &format!("Profile {}", view.profile + 1), Some(Icon::ChevronDown), false);
+            target(profile, HomeAction::Profile);
+        }
+    }
+}
+
 /// Used directly by the Android launcher and by the native capture harness.
 pub fn home(
     ui: &mut Ui<'_>,
@@ -598,11 +691,14 @@ pub fn home(
 ) {
     let [x, y, w, h] = rect;
     let th = active_theme();
+    if th.experience == ExperiencePreset::OldSchool {
+        return home_old_school(ui, rect, view, target);
+    }
     let portrait = w < 430.;
     let hero_h = if portrait {
         208.
     } else {
-        (h - 174.).clamp(146., 204.)
+        (h - 174.).clamp(if w < 520. { 190. } else { 146. }, 204.)
     };
     // Realistic glass does not cover the entire page in a blue tinted sheet.
     // Content floats directly above the wallpaper. A compact status lens
@@ -612,12 +708,14 @@ pub fn home(
     } else {
         let status_width = (ui.measure(Face::Regular, 12., view.renderer) + 49.)
             .clamp(82., (w - 34.).max(82.));
-        panel(
-            ui,
-            [x + 17., y + hero_h - 47., status_width, 37.],
-            18.5,
-            false,
-        );
+        let status_x = if portrait || w < 520. {
+            x + 17.
+        } else {
+            // Keep renderer metadata in its own column on short landscape screens:
+            // the previous x+17 placement overlapped "Minecraft 26.3 / Profile".
+            x + w - status_width - 16.
+        };
+        panel(ui, [status_x, y + hero_h - 47., status_width, 37.], 18.5, false);
     }
     ui.text(
         Face::Medium,
@@ -649,15 +747,21 @@ pub fn home(
         &subtitle,
     );
     let mode = ui.fit_text(Face::Regular, 12., view.renderer, w - 88.);
+    let mode_width = ui.measure(Face::Regular, 12., &mode) + 49.;
+    let mode_x = if th.material == Material::Glass && !portrait && w >= 520. {
+        x + w - mode_width - 16.
+    } else {
+        x + 17.
+    };
     ui.text(
         Face::Regular,
         12.,
-        x + 38.,
+        mode_x + 21.,
         y + hero_h - 38.,
         th.text_muted,
         &mode,
     );
-    ui.rounded(x + 24., y + hero_h - 32., 5., 5., 2.5, th.success);
+    ui.rounded(mode_x + 9., y + hero_h - 30., 5., 5., 2.5, th.success);
     let customize = [x + w - 62., y + 16., 44., 44.];
     panel(ui, customize, 22., false);
     ui.icon(
@@ -827,7 +931,7 @@ pub fn appearance(
         th.text_muted,
         "A little more you. Only your launcher.",
     );
-    for (i, preset) in [ThemePreset::LiquidGlass, ThemePreset::DarkAero]
+    for (i, preset) in [ThemePreset::LiquidGlass, ThemePreset::OldSchool]
         .into_iter()
         .enumerate()
     {
@@ -839,14 +943,16 @@ pub fn appearance(
         };
         preview(ui, r, paper, 18.);
         ui.rounded(r[0], r[1], r[2], r[3], 18., color::hex(0x12151E, 95));
-        ui.rounded(
-            r[0] + 14.,
-            r[1] + 17.,
-            card_w - 28.,
-            27.,
-            10.,
-            color::hex(0xFFFFFF, 28),
-        );
+        if preset == ThemePreset::LiquidGlass {
+            panel(ui, [r[0] + 14., r[1] + 14., 32., 32.], 16., false);
+            panel(ui, [r[0] + 56., r[1] + 17., card_w - 70., 27.], 13.5, false);
+        } else {
+            // Console selection preview uses stacked bars and chrome channels.
+            for band in 0..3 {
+                let yy = r[1] + 14. + band as f32 * 13.;
+                ui.rounded(r[0] + 14., yy, card_w - 28., 9., 3., color::hex(0xC6D7E8, if band == 1 { 95 } else { 30 }));
+            }
+        }
         ui.stroke_rounded(
             r[0],
             r[1],
@@ -870,14 +976,16 @@ pub fn appearance(
         );
         ui.text(
             Face::Regular,
-            11.,
+            10.5,
             r[0] + 14.,
             r[1] + 84.,
             th.text_muted,
             if cfg.preset == preset {
                 "Selected"
+            } else if preset == ThemePreset::LiquidGlass {
+                "Fluid lenses / Calm"
             } else {
-                "Tap to apply"
+                "Chrome / Console"
             },
         );
         if let Some(r) = ui.clip_rect(r) {
@@ -1047,7 +1155,7 @@ pub fn appearance(
             target(r, AppearanceAction::Preset(preset));
         }
     }
-    let end = cy + 26. + 8_usize.div_ceil(cols) as f32 * 54.;
+    let end = cy + 26. + ThemePreset::ALL.into_iter().filter(|p| !matches!(p, ThemePreset::LiquidGlass | ThemePreset::OldSchool)).count().div_ceil(cols) as f32 * 54.;
     let advanced = [x, end + 8., w, 48.];
     button(ui, advanced, "Advanced colors", Some(Icon::Gear), false);
     if let Some(r) = ui.clip_rect(advanced) {
@@ -1115,6 +1223,60 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn old_school_changes_real_layout_without_losing_home_actions() {
+        let mut cfg = LauncherThemeConfig::default();
+        cfg.apply_preset(ThemePreset::OldSchool);
+        assert_eq!(cfg.resolve().experience, ExperiencePreset::OldSchool);
+        assert_eq!(cfg.resolve().material, Material::Aero);
+        assert_eq!(cfg.resolve().wallpaper, Wallpaper::Graphite);
+        set_active_for_test(&cfg);
+        for (w, h) in [(340., 640.), (900., 480.)] {
+            let layout = Layout::new(w, h);
+            assert!(layout.console);
+            let atlas = HudAtlas::boot();
+            let mut batch = HudBatch::new([w as u32, h as u32]);
+            let mut ui = Ui::new(&atlas, &mut batch, (0., 0.));
+            let mut actions = Vec::new();
+            home(
+                &mut ui,
+                [layout.x, 76., layout.width, layout.bottom - 116.],
+                &HomeView {
+                    installed: true,
+                    launching: false,
+                    profile: 0,
+                    renderer: "Vulkan / compatibility",
+                },
+                |r, a| actions.push((r, a)),
+            );
+            for required in [
+                HomeAction::Play,
+                HomeAction::Profile,
+                HomeAction::Mods,
+                HomeAction::Packs,
+                HomeAction::Shaders,
+                HomeAction::Files,
+            ] {
+                assert!(actions.iter().any(|(_, actual)| *actual == required), "{w}x{h}: {required:?}");
+            }
+            for (i, (r, _)) in actions.iter().enumerate() {
+                assert!(r[0] >= layout.x && r[0] + r[2] <= ui.w);
+                assert!(r[1] >= 76. && r[1] + r[3] <= layout.bottom);
+                for (o, _) in actions.iter().take(i) {
+                    assert!(
+                        r[0] >= o[0] + o[2] || o[0] >= r[0] + r[2] ||
+                        r[1] >= o[1] + o[3] || o[1] >= r[1] + r[3],
+                        "{w}x{h}: action overlap {r:?} / {o:?}"
+                    );
+                }
+            }
+        }
+        cfg.apply_preset(ThemePreset::LiquidGlass);
+        set_active_for_test(&cfg);
+        assert_eq!(cfg.resolve().experience, ExperiencePreset::LiquidGlass);
+        assert!(!Layout::new(900., 480.).console);
     }
 
     #[test]
