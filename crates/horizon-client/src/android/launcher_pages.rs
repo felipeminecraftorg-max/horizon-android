@@ -302,6 +302,7 @@ impl AnimState {
             || self.scroll_thumb_velocity.abs() > 0.2
             || (self.installed_tab_position - self.installed_tab_target).abs() > 0.003
             || self.installed_tab_velocity.abs() > 0.01
+            || visual::switch_motion_active()
             || (self.modal_anim > 0.01 && self.modal_anim < 0.99)
             || self.theme_pulse < 0.99
             || self.section_expand.iter().any(|v| *v > 0.01 && *v < 0.99)
