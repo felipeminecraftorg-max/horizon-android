@@ -1225,6 +1225,10 @@ impl<'a> Ui<'a> {
     /// Draw an authentic Material You 3 Switch (`52x28dp` pill track with sliding thumb and checkmark).
     pub fn m3_switch(&mut self, x: f32, y: f32, on: bool) {
         let theme = active_theme();
+        if theme.experience != ExperiencePreset::Standard {
+            launcher_visual::component_switch(self, x, y, on);
+            return;
+        }
         let track_w = 52.0;
         let track_h = 28.0;
         if on {
