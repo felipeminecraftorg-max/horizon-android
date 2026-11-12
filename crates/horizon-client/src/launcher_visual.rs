@@ -1622,7 +1622,7 @@ mod tests {
             for (width, height) in [(760., 410.), (900., 480.)] {
                 let layout = Layout::new(width, height);
                 let y = if layout.console { 130. } else { 76. };
-                let reserved = if layout.console { 35. } else { 40. };
+                let reserved = if layout.console { 67. } else { 66. };
                 let bounds = [layout.x, y, layout.width, height - y - reserved];
                 let atlas = HudAtlas::boot();
                 let mut batch = HudBatch::new([width as u32, height as u32]);
@@ -1655,6 +1655,59 @@ mod tests {
                             || other[1] >= r[1] + r[3],
                             "overlap {preset:?} {width}x{height}: {r:?} and {other:?}");
                     }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn glass_navigation_spring_never_moves_the_actual_touch_targets() {
+        for preset in [ThemePreset::OldSchool, ThemePreset::LiquidGlass] {
+            let mut cfg = LauncherThemeConfig::default();
+            cfg.apply_preset(preset);
+            set_active_for_test(&cfg);
+            let actions_at = |nav: f32| {
+                let atlas = HudAtlas::boot();
+                let mut batch = HudBatch::new([900, 480]);
+                let mut ui = Ui::new(&atlas, &mut batch, (0., 0.));
+                let mut actions = Vec::new();
+                shell_animated(
+                    &mut ui,
+                    &[("Play", Icon::Play), ("Mods", Icon::Mods), ("Packs", Icon::Packs)],
+                    1,
+                    "Player", true, "0.7.8", Some(nav),
+                    |rect, action| actions.push((rect, action)),
+                );
+                assert!(!batch.glass.is_empty(), "{preset:?}: missing live glass");
+                actions
+            };
+            assert_eq!(actions_at(37.), actions_at(213.),
+                "{preset:?}: animation displaced a real button hitbox");
+        }
+    }
+
+    #[test]
+    fn landscape_dashboard_keeps_space_for_the_utility_footer() {
+        for preset in [ThemePreset::OldSchool, ThemePreset::LiquidGlass] {
+            let mut cfg = LauncherThemeConfig::default();
+            cfg.apply_preset(preset);
+            set_active_for_test(&cfg);
+            for (width, height) in [(760., 410.), (900., 480.)] {
+                let layout = Layout::new(width, height);
+                let top = if layout.console { 130. } else { 76. };
+                let reserved = if layout.console { 67. } else { 66. };
+                let atlas = HudAtlas::boot();
+                let mut batch = HudBatch::new([width as u32, height as u32]);
+                let mut ui = Ui::new(&atlas, &mut batch, (0., 0.));
+                let mut actions = Vec::new();
+                home(&mut ui, [layout.x, top, layout.width, height - top - reserved],
+                    &HomeView {
+                        installed: true, launching: false, profile: 0,
+                        renderer: "Vulkan / compatibility",
+                    }, |rect, action| actions.push((rect, action)));
+                for (rect, _) in actions {
+                    assert!(rect[1] + rect[3] <= height - 60. + 0.2,
+                        "{preset:?} {width}x{height}: footer overlap {rect:?}");
                 }
             }
         }
