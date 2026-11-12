@@ -636,6 +636,38 @@ pub fn component_chip(ui: &mut Ui<'_>, rect: [f32; 4], selected: bool) {
     }
 }
 
+/// Finger-draggable Glass Lab V7 optical tuning control used in Appearance.
+pub fn optical_calibration_slider(ui: &mut Ui<'_>, rect: [f32; 4],
+    label: &str, value_label: &str, fraction: f32) -> [f32; 4] {
+    let theme = active_theme();
+    let [x, y, w, h] = rect;
+    component_card(ui, rect, false);
+    ui.text(Face::Medium, 13.5, x + 16., y + 8., theme.text_primary, label);
+    let value = ui.fit_text(Face::Medium, 12., value_label, (w * 0.37).max(44.));
+    let text_width = ui.measure(Face::Medium, 12., &value);
+    ui.text(Face::Medium, 12., x + w - text_width - 17., y + 8.,
+        theme.text_muted, &value);
+    let track_x = x + 28.;
+    let track_w = (w - 56.).max(32.);
+    let track_y = y + h - 22.;
+    let t = fraction.clamp(0., 1.);
+    let old = theme.experience == ExperiencePreset::OldSchool;
+    ui.rounded(track_x, track_y, track_w, 5., 2.5,
+        color::hex(if old { 0xA0B0C7 } else { 0xE7F5FF }, 60));
+    if t > 0.005 {
+        ui.rounded(track_x, track_y, (track_w * t).max(2.), 5., 2.5,
+            color::hex(if old { 0xD6E3F4 } else { 0xF2FAFF }, 152));
+    }
+    let size = 19.;
+    let thumb = [track_x + track_w * t - size * 0.5,
+        track_y - 7., size, size];
+    // The thumb is the actual GPU material, keeping text outside the lens.
+    panel(ui, thumb, if old { 6. } else { size * 0.5 }, true);
+    ui.rounded(thumb[0] + 6., thumb[1] + 6., 7., 7., 3.5,
+        color::hex(0xFFFFFF, if old { 220 } else { 150 }));
+    [track_x, track_y - 12., track_w, 28.]
+}
+
 /// Slider uses the same fraction as the native settings gesture handler.
 /// Its thumb is intentionally legible (satin white / aluminium), while the
 /// track stays partially transparent. Works on both Android touch and mouse.
@@ -1651,66 +1683,30 @@ pub fn appearance(
             target(r, action);
         }
     }
-    let tuning_y = row_y + 232.;
-    let tuning_height = if cfg.preset == ThemePreset::LiquidGlass && cfg.glass_effects {
-        let optics = cfg.glass.normalized();
-        for (i, (label, value, action)) in [
-            (
-                "Transparency",
-                format!("{}%", ((1. - optics.opacity) * 100.).round() as u32),
-                AppearanceAction::Transparency,
-            ),
-            (
-                "Backdrop blur",
-                if optics.blur < 0.1 {
-                    "Off · lightest".into()
-                } else if optics.blur < 6. {
-                    "Soft".into()
-                } else {
-                    "Strong".into()
-                },
-                AppearanceAction::Blur,
-            ),
-            (
-                "Refraction",
-                if optics.refraction < 0.1 {
-                    "Off".into()
-                } else if optics.refraction < 18. {
-                    "Natural".into()
-                } else {
-                    "Strong".into()
-                },
-                AppearanceAction::Refraction,
-            ),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let r = [x, tuning_y + i as f32 * 58., w, 50.];
-            panel(ui, r, 14., false);
-            ui.text(
-                Face::Medium,
-                12.,
-                x + 16.,
-                r[1] + 15.,
-                th.text_primary,
-                label,
-            );
-            let text = ui.fit_text(Face::Regular, 11., &value, w * 0.40);
-            let tw = ui.measure(Face::Regular, 11., &text);
-            ui.text(
-                Face::Regular,
-                11.,
-                x + w - 16. - tw,
-                r[1] + 16.,
-                th.text_primary,
-                &text,
-            );
-            if let Some(r) = ui.clip_rect(r) {
-                target(r, action);
+    // Native calibration: separate saved optical properties per experience.
+    let tuning_height = if cfg.glass_effects
+        && matches!(cfg.preset, ThemePreset::LiquidGlass | ThemePreset::OldSchool)
+    {
+        let optics = cfg.current_optics();
+        let tuning_y = row_y + 232.;
+        for (i, (label, value, fraction, action)) in [
+            ("Opacidade", format!("{}%", (optics.opacity * 100.).round() as u32),
+                ((optics.opacity - 0.06) / 0.44).clamp(0., 1.),
+                AppearanceAction::Transparency),
+            ("Desfoque", format!("{:.1}", optics.blur),
+                (optics.blur / 10.).clamp(0., 1.),
+                AppearanceAction::Blur),
+            ("Refração", format!("{:.0}", optics.refraction),
+                (optics.refraction / 24.).clamp(0., 1.),
+                AppearanceAction::Refraction),
+        ].into_iter().enumerate() {
+            let control = [x, tuning_y + i as f32 * 82., w, 74.];
+            let hitbox = optical_calibration_slider(ui, control, label, &value, fraction);
+            if let Some(hitbox) = ui.clip_rect(hitbox) {
+                target(hitbox, action);
             }
         }
-        182.
+        248.
     } else {
         0.
     };
