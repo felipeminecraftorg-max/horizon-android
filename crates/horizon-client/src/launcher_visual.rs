@@ -108,7 +108,14 @@ fn paper_pixel(paper: Wallpaper, x: f32, y: f32) -> [f32; 3] {
             Wallpaper::Midnight => [0.20, 0.65, 0.88],
             _ => [0.86, 0.90, 0.97],
         };
-        let light = 112.0 * edge * reflection + 37.0 * broad * reflection;
+        // Liquid Glass should not look like a glowing screensaver behind the lenses.
+        // Old School / Dark Aero keep their existing wallpaper highlights.
+        let (edge_energy, broad_energy) = if paper == Wallpaper::Aurora {
+            (43.0, 12.0)
+        } else {
+            (112.0, 37.0)
+        };
+        let light = edge_energy * edge * reflection + broad_energy * broad * reflection;
         for k in 0..3 {
             c[k] += tint[k] * light;
         }
@@ -294,11 +301,24 @@ pub fn panel(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, emphasized: bool) {
     }
     if th.material == Material::Glass {
         let optics = th.glass.normalized();
+        // Physical optical hierarchy: interactive pills / buttons have visibly
+        // curved glass, while spacious cards stay clear rather than foggy blue.
+        let compact = h <= 100. || w <= 190.;
+        let tint_opacity = if emphasized {
+            optics.opacity * 0.54
+        } else if compact {
+            optics.opacity * 0.36
+        } else {
+            optics.opacity * 0.16
+        };
         let tint = color::hex(
-            if emphasized { 0x7155D0 } else { 0x1C2435 },
-            ((optics.opacity + if emphasized { 0.10 } else { 0. }) * 255.) as u8,
+            if emphasized { 0xCFE4F4 } else { 0xDFECF7 },
+            (tint_opacity * 255.) as u8,
         );
-        ui.backdrop_lens(r, radius, tint, [optics.blur, optics.refraction]);
+        let blur = optics.blur * if compact { 0.72 } else { 0.34 };
+        let refraction = (optics.refraction * if compact { 1.24 } else { 0.62 })
+            .min(24.);
+        ui.backdrop_lens(r, radius, tint, [blur, refraction]);
         return;
     }
     for i in (1..=3).rev() {
