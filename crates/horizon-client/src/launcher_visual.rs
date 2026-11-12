@@ -666,19 +666,76 @@ pub fn component_slider(ui: &mut Ui<'_>, rect: [f32; 4], value: f32, value_label
         0.8, color::hex(0xFFFFFF, 155));
 }
 
-/// Toggle: selectable translucent track with an opaque, touch-readable thumb.
-/// The caller owns on/off state and actual click target.
+/// Spring-state keyed by the switch's actual screen position. Controls are
+/// instant in logic and hit testing; only the visible thumb eases into place.
+struct V7SwitchAnimation {
+    position: f32,
+    velocity: f32,
+    target: f32,
+    last_frame: std::time::Instant,
+}
+std::thread_local! {
+    static V7_SWITCH_ANIMATIONS:
+        std::cell::RefCell<std::collections::HashMap<(i32, i32, u8), V7SwitchAnimation>>
+        = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+pub fn switch_motion_active() -> bool {
+    V7_SWITCH_ANIMATIONS.with(|cache| cache.borrow().values().any(|animation| {
+        animation.last_frame.elapsed().as_secs_f32() < 0.07
+            && ((animation.position - animation.target).abs() > 0.008
+                || animation.velocity.abs() > 0.02)
+    }))
+}
+fn switch_thumb_fraction(x: f32, y: f32, enabled: bool, style: ExperiencePreset) -> f32 {
+    let target = if enabled { 1. } else { 0. };
+    if super::motion::reduced_motion() {
+        return target;
+    }
+    let style_id = match style {
+        ExperiencePreset::OldSchool => 1,
+        ExperiencePreset::LiquidGlass => 2,
+        ExperiencePreset::Standard => 0,
+    };
+    let key = ((x * 2.).round() as i32, (y * 2.).round() as i32, style_id);
+    V7_SWITCH_ANIMATIONS.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        // Prevent long-lived saved page geometries growing the map forever.
+        if cache.len() > 400 {
+            cache.retain(|_, a| a.last_frame.elapsed().as_secs() < 15);
+        }
+        let now = std::time::Instant::now();
+        let motion = cache.entry(key).or_insert_with(|| V7SwitchAnimation {
+            position: target,
+            velocity: 0.,
+            target,
+            last_frame: now,
+        });
+        let dt = now.duration_since(motion.last_frame).as_secs_f32().min(0.08);
+        motion.last_frame = now;
+        motion.target = target;
+        let (position, velocity) = super::launcher_preset_pack::spring_position(
+            style, motion.position, motion.velocity, target, dt,
+        );
+        motion.position = position.clamp(-0.08, 1.08);
+        motion.velocity = velocity.clamp(-10., 10.);
+        motion.position
+    })
+}
+
+/// Toggle: translucent GPU track and an opaque touch-readable thumb, animated
+/// by the same physics that controls the selected navigation bubble.
 pub fn component_switch(ui: &mut Ui<'_>, x: f32, y: f32, on: bool) {
     let th = active_theme();
     let old = th.experience == ExperiencePreset::OldSchool;
     let rect = [x, y, 52., 28.];
     panel(ui, rect, if old { 10. } else { 14. }, on);
-    let travel = if on { 26. } else { 4. };
+    let position = switch_thumb_fraction(x, y, on, th.experience);
+    let travel = 4. + 22. * position;
     let thumb_d = 20.;
     ui.rounded(x + travel, y + 4., thumb_d, thumb_d,
         if old { 6. } else { 10. },
         color::hex(if old { 0xEBEEF3 } else { 0xF7FBFF }, 236));
-    if on {
+    if position > 0.70 {
         ui.icon(Icon::Check, x + travel + 4., y + 8., 12.,
             color::hex(if old { 0x253243 } else { 0x3E6872 }, 245));
     }
