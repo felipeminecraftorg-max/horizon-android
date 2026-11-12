@@ -3822,9 +3822,20 @@ impl Launcher {
                 self.catalog.config.disable_launcher_animations,
                 self.catalog.scroll,
                 |r, a| {
-                    self.targets.push((r, Action::Appearance(a)));
+                    let action = Action::Appearance(a);
+                    self.targets.push((r, action));
                     if a != visual::AppearanceAction::Back {
-                        self.list_targets.push((r, Action::Appearance(a)));
+                        self.list_targets.push((r, action));
+                    }
+                    // The optical calibration controls are real drag tracks,
+                    // not decorative sliders or single-tap cycling buttons.
+                    if matches!(a, visual::AppearanceAction::Transparency
+                        | visual::AppearanceAction::Blur
+                        | visual::AppearanceAction::Refraction)
+                    {
+                        SLIDER_TRACK_TARGETS.with(|tracks| {
+                            tracks.borrow_mut().push((r, action, r[0], r[2]));
+                        });
                     }
                 },
             );
@@ -6397,35 +6408,41 @@ impl Launcher {
                         self.catalog.config.theme.glass_effects =
                             !self.catalog.config.theme.glass_effects
                     }
-                    A::Transparency => {
-                        let opacity = self.catalog.config.theme.glass.normalized().opacity;
-                        self.catalog.config.theme.glass.opacity = if opacity < 0.10 {
-                            0.14
-                        } else if opacity < 0.20 {
-                            0.30
-                        } else {
-                            0.08
-                        };
-                    }
-                    A::Blur => {
-                        let blur = self.catalog.config.theme.glass.normalized().blur;
-                        self.catalog.config.theme.glass.blur = if blur < 0.1 {
-                            2.
-                        } else if blur < 6. {
-                            8.
-                        } else {
-                            0.
-                        };
-                    }
-                    A::Refraction => {
-                        let refraction = self.catalog.config.theme.glass.normalized().refraction;
-                        self.catalog.config.theme.glass.refraction = if refraction < 0.1 {
-                            14.
-                        } else if refraction < 18. {
-                            24.
-                        } else {
-                            0.
-                        };
+                    A::Transparency | A::Blur | A::Refraction => {
+                        // Support mouse/keyboard taps as well as touch dragging.
+                        // Optical values are saved independently for each style.
+                        let mut optics = self.catalog.config.theme.current_optics();
+                        match action {
+                            A::Transparency => {
+                                optics.opacity = if optics.opacity < 0.10 {
+                                    0.14
+                                } else if optics.opacity < 0.20 {
+                                    0.30
+                                } else {
+                                    0.08
+                                };
+                            }
+                            A::Blur => {
+                                optics.blur = if optics.blur < 0.1 {
+                                    2.
+                                } else if optics.blur < 6. {
+                                    8.
+                                } else {
+                                    0.
+                                };
+                            }
+                            A::Refraction => {
+                                optics.refraction = if optics.refraction < 0.1 {
+                                    14.
+                                } else if optics.refraction < 18. {
+                                    24.
+                                } else {
+                                    0.
+                                };
+                            }
+                            _ => unreachable!(),
+                        }
+                        self.catalog.config.theme.set_current_optics(optics);
                     }
                     A::Sounds => {
                         self.catalog.config.theme.interface_sounds =
@@ -6896,6 +6913,20 @@ impl Launcher {
     fn apply_slider_fraction(&mut self, action: Action, frac: f32) {
         let t = frac.clamp(0.0, 1.0);
         match action {
+            Action::Appearance(appearance @ (visual::AppearanceAction::Transparency
+            | visual::AppearanceAction::Blur
+            | visual::AppearanceAction::Refraction)) => {
+                let mut optics = self.catalog.config.theme.current_optics();
+                match appearance {
+                    visual::AppearanceAction::Transparency => optics.opacity = 0.06 + t * 0.44,
+                    visual::AppearanceAction::Blur => optics.blur = t * 10.,
+                    visual::AppearanceAction::Refraction => optics.refraction = t * 24.,
+                    _ => unreachable!(),
+                }
+                self.catalog.config.theme.set_current_optics(optics);
+                horizon_client::ui_theme::set_active_theme(self.catalog.config.theme.resolve());
+                let _ = self.catalog.config.save(&self.home);
+            }
             Action::RenderScaleDelta(_) => {
                 let next_pct = (25.0 + t * 75.0).round() as u32;
                 let scale = crate::display::RenderScale::new(next_pct);
