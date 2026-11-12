@@ -3821,9 +3821,20 @@ impl Launcher {
                 self.catalog.config.disable_launcher_animations,
                 self.catalog.scroll,
                 |r, a| {
-                    self.targets.push((r, Action::Appearance(a)));
+                    let action = Action::Appearance(a);
+                    self.targets.push((r, action));
                     if a != visual::AppearanceAction::Back {
-                        self.list_targets.push((r, Action::Appearance(a)));
+                        self.list_targets.push((r, action));
+                    }
+                    if matches!(a,
+                        visual::AppearanceAction::Transparency
+                        | visual::AppearanceAction::Blur
+                        | visual::AppearanceAction::Refraction)
+                    {
+                        // Native gesture routing owns this track: moving the
+                        // finger changes the optical uniform continuously.
+                        SLIDER_TRACK_TARGETS.with(|tracks| tracks.borrow_mut()
+                            .push((r, action, r[0], r[2])));
                     }
                 },
             );
@@ -6905,6 +6916,19 @@ impl Launcher {
     fn apply_slider_fraction(&mut self, action: Action, frac: f32) {
         let t = frac.clamp(0.0, 1.0);
         match action {
+            Action::Appearance(a) if matches!(a,
+                visual::AppearanceAction::Transparency
+                | visual::AppearanceAction::Blur
+                | visual::AppearanceAction::Refraction) => {
+                let optics = &mut self.catalog.config.theme.glass;
+                match a {
+                    visual::AppearanceAction::Transparency => optics.opacity = 0.06 + 0.44 * t,
+                    visual::AppearanceAction::Blur => optics.blur = 10. * t,
+                    visual::AppearanceAction::Refraction => optics.refraction = 24. * t,
+                    _ => {}
+                }
+                horizon_client::ui_theme::set_active_theme(self.catalog.config.theme.resolve());
+            }
             Action::RenderScaleDelta(_) => {
                 let next_pct = (25.0 + t * 75.0).round() as u32;
                 let scale = crate::display::RenderScale::new(next_pct);
@@ -7094,7 +7118,11 @@ impl Launcher {
                 }
             }
             TouchPhase::Ended => {
-                if ACTIVE_SLIDER_DRAG.with(|c| c.take()).is_some() {
+                if let Some((action, _, _)) = ACTIVE_SLIDER_DRAG.with(|c| c.take()) {
+                    if matches!(action, Action::Appearance(_)) {
+                        // Persist once on release, not on every movement.
+                        self.catalog.config.save(&self.home)?;
+                    }
                     self.drag = None;
                     self.taps.cancel();
                 } else {
