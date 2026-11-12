@@ -54,6 +54,7 @@ jobs:
         run: |
           cargo test -p horizon-client-render --lib data_dimensions
           cargo test -p horizon-client-render --lib datapack
+          cargo test -p horizon-client-render --lib physical_glass_shader_validates_with_naga
       - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         if: always()
         with:
