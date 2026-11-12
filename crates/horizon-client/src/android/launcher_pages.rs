@@ -1121,6 +1121,12 @@ impl Launcher {
         let (w, h) = (ui.w, ui.h);
         let active_th = horizon_client::ui_theme::active_theme();
         ui.draw_theme_background(0.0, 0.0, w, h, &active_th);
+        if active_th.experience == horizon_client::ui_theme::ExperiencePreset::OldSchool
+            && w > h && w >= 620. {
+            // Mild amethyst tint over the Graphite PS3-style background ribbons.
+            // It doesn't change the preserved Dark Aero wallpaper.
+            ui.fill(0., 0., w, h, color::hex(0x211730, 43));
+        }
 
         // The same native shell is used in portrait, landscape and capture fixtures.
         let selected_idx = Page::ALL
@@ -1345,8 +1351,8 @@ impl Launcher {
             self.list_view = Some(self.wardrobe.view);
             self.catalog.scroll = self.catalog.scroll.min(self.wardrobe.view[2]);
         } else if page.is_catalog() {
-            let header_y = if layout.console && !layout.portrait { 130.0 + slide_y }
-                else { 62.0 + slide_y };
+            let slide_y = slide_y + if layout.console && !layout.portrait { 68.0 } else { 0.0 };
+            let header_y = 62.0 + slide_y;
             ui.text(
                 Face::SemiBold,
                 19.0,
@@ -1756,10 +1762,12 @@ impl Launcher {
                 false,
             );
         } else if page == Page::Installed {
-            self.draw_installed(&mut ui, content_x, content_w, h, compact, slide_y);
+            let offset = if layout.console && !layout.portrait { 67.0 } else { 0.0 };
+            self.draw_installed(&mut ui, content_x, content_w, h, compact, slide_y + offset);
         } else {
+            let offset = if layout.console && !layout.portrait { 67.0 } else { 0.0 };
             self.draw_settings_page(
-                &mut ui, content_x, content_w, h, compact, slide_y, ime_top_dp,
+                &mut ui, content_x, content_w, h, compact, slide_y + offset, ime_top_dp,
             );
         }
 
@@ -3761,10 +3769,7 @@ impl Launcher {
         }
 
         // Sub-category Header Bar with hierarchical Back button
-        let header_y = if horizon_client::ui_theme::active_theme().experience
-            == horizon_client::ui_theme::ExperiencePreset::OldSchool && ui.w >= 620. {
-            127.0 + slide_y
-        } else { 60.0 + slide_y };
+        let header_y = 60.0 + slide_y;
         let back_cat = if cat == SettingsCategory::Theme {
             SettingsCategory::Launcher
         } else {
