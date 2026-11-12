@@ -2477,6 +2477,12 @@ pub const THEME_BG_SWATCHES_LIGHT: [(u32, &str, &str); 6] = [
 #[serde(default)]
 pub struct LauncherThemeConfig {
     pub glass: launcher_visual::GlassTuning,
+    /// Independently saved V7 optics. Older saved themes transparently fall
+    /// back to the legacy global value, preserving the user's old settings.
+    #[serde(default)]
+    pub glass_liquid: Option<launcher_visual::GlassTuning>,
+    #[serde(default)]
+    pub glass_old_school: Option<launcher_visual::GlassTuning>,
     #[serde(default)]
     pub wallpaper: launcher_visual::Wallpaper,
     #[serde(default = "launcher_visual::default_effects")]
@@ -2501,6 +2507,8 @@ impl Default for LauncherThemeConfig {
     fn default() -> Self {
         Self {
             glass: launcher_visual::GlassTuning::default(),
+            glass_liquid: None,
+            glass_old_school: None,
             wallpaper: launcher_visual::Wallpaper::None,
             glass_effects: true,
             interface_sounds: true,
@@ -2621,6 +2629,23 @@ impl Default for ResolvedTheme {
 }
 
 impl LauncherThemeConfig {
+    pub fn current_optics(&self) -> launcher_visual::GlassTuning {
+        match self.preset {
+            ThemePreset::LiquidGlass => self.glass_liquid.unwrap_or(self.glass),
+            ThemePreset::OldSchool => self.glass_old_school.unwrap_or(self.glass),
+            _ => self.glass,
+        }.normalized()
+    }
+
+    pub fn set_current_optics(&mut self, tuning: launcher_visual::GlassTuning) {
+        let tuning = tuning.normalized();
+        match self.preset {
+            ThemePreset::LiquidGlass => self.glass_liquid = Some(tuning),
+            ThemePreset::OldSchool => self.glass_old_school = Some(tuning),
+            _ => self.glass = tuning,
+        }
+    }
+
     pub fn sanitize(&mut self) {
         if !self.gradient_mid_pos.is_finite() {
             self.gradient_mid_pos = 0.50;
@@ -2789,7 +2814,7 @@ impl LauncherThemeConfig {
 
         ResolvedTheme {
             experience: self.preset.into(),
-            glass: self.glass.normalized(),
+            glass: self.current_optics(),
             wallpaper: self.wallpaper,
             material: if self.glass_effects {
                 match self.preset {
