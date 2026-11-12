@@ -25,8 +25,13 @@ fn sample_scene(p: vec2<f32>) -> vec3<f32> {
     return textureSampleLevel(scene, scene_sampler, uv, 0.).rgb;
 }
 fn blur_scene(p: vec2<f32>, radius: f32) -> vec3<f32> {
-    if radius < 0.1 { return sample_scene(p); }
+    if radius < 0.45 { return sample_scene(p); }
     let r = radius * 0.70710678;
+    if radius < 1.8 {
+        return sample_scene(p) * 0.40 + (sample_scene(p + vec2(r,0.))
+            + sample_scene(p - vec2(r,0.)) + sample_scene(p + vec2(0.,r))
+            + sample_scene(p - vec2(0.,r))) * 0.15;
+    }
     var c = sample_scene(p) * 0.20;
     c += (sample_scene(p+vec2(r,0.)) + sample_scene(p-vec2(r,0.))
         + sample_scene(p+vec2(0.,r)) + sample_scene(p-vec2(0.,r))) * 0.12;
@@ -36,91 +41,105 @@ fn blur_scene(p: vec2<f32>, radius: f32) -> vec3<f32> {
 }
 @fragment fn fs_lens(in: Out) -> @location(0) vec4<f32> {
     let pos = in.position.xy;
+    if any(pos < lens.clip.xy) || any(pos >= lens.clip.xy + lens.clip.zw) {
+        discard;
+    }
     let half_size = lens.rect.zw * 0.5;
     let p = pos - (lens.rect.xy + half_size);
-    let radius = min(lens.optics.x, min(half_size.x, half_size.y));
+    let radius = max(min(lens.optics.x, min(half_size.x, half_size.y)), 0.5);
+    // Rounded-box SDF: the same geometry defines both the shape and the optics.
     let q = abs(p) - half_size + vec2(radius);
     let outside = max(q, vec2(0.));
-    let distance = length(outside) + min(max(q.x, q.y), 0.) - radius;
-    let aa = max(fwidth(distance), 0.75);
-    let coverage = clamp(0.5 - distance / aa, 0., 1.);
-    if any(pos < lens.clip.xy) || any(pos >= lens.clip.xy + lens.clip.zw) { discard; }
-
-    // A nearby contact shadow is the only opacity outside the dielectric body.
+    let signed_d = length(outside) + min(max(q.x, q.y), 0.) - radius;
+    let aa = max(fwidth(signed_d), 0.7);
+    let coverage = clamp(0.5 - signed_d / aa, 0., 1.);
     let dp = max(lens.optics.w, 0.5);
-    let shadow_dist = max(distance, 0.);
-    let shadow = 0.10 * exp(-shadow_dist / (1.7 * dp))
-        * (1. - smoothstep(5. * dp, 8. * dp, shadow_dist));
-    if coverage <= 0. { return vec4(0., 0., 0., shadow); }
-
-    // An analytic rounded-rectangle SDF provides a curved physical lens edge,
-    // with a flat front face. Small pills show the roll; large panels stay clear.
-    var edge_normal = select(vec2(0., sign(p.y)), vec2(sign(p.x), 0.), q.x > q.y);
+    var outward = select(vec2(0., sign(p.y)), vec2(sign(p.x), 0.), q.x > q.y);
     if length(outside) > 0.001 {
-        edge_normal = normalize(outside) * sign(p);
+        outward = normalize(outside) * sign(p);
     }
-    let bevel = max(min(radius * 0.96, 25. * dp), dp * 0.65);
-    let depth = max(-distance, 0.);
-    let edge_fraction = clamp(depth / bevel, 0., 1.);
-    let wall = pow(1. - edge_fraction, 0.88);
-    let front = sqrt(max(1. - wall * wall, 0.0001));
-    let normal = normalize(vec3(edge_normal * wall, front));
-
-    // Snell refraction bends the scene only where the material actually curves.
-    let ray = refract(vec3(0., 0., -1.), normal, 1. / 1.47);
-    let thickness = bevel * front * 1.65 + 1.8 * dp;
-    var offset = ray.xy / max(-ray.z, 0.15) * thickness
-        * (lens.optics.z / max(14. * dp, 1.));
-    offset -= p / max(half_size, vec2(1.)) * lens.optics.z * 0.045;
-    let displacement_limit = min(lens.optics.z * 1.75, min(half_size.x, half_size.y) * 0.48);
-    offset *= min(1., displacement_limit / max(length(offset), 0.001));
-    let uv_pos = pos + offset;
-
-    // Clear centres, soft blur at the rolled wall. Never blur the foreground UI.
-    var c = blur_scene(uv_pos, lens.optics.y * (0.15 + 1.05 * wall * wall));
-    if lens.optics.z > 0. && wall > 0.01 {
-        let dispersion = edge_normal * wall * min(lens.optics.z * 0.018, dp * 0.32);
-        c.r = mix(c.r, sample_scene(uv_pos + dispersion).r, wall * 0.16);
-        c.b = mix(c.b, sample_scene(uv_pos - dispersion).b, wall * 0.16);
+    // Two offset area lights, with a restrained pointer-following component.
+    let key = normalize(vec2(-0.72, -0.69) + lens.frame.zw * 0.22);
+    let fill = normalize(vec2(0.78, 0.63));
+    let key_amount = pow(max(dot(outward, key), 0.), 7.);
+    let fill_amount = pow(max(dot(outward, fill), 0.), 12.);
+    let beyond = max(signed_d, 0.);
+    let shadow = 0.09 * exp(-beyond / (2.25 * dp))
+        * (1. - smoothstep(6. * dp, 9. * dp, beyond));
+    // Perceptual bloom/bleed is LOCAL to the lens halo; no fullscreen bloom pass.
+    let halo = exp(-pow(beyond / max(4.0 * dp, 0.1), 2.))
+        * (key_amount * 0.16 + fill_amount * 0.045);
+    if coverage <= 0. {
+        return vec4(vec3(0.57, 0.73, 0.88), halo + shadow * 0.50);
     }
 
-    // Dielectric Fresnel and microfacet reflections: no painted glass bands.
-    let ior = 1.47;
+    let depth = max(-signed_d, 0.);
+    // Rounded cross-section. Circular lenses curve across most of their radius;
+    // a wide panel has a flat central plateau for readable foreground UI.
+    let roll = max(min(radius * 0.95, 29.0 * dp), 0.75 * dp);
+    let t = clamp(depth / roll, 0., 1.);
+    let slope = pow(1. - t, 0.68);
+    let front = sqrt(max(1. - slope * slope, 0.0004));
+    let normal = normalize(vec3(outward * slope, front));
+
+    // Screen-space thin-lens refraction: Snell + the finite slab depth.
+    // The displacement is zero in the central plateau but pronounced at edges.
+    let incident = vec3(0., 0., -1.);
+    let transmitted = refract(incident, normal, 1. / 1.48);
+    let slab = (roll * front * 1.75 + 3.0 * dp) * (lens.optics.z / (14.0 * dp));
+    var displacement = transmitted.xy / max(-transmitted.z, 0.12) * slab * 1.44;
+    displacement -= p / max(half_size, vec2(1.)) * lens.optics.z * 0.028;
+    // Never sample beyond the snapshot's sampling halo or across a whole button.
+    let max_dist = min(lens.optics.z * 2.1, min(half_size.x, half_size.y) * 0.74);
+    displacement *= min(1., max_dist / max(length(displacement), 0.001));
+    let refracted = pos + displacement;
+
+    // Adaptive blur: crystal-clear centre, subtle scatter in thicker glass.
+    let blur = lens.optics.y * (0.08 + 0.83 * slope * slope);
+    var rgb = blur_scene(refracted, blur);
+    if lens.optics.z > 0. && slope > 0.04 {
+        let chroma = outward * pow(slope, 1.7)
+            * min(lens.optics.z * 0.038, 0.77 * dp);
+        // Chromatic aberration on the bezel only: foreground remains sharp.
+        rgb.r = mix(rgb.r, sample_scene(refracted + chroma).r, 0.60 * slope);
+        rgb.b = mix(rgb.b, sample_scene(refracted - chroma).b, 0.60 * slope);
+    }
+
+    // Fresnel-Schlick of clear dielectric (F0 around four percent).
+    let ior = 1.48;
     let f0 = pow((ior - 1.) / (ior + 1.), 2.);
     let fresnel = f0 + (1. - f0) * pow(1. - normal.z, 5.);
-    let light_xy = normalize(vec2(-0.64, -0.77) + lens.frame.zw * 0.20);
-    let light = normalize(vec3(light_xy, 1.15));
-    let halfway = normalize(light + vec3(0., 0., 1.));
-    let nv = max(normal.z, 0.001);
-    let nl = max(dot(normal, light), 0.001);
-    let nh = max(dot(normal, halfway), 0.);
-    let roughness = 0.23;
-    let a2 = pow(roughness, 4.);
-    let denominator = nh * nh * (a2 - 1.) + 1.;
-    let distribution = a2 / max(3.14159265 * denominator * denominator, 0.00001);
-    let k = roughness * roughness * 0.5;
-    let visibility = (nv / (nv * (1. - k) + k)) * (nl / (nl * (1. - k) + k));
-    let specular = distribution * visibility * f0 / max(4. * nv, 0.004);
+    let luma = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+    rgb = mix(rgb, lens.tint.rgb,
+        lens.tint.a * (0.65 + 0.20 * smoothstep(0.2, 0.85, luma)));
 
-    // Low-colour, translucent material. Backdrop owns the central pixels.
-    let luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
-    let tint_alpha = lens.tint.a * (0.82 + 0.18 * smoothstep(0.25, 0.9, luma));
-    c = mix(c, lens.tint.rgb, tint_alpha);
-    let reflected = reflect(vec3(0., 0., -1.), normal);
-    let sky = smoothstep(-0.65, 0.8, -reflected.y);
-    let environment = mix(vec3(0.10, 0.13, 0.18), vec3(0.88, 0.94, 1.), sky);
-    c = mix(c, environment, fresnel * 0.69);
+    // Reflection takes environment colour from the scene, not a flat white rim.
+    let ambient = sample_scene(pos + outward * (6.0 * dp));
+    let bounced = sample_scene(pos - outward * min(roll * 0.8, 18.0 * dp));
+    let environment = mix(vec3(0.44, 0.55, 0.66), ambient, 0.44);
+    rgb = mix(rgb, environment, clamp(fresnel * 0.76, 0., 0.69));
 
-    // Contact rim + a small internal caustic make a pill read as a lens object.
-    let rim = exp(-depth / max(0.6, dp * 0.62));
-    let directional = pow(max(dot(edge_normal, light_xy), 0.), 9.);
-    let caustic = exp(-pow((depth - bevel * 0.58) / max(bevel * 0.15, dp), 2.))
-        * pow(max(-dot(edge_normal, light_xy), 0.), 3.) * wall * 0.065;
-    let shine = clamp(rim * (0.055 + directional * 0.53)
-        + (1. - exp(-specular * 0.30)) * smoothstep(0., 0.07, wall)
-        + caustic, 0., 0.68);
-    c = mix(c, vec3(0.97, 0.988, 1.), shine);
-    return vec4(c, coverage + shadow * (1. - coverage));
+    // Specular lobe from two directional sources, spread into a soft bloom.
+    let light = normalize(vec3(key, 0.92));
+    let half_vec = normalize(light + vec3(0., 0., 1.));
+    let hdot = max(dot(normal, half_vec), 0.);
+    let lobe = pow(hdot, 88.) * pow(slope, 0.65);
+    let rim = exp(-depth / max(1.1 * dp, 0.5));
+    let key_reflection = key_amount * (0.39 * rim + 0.13 * slope);
+    let fill_reflection = fill_amount * (0.20 * rim + 0.06 * slope);
+    let speck = lobe * 0.38;
+    // Inner caustic / directional colour bleed where the refracted ray exits.
+    let caustic_band = exp(-pow((depth - roll * 0.61) /
+        max(roll * 0.16, dp), 2.));
+    let caustic = caustic_band * pow(max(dot(-outward, key), 0.), 3.)
+        * slope * 0.20;
+    let spill = (ambient * 0.37 + bounced * 0.63)
+        * (0.06 * slope + 0.075 * caustic_band) * (0.5 + 0.5 * luma);
+    rgb = clamp(rgb + spill + caustic * vec3(0.60, 0.77, 0.94), vec3(0.), vec3(1.));
+    let shine = clamp(key_reflection + fill_reflection + speck
+        + 0.12 * rim * pow(max(dot(outward, key), 0.), 20.), 0., 0.82);
+    rgb = mix(rgb, vec3(0.96, 0.985, 1.), shine);
+    return vec4(rgb, coverage + shadow * (1. - coverage));
 }
 @fragment fn fs_blit(in: Out) -> @location(0) vec4<f32> {
     return textureSampleLevel(scene,scene_sampler,in.position.xy / lens.frame.xy,0.);
