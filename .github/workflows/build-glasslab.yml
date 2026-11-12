@@ -43,7 +43,7 @@ jobs:
           from pathlib import Path
           import os
           script=(Path(os.environ['RUNNER_TEMP'])/'glass_lab_project/web-demo/app.js').read_text()
-          for marker in ['GLASS_LAB_PRESET_V3', 'uDynamics[4]', 'uStyle', 'directional-viscoelastic-gel', 'console-mechanical']:
+          for marker in ['GLASS_LAB_PRESET_V4', 'uDynamics[4]', 'uStyle', 'directional-viscoelastic-gel', 'console-mechanical']:
               assert marker in script, marker
           print('Dual material systems, directional physics and export v3 verified')
           PYTEST
@@ -66,9 +66,9 @@ jobs:
       - name: Prepare APK
         run: |
           mkdir -p dist
-          cp "$RUNNER_TEMP/glass_lab_project/app/build/outputs/apk/debug/app-debug.apk" dist/GlassLab-3.0-Motion-Materials.apk
+          cp "$RUNNER_TEMP/glass_lab_project/app/build/outputs/apk/debug/app-debug.apk" dist/GlassLab-4.0-Retro-Optics.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: GlassLab-3.0-Android-APK
-          path: dist/GlassLab-3.0-Motion-Materials.apk
+          name: GlassLab-4.0-Android-APK
+          path: dist/GlassLab-4.0-Retro-Optics.apk
           retention-days: 14
