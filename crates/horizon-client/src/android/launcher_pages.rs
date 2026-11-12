@@ -1151,10 +1151,18 @@ impl Launcher {
             || self.exit_confirmation
             || self.diagnostics_modal_open
             || self.status_details;
+        // Old School selects across X; Liquid Glass selects across Y. The
+        // existing physical spring now drives a real rendered indicator.
+        let selected_nav = layout.nav_rect(w, h, selected_idx, Page::ALL.len());
+        let nav_position = if layout.console && !layout.portrait {
+            selected_nav[0]
+        } else {
+            selected_nav[1]
+        };
         self.anim.step(
             self.catalog.page,
             self.catalog.settings_category,
-            layout.nav_rect(w, h, selected_idx, Page::ALL.len())[1],
+            nav_position,
             has_any_modal,
             self.catalog.sections,
         );
@@ -1167,13 +1175,14 @@ impl Launcher {
             .iter()
             .map(|p| (p.name(), page_icon(*p)))
             .collect();
-        visual::shell(
+        visual::shell_animated(
             &mut ui,
             &items,
             selected_idx,
             &account_name,
             self.login.signed_in,
             &format!("Android {}", crate::backend::VERSION),
+            Some(self.anim.nav_pill_y),
             |rect, action| {
                 let action = match action {
                     visual::ShellAction::Page(index) => Action::Page(Page::ALL[index]),
@@ -1324,7 +1333,10 @@ impl Launcher {
                 };
                 let is_console = layout.console && !layout.portrait;
                 let home_top = if is_console { 130.0 } else { 76.0 };
-                let home_reserved_bottom = if is_console { 35.0 } else { 40.0 };
+                // Keep a real gap between bottom utility actions and the
+                // full-height dashboard. Previously the 32dp status button
+                // overlapped the play hero on shorter landscape screens.
+                let home_reserved_bottom = if is_console { 67.0 } else { 66.0 };
                 visual::home(
                     &mut ui,
                     [content_x, home_top + slide_y, content_w,
