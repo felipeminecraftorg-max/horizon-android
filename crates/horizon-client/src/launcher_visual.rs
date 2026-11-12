@@ -660,6 +660,7 @@ fn shell_console(
     account: &str,
     signed_in: bool,
     version: &str,
+    focus_x: f32,
     mut target: impl FnMut([f32; 4], ShellAction),
 ) -> Layout {
     let th = active_theme();
@@ -685,6 +686,15 @@ fn shell_console(
     target(settings, ShellAction::Appearance);
     ui.fill(24., 117., w - 48., 1., color::hex(0xD4D8EB, 72));
 
+    // A physically animated lens follows the selected console tab. The
+    // underlying hitboxes remain fixed, so focus and touch never lag.
+    if !items.is_empty() {
+        let step = (w - 48.) / items.len() as f32;
+        let fx = focus_x.clamp(24., w - 24. - step);
+        panel(ui, [fx + 10., 76., (step - 20.).max(22.), 34.], 12., false);
+        ui.fill(fx + step * 0.28, 114., step * 0.44, 1.4,
+            color::hex(0xEEF2FF, 208));
+    }
     for (i, (label, _icon)) in items.iter().enumerate() {
         let tab = layout.nav_rect(w, h, i, items.len());
         let chosen = i == selected;
@@ -697,18 +707,13 @@ fn shell_console(
             if chosen { th.text_primary } else { th.text_muted },
             &fitted,
         );
-        if chosen {
-            let underline_w = (tw + 16.).min(tab[2] - 8.);
-            let underline_x = tab[0] + (tab[2] - underline_w) * 0.5;
-            ui.rounded(underline_x - 12., tab[1] + 36., underline_w + 24., 3., 1.5, color::hex(0xB4A9FF, 35));
-            ui.fill(underline_x, tab[1] + 37., underline_w, 1., color::hex(0xEAE8FF, 230));
-        }
         target(tab, ShellAction::Page(i));
     }
     layout
 }
 
 /// Header and adaptive navigation shared by the app and the native captures.
+/// Backward-compatible non-animated entry, used by the standalone UI harness.
 #[allow(clippy::too_many_arguments)]
 pub fn shell(
     ui: &mut Ui<'_>,
@@ -717,13 +722,33 @@ pub fn shell(
     account: &str,
     signed_in: bool,
     version: &str,
+    target: impl FnMut([f32; 4], ShellAction),
+) -> Layout {
+    let layout = Layout::new(ui.w, ui.h);
+    let index = selected.min(items.len().saturating_sub(1));
+    let target_rect = layout.nav_rect(ui.w, ui.h, index, items.len().max(1));
+    shell_animated(ui, items, selected, account, signed_in, version,
+        [target_rect[0], target_rect[1]], target)
+}
+
+/// Modern glass and console channels each have an animated selected component.
+/// The physical lens moves independently of immutable target hitboxes.
+#[allow(clippy::too_many_arguments)]
+pub fn shell_animated(
+    ui: &mut Ui<'_>,
+    items: &[(&str, Icon)],
+    selected: usize,
+    account: &str,
+    signed_in: bool,
+    version: &str,
+    focus: [f32; 2],
     mut target: impl FnMut([f32; 4], ShellAction),
 ) -> Layout {
     let th = active_theme();
     let (w, h) = (ui.w, ui.h);
     let layout = Layout::new(w, h);
     if layout.console && !layout.portrait {
-        return shell_console(ui, items, selected, account, signed_in, version, target);
+        return shell_console(ui, items, selected, account, signed_in, version, focus[0], target);
     }
     ui.horizon_logo(18., 17., 31.);
     ui.text(Face::SemiBold, 17., 58., 13., th.text_primary, "Horizon");
@@ -754,11 +779,11 @@ pub fn shell(
     // outside the glass layer; the icons and their hitboxes remain crisp.
     if th.experience == ExperiencePreset::LiquidGlass && !layout.portrait {
         panel(ui, [19., 83., 81., (h - 99.).max(80.)], 31., false);
+        let selected_rect = layout.nav_rect(w, h, selected, items.len().max(1));
+        let selected_y = focus[1].clamp(90., (h - 61.).max(90.));
+        panel(ui, [selected_rect[0] + 3., selected_y + 1., selected_rect[2] - 6., 42.], 18., true);
         for (i, (_, icon)) in items.iter().enumerate() {
             let r = layout.nav_rect(w, h, i, items.len());
-            if i == selected {
-                panel(ui, [r[0] + 3., r[1] + 1., r[2] - 6., 42.], 18., true);
-            }
             ui.icon(
                 *icon, r[0] + (r[2] - 21.) / 2., r[1] + 11., 21.,
                 if i == selected { th.text_primary } else { th.text_muted },
