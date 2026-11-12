@@ -1,4 +1,4 @@
-name: Glass Lab 6.0 Particles and SFX APK
+name: Glass Lab 7.0 — Sound Library Per Component APK
 on:
   workflow_dispatch:
   pull_request:
@@ -40,7 +40,6 @@ jobs:
           cd "$RUNNER_TEMP/glass_lab_project"
           node --check web-demo/app.js
           node --check web-demo/audio.js
-          node --check web-demo/particles.js
           node test_app_pack.mjs
           node test_pack_runtime.cjs
           node test_physics.mjs
@@ -72,19 +71,19 @@ jobs:
           s=(Path(os.environ['RUNNER_TEMP'])/'glass_lab_project/web-demo/app.js').read_text()
           begin=s.index('  const FRAG=`')+len('  const FRAG=`')
           end=s.rfind('`;',begin,s.index('  function compileShader',begin))
-          Path('/tmp/glasslab6.frag').write_text(s[begin:end])
+          Path('/tmp/glasslab7.frag').write_text(s[begin:end])
           PY
-          glslangValidator -S frag /tmp/glasslab6.frag
+          glslangValidator -S frag /tmp/glasslab7.frag
       - name: Compile standalone Android APK
         run: cd "$RUNNER_TEMP/glass_lab_project" && gradle :app:assembleDebug --no-daemon --stacktrace
       - name: Upload experimental APK
         if: success()
         run: |
           mkdir -p dist
-          cp "$RUNNER_TEMP/glass_lab_project/app/build/outputs/apk/debug/app-debug.apk" dist/GlassLab-6.0-Particulas-SFX.apk
+          cp "$RUNNER_TEMP/glass_lab_project/app/build/outputs/apk/debug/app-debug.apk" dist/GlassLab-7.0-SFX-Individual.apk
       - uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: GlassLab-6.0-Android-APK
-          path: dist/GlassLab-6.0-Particulas-SFX.apk
+          name: GlassLab-7.0-Android-APK
+          path: dist/GlassLab-7.0-SFX-Individual.apk
           retention-days: 14
