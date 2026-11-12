@@ -1,4 +1,4 @@
-name: Glass Lab independent APK
+name: Glass Lab 2 - Preset Studio APK
 on:
   workflow_dispatch:
   pull_request:
@@ -24,7 +24,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Install Android SDK 35 using runner tools
+      - name: Install SDK 35 using runner tools
         shell: bash
         run: |
           sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
@@ -33,16 +33,30 @@ jobs:
           fi
           test -x "$sdkmanager"
           "$sdkmanager" --sdk_root="$ANDROID_HOME" 'platforms;android-35' 'build-tools;35.0.0'
-      - name: Extract standalone project
+      - name: Extract independent project
         run: unzip -q experiments/glass-lab/source.zip -d "$RUNNER_TEMP"
-      - name: Compile standalone Glass Lab APK
+      - name: Validate GLSL shader
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -yqq glslang-tools
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          source=(Path(os.environ['RUNNER_TEMP'])/'glass_lab_project/web-demo/app.js').read_text()
+          start=source.index('  const FRAG=' + chr(96))+len('  const FRAG=' + chr(96))
+          stop=source.index(chr(96)+';\n  function compileShader',start)
+          Path('/tmp/glasslab_shader.frag').write_text(source[start:stop])
+          PY
+          glslangValidator -S frag /tmp/glasslab_shader.frag
+      - name: Build independent Android APK
         run: cd "$RUNNER_TEMP/glass_lab_project" && gradle :app:assembleDebug --no-daemon --stacktrace
       - name: Stage APK
         run: |
           mkdir -p dist
-          cp "$RUNNER_TEMP/glass_lab_project/app/build/outputs/apk/debug/app-debug.apk" dist/GlassLab-1.0-Android.apk
+          cp "$RUNNER_TEMP/glass_lab_project/app/build/outputs/apk/debug/app-debug.apk" dist/GlassLab-2.0-Preset-Studio.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: GlassLab-Android-APK
-          path: dist/GlassLab-1.0-Android.apk
+          name: GlassLab-2.0-Android-APK
+          path: dist/GlassLab-2.0-Preset-Studio.apk
           retention-days: 14
