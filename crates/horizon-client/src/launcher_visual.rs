@@ -595,13 +595,22 @@ pub struct Layout {
 impl Layout {
     pub fn new(w: f32, h: f32) -> Self {
         let portrait = h > w || w < 620.;
-        let console = active_theme().experience == ExperiencePreset::OldSchool;
-        let x = if portrait { 16. } else if console { 230. } else { 210. };
+        let experience = active_theme().experience;
+        let console = experience == ExperiencePreset::OldSchool;
+        let x = if portrait {
+            16.
+        } else if console {
+            24. // Full-width console dashboard beneath the horizontal tabs.
+        } else if experience == ExperiencePreset::LiquidGlass {
+            119. // Narrow icon rail, like the modern reference.
+        } else {
+            210.
+        };
         Self {
             portrait,
             console,
             x,
-            width: (w - x - 20.).max(200.),
+            width: (w - x - if console { 24. } else { 20. }).max(200.),
             bottom: if portrait { h - 84. } else { h },
         }
     }
@@ -610,9 +619,11 @@ impl Layout {
             let step = (w - 32.) / count as f32;
             [16. + index as f32 * step, h - 72., step, 56.]
         } else if self.console {
-            // Wide metallic channels, independent of the Liquid Glass bubble rail.
-            let step = ((h - 125.) / count as f32).clamp(33., 48.);
-            [20., 105. + index as f32 * step, 188., (step - 3.).min(44.)]
+            let step = (w - 48.) / count.max(1) as f32;
+            [24. + index as f32 * step, 73., step, 43.]
+        } else if active_theme().experience == ExperiencePreset::LiquidGlass {
+            let step = ((h - 114.) / count.max(1) as f32).clamp(44., 52.);
+            [32., 90. + index as f32 * step, 55., 44.]
         } else {
             [
                 20.,
@@ -622,6 +633,65 @@ impl Layout {
             ]
         }
     }
+}
+
+
+/// Late-2000s console interface: no sidebar, no oversized rounded capsules.
+/// Tabs form a real horizontal navigation row; home supplies a tile dashboard.
+#[allow(clippy::too_many_arguments)]
+fn shell_console(
+    ui: &mut Ui<'_>,
+    items: &[(&str, Icon)],
+    selected: usize,
+    account: &str,
+    signed_in: bool,
+    version: &str,
+    mut target: impl FnMut([f32; 4], ShellAction),
+) -> Layout {
+    let th = active_theme();
+    let (w, h) = (ui.w, ui.h);
+    let layout = Layout::new(w, h);
+    ui.horizon_logo(24., 15., 30.);
+    ui.text(Face::SemiBold, 20., 62., 12., th.text_primary, "Horizon");
+    ui.text(Face::Regular, 9.5, 62., 38., th.text_muted, version);
+
+    let aw = (w * 0.22).clamp(138., 196.);
+    let account_r = [w - aw - 66., 13., aw, 39.];
+    ui.rounded(account_r[0], account_r[1], aw, 39., 9., color::hex(0xECF3FF, 27));
+    ui.stroke_rounded(account_r[0], account_r[1], aw, 39., 9., 0.9, color::hex(0xFFFFFF, 85));
+    ui.avatar_head_2d(account_r[0] + 6., 19., 27., account);
+    if signed_in {
+        ui.rounded(account_r[0] + 29., 40., 5., 5., 2.5, th.success);
+    }
+    let name = ui.fit_text(Face::Medium, 12., account, aw - 51.);
+    ui.text(Face::Medium, 12., account_r[0] + 42., 24., th.text_primary, &name);
+    target(account_r, ShellAction::Account);
+    let settings = [w - 53., 13., 38., 39.];
+    ui.icon(Icon::Gear, settings[0] + 10., settings[1] + 9., 19., th.text_primary);
+    target(settings, ShellAction::Appearance);
+    ui.fill(24., 117., w - 48., 1., color::hex(0xD4D8EB, 72));
+
+    for (i, (label, _icon)) in items.iter().enumerate() {
+        let tab = layout.nav_rect(w, h, i, items.len());
+        let chosen = i == selected;
+        let fitted = ui.fit_text(Face::Medium, 13., label, tab[2] - 12.);
+        let tw = ui.measure(Face::Medium, 13., &fitted);
+        ui.text(
+            Face::Medium, 13.,
+            tab[0] + (tab[2] - tw) * 0.5,
+            tab[1] + 8.,
+            if chosen { th.text_primary } else { th.text_muted },
+            &fitted,
+        );
+        if chosen {
+            let underline_w = (tw + 16.).min(tab[2] - 8.);
+            let underline_x = tab[0] + (tab[2] - underline_w) * 0.5;
+            ui.rounded(underline_x - 12., tab[1] + 36., underline_w + 24., 3., 1.5, color::hex(0xB4A9FF, 35));
+            ui.fill(underline_x, tab[1] + 37., underline_w, 1., color::hex(0xEAE8FF, 230));
+        }
+        target(tab, ShellAction::Page(i));
+    }
+    layout
 }
 
 /// Header and adaptive navigation shared by the app and the native captures.
@@ -638,6 +708,9 @@ pub fn shell(
     let th = active_theme();
     let (w, h) = (ui.w, ui.h);
     let layout = Layout::new(w, h);
+    if layout.console && !layout.portrait {
+        return shell_console(ui, items, selected, account, signed_in, version, target);
+    }
     ui.horizon_logo(18., 17., 31.);
     ui.text(Face::SemiBold, 17., 58., 13., th.text_primary, "Horizon");
     ui.text(Face::Regular, 10.5, 58., 37., th.text_muted, version);
@@ -663,8 +736,23 @@ pub fn shell(
     panel(ui, gear, 22., false);
     ui.icon(Icon::Gear, gear[0] + 12., 24., 20., th.text_primary);
     target(gear, ShellAction::Appearance);
-    // The navigation rail is no longer one giant frosted sheet for Liquid
-    // Glass. Each selected icon is an individual physical lens instead.
+    // Liquid Glass: an entirely different narrow icon dock. Keep tab content
+    // outside the glass layer; the icons and their hitboxes remain crisp.
+    if th.experience == ExperiencePreset::LiquidGlass && !layout.portrait {
+        panel(ui, [19., 83., 81., (h - 99.).max(80.)], 31., false);
+        for (i, (_, icon)) in items.iter().enumerate() {
+            let r = layout.nav_rect(w, h, i, items.len());
+            if i == selected {
+                panel(ui, [r[0] + 3., r[1] + 1., r[2] - 6., 42.], 18., true);
+            }
+            ui.icon(
+                *icon, r[0] + (r[2] - 21.) / 2., r[1] + 11., 21.,
+                if i == selected { th.text_primary } else { th.text_muted },
+            );
+            target(r, ShellAction::Page(i));
+        }
+        return layout;
+    }
     if th.material != Material::Glass {
         if layout.portrait {
             panel(ui, [12., h - 78., w - 24., 68.], if layout.console { 12. } else { 23. }, false);
