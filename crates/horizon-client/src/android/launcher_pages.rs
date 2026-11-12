@@ -5326,7 +5326,33 @@ impl Launcher {
                 horizon_client::settings::set_source_volumes(volumes);
                 audio
             });
-            audio.play_button_click();
+            // Theme-aware UI audio routing. The two experiences never share the
+            // same event profile: Liquid Glass is short, light and crystalline;
+            // Old School has a softer console-era pitched musical confirmation.
+            // No extra sound is fired for focus changes or scroll motion.
+            use horizon_client::ui_theme::ThemePreset;
+            match self.catalog.config.theme.preset {
+                ThemePreset::LiquidGlass => {
+                    let back = matches!(
+                        action,
+                        Some(Action::Appearance(visual::AppearanceAction::Back))
+                    );
+                    audio.play("minecraft:ui.button.click", None, 0.12,
+                        if back { 0.86 } else { 1.33 });
+                }
+                ThemePreset::OldSchool => {
+                    let switch_page = matches!(action, Some(Action::Page(_)) | Some(Action::SettingsCat(_)));
+                    let confirm = matches!(action, Some(Action::Play) | Some(Action::Profile));
+                    if switch_page {
+                        audio.play("minecraft:block.note_block.pling", None, 0.15, 0.72);
+                    } else if confirm {
+                        audio.play("minecraft:block.note_block.pling", None, 0.19, 1.05);
+                    } else {
+                        audio.play("minecraft:ui.button.click", None, 0.16, 0.71);
+                    }
+                }
+                _ => audio.play_button_click(),
+            }
         }
         match action {
             Some(Action::PauseInstall) => {
