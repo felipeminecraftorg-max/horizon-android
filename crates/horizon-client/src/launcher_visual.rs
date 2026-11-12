@@ -1226,6 +1226,60 @@ mod tests {
     }
 
     #[test]
+    fn old_school_changes_real_layout_without_losing_home_actions() {
+        let mut cfg = LauncherThemeConfig::default();
+        cfg.apply_preset(ThemePreset::OldSchool);
+        assert_eq!(cfg.resolve().experience, ExperiencePreset::OldSchool);
+        assert_eq!(cfg.resolve().material, Material::Aero);
+        assert_eq!(cfg.resolve().wallpaper, Wallpaper::Graphite);
+        set_active_for_test(&cfg);
+        for (w, h) in [(340., 640.), (900., 480.)] {
+            let layout = Layout::new(w, h);
+            assert!(layout.console);
+            let atlas = HudAtlas::boot();
+            let mut batch = HudBatch::new([w as u32, h as u32]);
+            let mut ui = Ui::new(&atlas, &mut batch, (0., 0.));
+            let mut actions = Vec::new();
+            home(
+                &mut ui,
+                [layout.x, 76., layout.width, layout.bottom - 116.],
+                &HomeView {
+                    installed: true,
+                    launching: false,
+                    profile: 0,
+                    renderer: "Vulkan / compatibility",
+                },
+                |r, a| actions.push((r, a)),
+            );
+            for required in [
+                HomeAction::Play,
+                HomeAction::Profile,
+                HomeAction::Mods,
+                HomeAction::Packs,
+                HomeAction::Shaders,
+                HomeAction::Files,
+            ] {
+                assert!(actions.iter().any(|(_, actual)| *actual == required), "{w}x{h}: {required:?}");
+            }
+            for (i, (r, _)) in actions.iter().enumerate() {
+                assert!(r[0] >= layout.x && r[0] + r[2] <= ui.w);
+                assert!(r[1] >= 76. && r[1] + r[3] <= layout.bottom);
+                for (o, _) in actions.iter().take(i) {
+                    assert!(
+                        r[0] >= o[0] + o[2] || o[0] >= r[0] + r[2] ||
+                        r[1] >= o[1] + o[3] || o[1] >= r[1] + r[3],
+                        "{w}x{h}: action overlap {r:?} / {o:?}"
+                    );
+                }
+            }
+        }
+        cfg.apply_preset(ThemePreset::LiquidGlass);
+        set_active_for_test(&cfg);
+        assert_eq!(cfg.resolve().experience, ExperiencePreset::LiquidGlass);
+        assert!(!Layout::new(900., 480.).console);
+    }
+
+    #[test]
     fn saved_themes_keep_wallpaper_independent_of_material_effects() {
         let mut cfg = LauncherThemeConfig::default();
         cfg.apply_preset(ThemePreset::DarkAero);
