@@ -1535,65 +1535,40 @@ pub fn appearance(
         }
     }
     let tuning_y = row_y + 232.;
-    let tuning_height = if cfg.preset == ThemePreset::LiquidGlass && cfg.glass_effects {
+    let tuning_height = if cfg.glass_effects
+        && matches!(cfg.preset, ThemePreset::LiquidGlass | ThemePreset::OldSchool)
+    {
         let optics = cfg.glass.normalized();
-        for (i, (label, value, action)) in [
+        for (i, (label, value, fraction, action)) in [
             (
-                "Transparency",
-                format!("{}%", ((1. - optics.opacity) * 100.).round() as u32),
+                "Opacidade",
+                format!("{}%", (optics.opacity * 100.).round() as u32),
+                ((optics.opacity - 0.06) / 0.44).clamp(0., 1.),
                 AppearanceAction::Transparency,
             ),
             (
-                "Backdrop blur",
-                if optics.blur < 0.1 {
-                    "Off · lightest".into()
-                } else if optics.blur < 6. {
-                    "Soft".into()
-                } else {
-                    "Strong".into()
-                },
+                "Desfoque",
+                format!("{:.1}", optics.blur),
+                (optics.blur / 10.).clamp(0., 1.),
                 AppearanceAction::Blur,
             ),
             (
-                "Refraction",
-                if optics.refraction < 0.1 {
-                    "Off".into()
-                } else if optics.refraction < 18. {
-                    "Natural".into()
-                } else {
-                    "Strong".into()
-                },
+                "Refracao",
+                format!("{:.0}", optics.refraction),
+                (optics.refraction / 24.).clamp(0., 1.),
                 AppearanceAction::Refraction,
             ),
         ]
         .into_iter()
         .enumerate()
         {
-            let r = [x, tuning_y + i as f32 * 58., w, 50.];
-            panel(ui, r, 14., false);
-            ui.text(
-                Face::Medium,
-                12.,
-                x + 16.,
-                r[1] + 15.,
-                th.text_primary,
-                label,
-            );
-            let text = ui.fit_text(Face::Regular, 11., &value, w * 0.40);
-            let tw = ui.measure(Face::Regular, 11., &text);
-            ui.text(
-                Face::Regular,
-                11.,
-                x + w - 16. - tw,
-                r[1] + 16.,
-                th.text_primary,
-                &text,
-            );
-            if let Some(r) = ui.clip_rect(r) {
-                target(r, action);
+            let r = [x, tuning_y + i as f32 * 82., w, 74.];
+            let hit = optic_slider(ui, r, label, &value, fraction);
+            if let Some(hit) = ui.clip_rect(hit) {
+                target(hit, action);
             }
         }
-        182.
+        248.
     } else {
         0.
     };
