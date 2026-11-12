@@ -41,50 +41,86 @@ fn blur_scene(p: vec2<f32>, radius: f32) -> vec3<f32> {
     let radius = min(lens.optics.x, min(half_size.x, half_size.y));
     let q = abs(p) - half_size + vec2(radius);
     let outside = max(q, vec2(0.));
-    let distance = length(outside) + min(max(q.x,q.y),0.) - radius;
-    let aa = max(fwidth(distance),0.75);
-    let coverage = clamp(0.5 - distance / aa,0.,1.);
+    let distance = length(outside) + min(max(q.x, q.y), 0.) - radius;
+    let aa = max(fwidth(distance), 0.75);
+    let coverage = clamp(0.5 - distance / aa, 0., 1.);
     if any(pos < lens.clip.xy) || any(pos >= lens.clip.xy + lens.clip.zw) { discard; }
-    // A short contact shadow anchors the clear rim without covering its centre.
-    let shadow = 0.13 * exp(-max(distance,0.) / max(lens.optics.w * 1.6,0.5));
-    if coverage <= 0. { return vec4(0.,0.,0.,shadow); }
-    var n = select(vec2(0.,sign(p.y)), vec2(sign(p.x),0.), q.x > q.y);
-    if length(outside) > 0.001 { n = normalize(outside) * sign(p); }
-    let bevel = max(min(radius * 0.90,24. * lens.optics.w),1.);
-    let depth = max(-distance,0.);
-    // Circular cross-section: a steep outside wall rolls into a clear, nearly flat top.
-    let wall = 1. - clamp(depth / bevel,0.,1.);
-    let height = sqrt(max(1. - wall * wall,0.015));
-    let normal = normalize(vec3(n * wall, height));
-    let ray = refract(vec3(0.,0.,-1.),normal,1. / 1.45);
-    var offset = ray.xy / max(-ray.z,0.1) * lens.optics.z * height * 2.4;
-    // Small face magnification joins the stronger curved-edge displacement.
-    offset -= p / max(half_size,vec2(1.)) * lens.optics.z * 0.18;
-    offset *= min(1., lens.optics.z * 1.5 / max(length(offset),0.001));
-    let uv_pos = pos + offset;
-    // The face stays clearer than the rolled edge. Blur remains a user setting.
-    var c = blur_scene(uv_pos, lens.optics.y * (0.45 + 0.55 * wall));
-    if lens.optics.z > 0. && wall > 0.01 {
-        let fringe = n * wall * min(lens.optics.z * 0.025, lens.optics.w * 0.45);
-        c.r = mix(c.r,sample_scene(uv_pos + fringe).r,wall * 0.22);
-        c.b = mix(c.b,sample_scene(uv_pos - fringe).b,wall * 0.22);
+
+    // A nearby contact shadow is the only opacity outside the dielectric body.
+    let dp = max(lens.optics.w, 0.5);
+    let shadow_dist = max(distance, 0.);
+    let shadow = 0.10 * exp(-shadow_dist / (1.7 * dp))
+        * (1. - smoothstep(5. * dp, 8. * dp, shadow_dist));
+    if coverage <= 0. { return vec4(0., 0., 0., shadow); }
+
+    // An analytic rounded-rectangle SDF provides a curved physical lens edge,
+    // with a flat front face. Small pills show the roll; large panels stay clear.
+    var edge_normal = select(vec2(0., sign(p.y)), vec2(sign(p.x), 0.), q.x > q.y);
+    if length(outside) > 0.001 {
+        edge_normal = normalize(outside) * sign(p);
     }
-    c = mix(c,lens.tint.rgb,lens.tint.a);
-    let light_xy = normalize(vec2(-0.65,-0.76) + lens.frame.zw * 0.20);
-    let lighting = dot(n,light_xy);
-    let rim = exp(-depth / max(0.5,lens.optics.w * 0.38));
-    let light = normalize(vec3(light_xy,0.85));
-    let half_vector = normalize(light + vec3(0.,0.,1.));
-    let specular = pow(max(dot(normal,half_vector),0.),36.) * wall;
-    let fresnel = pow(1. - normal.z,5.);
-    let caustic = exp(-pow((depth - bevel * 0.48) / max(bevel * 0.18,1.),2.))
-        * pow(max(-lighting,0.),2.);
-    c *= 1. - rim * (0.08 + max(-lighting,0.) * 0.15);
-    let shine = rim * (0.10 + 0.72 * pow(max(lighting,0.),8.)
-        + 0.18 * pow(max(-lighting,0.),8.))
-        + specular * 0.32 + fresnel * 0.055 + caustic * 0.055;
-    c = mix(c,vec3(0.97,0.985,1.),clamp(shine,0.,0.84));
-    return vec4(c,coverage + shadow * (1. - coverage));
+    let bevel = max(min(radius * 0.96, 25. * dp), dp * 0.65);
+    let depth = max(-distance, 0.);
+    let edge_fraction = clamp(depth / bevel, 0., 1.);
+    let wall = pow(1. - edge_fraction, 0.88);
+    let front = sqrt(max(1. - wall * wall, 0.0001));
+    let normal = normalize(vec3(edge_normal * wall, front));
+
+    // Snell refraction bends the scene only where the material actually curves.
+    let ray = refract(vec3(0., 0., -1.), normal, 1. / 1.47);
+    let thickness = bevel * front * 1.65 + 1.8 * dp;
+    var offset = ray.xy / max(-ray.z, 0.15) * thickness
+        * (lens.optics.z / max(14. * dp, 1.));
+    offset -= p / max(half_size, vec2(1.)) * lens.optics.z * 0.045;
+    let displacement_limit = min(lens.optics.z * 1.75, min(half_size.x, half_size.y) * 0.48);
+    offset *= min(1., displacement_limit / max(length(offset), 0.001));
+    let uv_pos = pos + offset;
+
+    // Clear centres, soft blur at the rolled wall. Never blur the foreground UI.
+    var c = blur_scene(uv_pos, lens.optics.y * (0.15 + 1.05 * wall * wall));
+    if lens.optics.z > 0. && wall > 0.01 {
+        let dispersion = edge_normal * wall * min(lens.optics.z * 0.018, dp * 0.32);
+        c.r = mix(c.r, sample_scene(uv_pos + dispersion).r, wall * 0.16);
+        c.b = mix(c.b, sample_scene(uv_pos - dispersion).b, wall * 0.16);
+    }
+
+    // Dielectric Fresnel and microfacet reflections: no painted glass bands.
+    let ior = 1.47;
+    let f0 = pow((ior - 1.) / (ior + 1.), 2.);
+    let fresnel = f0 + (1. - f0) * pow(1. - normal.z, 5.);
+    let light_xy = normalize(vec2(-0.64, -0.77) + lens.frame.zw * 0.20);
+    let light = normalize(vec3(light_xy, 1.15));
+    let halfway = normalize(light + vec3(0., 0., 1.));
+    let nv = max(normal.z, 0.001);
+    let nl = max(dot(normal, light), 0.001);
+    let nh = max(dot(normal, halfway), 0.);
+    let roughness = 0.23;
+    let a2 = pow(roughness, 4.);
+    let denominator = nh * nh * (a2 - 1.) + 1.;
+    let distribution = a2 / max(3.14159265 * denominator * denominator, 0.00001);
+    let k = roughness * roughness * 0.5;
+    let visibility = (nv / (nv * (1. - k) + k)) * (nl / (nl * (1. - k) + k));
+    let specular = distribution * visibility * f0 / max(4. * nv, 0.004);
+
+    // Low-colour, translucent material. Backdrop owns the central pixels.
+    let luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    let tint_alpha = lens.tint.a * (0.82 + 0.18 * smoothstep(0.25, 0.9, luma));
+    c = mix(c, lens.tint.rgb, tint_alpha);
+    let reflected = reflect(vec3(0., 0., -1.), normal);
+    let sky = smoothstep(-0.65, 0.8, -reflected.y);
+    let environment = mix(vec3(0.10, 0.13, 0.18), vec3(0.88, 0.94, 1.), sky);
+    c = mix(c, environment, fresnel * 0.69);
+
+    // Contact rim + a small internal caustic make a pill read as a lens object.
+    let rim = exp(-depth / max(0.6, dp * 0.62));
+    let directional = pow(max(dot(edge_normal, light_xy), 0.), 9.);
+    let caustic = exp(-pow((depth - bevel * 0.58) / max(bevel * 0.15, dp), 2.))
+        * pow(max(-dot(edge_normal, light_xy), 0.), 3.) * wall * 0.065;
+    let shine = clamp(rim * (0.055 + directional * 0.53)
+        + (1. - exp(-specular * 0.30)) * smoothstep(0., 0.07, wall)
+        + caustic, 0., 0.68);
+    c = mix(c, vec3(0.97, 0.988, 1.), shine);
+    return vec4(c, coverage + shadow * (1. - coverage));
 }
 @fragment fn fs_blit(in: Out) -> @location(0) vec4<f32> {
     return textureSampleLevel(scene,scene_sampler,in.position.xy / lens.frame.xy,0.);
