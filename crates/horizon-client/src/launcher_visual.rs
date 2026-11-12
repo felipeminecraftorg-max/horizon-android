@@ -438,6 +438,16 @@ pub fn panel(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, emphasized: bool) {
         );
         return;
     }
+    if th.experience == ExperiencePreset::OldSchool && th.material == Material::Aero
+        && w > 285. && h > 138.
+    {
+        // Large panels are a *content* layer, never a mirror of previously
+        // rendered controls. This removes repeated ghost labels near edges.
+        ui.rounded(x, y, w, h, radius, color::hex(0x142033, 112));
+        ui.stroke_rounded(x, y, w, h, radius, 0.8,
+            color::hex(0xE4E9F6, 75));
+        return;
+    }
     if th.experience == ExperiencePreset::OldSchool && th.material == Material::Aero {
         // Actual GPU-composited chrome: WGSL samples the live framebuffer and
         // evaluates the PS3 pearl surface from the exported Glass Lab profile.
@@ -448,6 +458,14 @@ pub fn panel(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, emphasized: bool) {
             if compact { 0.05 } else { 0.02 },
             if compact { optics.refraction * 0.48 } else { optics.refraction * 0.27 },
         ]);
+        return;
+    }
+    if th.material == Material::Glass && w > 300. && h > 145. {
+        // A spacious photographic/content surface should not have the same
+        // heavy lens extrusion as a push button or slider handle.
+        ui.rounded(x, y, w, h, radius, color::hex(0x101D29, 100));
+        ui.stroke_rounded(x, y, w, h, radius, 0.9,
+            color::hex(0xDFEBF5, 92));
         return;
     }
     if th.material == Material::Glass {
@@ -896,13 +914,15 @@ fn home_old_school(
     let poster = [x, y, poster_w, poster_h];
     // Drop the placeholder voxel image. Real GPU chrome samples the Graphite wallpaper.
     panel(ui, poster, 16., false);
-    ui.stroke_rounded(x, y, poster_w, poster_h, 9., 1.1, color::hex(0xE2E5FA, 138));
-    ui.rounded(x + 13., y + 15., (poster_w - 27.).min(280.), 64., 6., color::hex(0x101425, 137));
-    ui.text(Face::SemiBold, if narrow { 22. } else { 28. },
-        x + 23., y + 22., color::hex(0xFFFFFF, 255), "MINECRAFT");
-    ui.text(Face::Medium, 16., x + 24., y + 57., color::hex(0xE4E6F5, 255), "26.3");
+    // Satin dark content inset, lit by the current wallpaper.
+    ui.stroke_rounded(x, y, poster_w, poster_h, 16., 0.8, color::hex(0xE2E5FA, 80));
+    ui.rounded(x + 15., y + 16., (poster_w - 30.).min(330.), 104., 12.,
+        color::hex(0x0A1020, 111));
+    ui.text(Face::SemiBold, if narrow { 23. } else { 31. },
+        x + 26., y + 22., color::hex(0xFFFFFF, 255), "MINECRAFT");
+    ui.text(Face::Medium, 16., x + 27., y + 64., color::hex(0xE4E6F5, 243), "26.3");
     let small = if view.installed { "Ready to play" } else { "Installation required" };
-    ui.text(Face::Regular, 11., x + 23., y + 85., color::hex(0xFAFAFF, 236), small);
+    ui.text(Face::Regular, 12.5, x + 27., y + 95., color::hex(0xFAFAFF, 236), small);
     // A small profile selector belongs to the poster, not the utility cards.
     let profile = [x + poster_w - 119., y + 13., 105., 37.];
     panel(ui, profile, 9., false);
@@ -910,10 +930,12 @@ fn home_old_school(
         color::hex(0xF2F6FF, 245), &format!("Profile {}", view.profile + 1));
     target(profile, HomeAction::Profile);
 
-    let play = [x, y + poster_h - 58., poster_w, 58.];
-    panel(ui, play, 11., true);
+    let play = [x + 12., y + poster_h - 67., poster_w - 24., 54.];
+    panel(ui, play, 13., true);
+    ui.rounded(play[0] + 1., play[1] + 1., play[2] - 2., play[3] - 2.,
+        12., color::hex(0x587B61, 48));
     // Cool satin edge: dark-chrome surface stays faithful to the user's V7 material.
-    ui.fill(play[0] + 7., play[1] + 3., poster_w - 14., 1.,
+    ui.fill(play[0] + 12., play[1] + 3., play[2] - 24., 1.,
         color::hex(0xE9F1FA, 102));
     ui.icon(Icon::Play, play[0] + 19., play[1] + 14., 27., color::hex(0xFFFFFF, 255));
     let label = if view.launching { "Getting ready..." } else if view.installed {
@@ -932,27 +954,33 @@ fn home_old_school(
     let card_w = (available - gap * (cols - 1) as f32) / cols as f32;
     let card_h = if narrow { ((h - poster_h - 3. * gap) / 3.).max(39.) }
         else { (h - gap) * 0.5 };
+    // A tint is a small *translucent* reflection in the chrome, not a solid
+    // Xbox-style painted tile. Maintain bright typography over each finish.
     let shortcuts = [
-        ("Mods", Icon::Mods, HomeAction::Mods),
-        ("Packs", Icon::Packs, HomeAction::Packs),
-        ("Shaders", Icon::Shaders, HomeAction::Shaders),
-        ("My files", Icon::Folder, HomeAction::Files),
-        ("Skins", Icon::Person, HomeAction::Skins),
-        ("Settings", Icon::Gear, HomeAction::Settings),
+        ("Mods", Icon::Mods, HomeAction::Mods, 0x986C9A_u32),
+        ("Packs", Icon::Packs, HomeAction::Packs, 0x537DB2_u32),
+        ("Shaders", Icon::Shaders, HomeAction::Shaders, 0xB18A57_u32),
+        ("My files", Icon::Folder, HomeAction::Files, 0x5A8DA2_u32),
+        ("Skins", Icon::Person, HomeAction::Skins, 0x619B7A_u32),
+        ("Settings", Icon::Gear, HomeAction::Settings, 0x777E9A_u32),
     ];
-    for (i, (name, icon, action)) in shortcuts.into_iter().enumerate() {
+    for (i, (name, icon, action, tint)) in shortcuts.into_iter().enumerate() {
         let row = (i / cols) as f32;
         let col = (i % cols) as f32;
         let card = [tx + col * (card_w + gap), ty + row * (card_h + gap), card_w, card_h];
         if card[1] + card[3] > y + h + 1. { continue; }
-        panel(ui, card, 10., false);
-        // Satin upper edge and discreet diagonal reflection.
-        ui.fill(card[0] + 6., card[1] + 3., card_w - 12., 1., color::hex(0xFFFFFF, 65));
-        ui.stroke_rounded(card[0], card[1], card_w, card_h, 7., 0.8, color::hex(0xEBF5FF, 89));
-        let icon_size = if narrow { 21. } else { (card_h * 0.30).min(33.) };
+        panel(ui, card, 12., false);
+        ui.rounded(card[0] + 1., card[1] + 1., card_w - 2., card_h - 2.,
+            11., color::hex(tint, 47));
+        // The narrow silver seam is a design accent, not another lens surface.
+        ui.fill(card[0] + 12., card[1] + 3., (card_w - 24.).max(0.), 1.,
+            color::hex(0xFFFFFF, 44));
+        ui.stroke_rounded(card[0], card[1], card_w, card_h, 11., 0.7,
+            color::hex(tint, 126));
+        let icon_size = if narrow { 23. } else { (card_h * 0.30).min(36.) };
         ui.icon(icon, card[0] + (card_w - icon_size) * 0.5,
             card[1] + (card_h * 0.23).min(35.), icon_size, color::hex(0xF5F7FF, 243));
-        let font = if narrow { 12. } else { 15. };
+        let font = if narrow { 13. } else { 16. };
         ui.centered_fit(Face::Medium, font,
             [card[0] + 4., card[1] + card_h - if narrow { 26. } else { 38. }, card_w - 8., 29.],
             color::hex(0xF4F5FB, 255), name);
@@ -993,7 +1021,7 @@ fn home_liquid(
     ui.border(icon_r[0], icon_r[1], 75., 75., 18., color::hex(0xE3F7FF, 67));
     ui.icon(Icon::Gamepad, icon_r[0] + 21., icon_r[1] + 21., 33.,
         color::hex(0xE9F5F7, 250));
-    ui.text(Face::SemiBold, 27., x + 117., y + 50., color::hex(0xFFFFFF, 255),
+    ui.text(Face::SemiBold, 30., x + 117., y + 48., color::hex(0xFFFFFF, 255),
         "Minecraft 26.3");
     let ready = if view.installed { "Ready to play" } else { "Installation required" };
     ui.icon(if view.installed { Icon::Check } else { Icon::Installed },
@@ -1044,10 +1072,10 @@ fn home_liquid(
         let r = [x + i as f32 * (tile_w + gap), tiles_y, tile_w, tiles_h];
         // Independent, restrained physical controls; no stacked nested glass.
         panel(ui, r, 20., false);
-        let size = (tiles_h * 0.36).min(28.);
+        let size = (tiles_h * 0.38).min(31.);
         ui.icon(icon, r[0] + (tile_w - size) * 0.5,
             r[1] + tiles_h * 0.22, size, th.text_primary);
-        ui.centered_fit(Face::Medium, 11.5,
+        ui.centered_fit(Face::Medium, 13.0,
             [r[0] + 4., r[1] + tiles_h - 27., tile_w - 8., 22.],
             th.text_primary, label);
         target(r, action);
