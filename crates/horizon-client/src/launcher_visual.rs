@@ -438,6 +438,18 @@ pub fn panel(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, emphasized: bool) {
         );
         return;
     }
+    if th.experience == ExperiencePreset::OldSchool && th.material == Material::Aero {
+        // Actual GPU-composited chrome: WGSL samples the live framebuffer and
+        // evaluates the PS3 pearl surface from the exported Glass Lab profile.
+        // The controls are not opaque rounded rectangles with fake highlights.
+        let optics = th.glass.normalized();
+        let compact = h <= 100. || w <= 190.;
+        ui.backdrop_lens(r, radius, color::hex(0xFFFFFF, 0), [
+            if compact { 0.05 } else { 0.02 },
+            if compact { optics.refraction * 0.48 } else { optics.refraction * 0.27 },
+        ]);
+        return;
+    }
     if th.material == Material::Glass {
         let optics = th.glass.normalized();
         // Physical optical hierarchy: interactive pills / buttons have visibly
@@ -867,16 +879,16 @@ fn home_old_school(
     ui.text(Face::Regular, 11., x + 23., y + 85., color::hex(0xFAFAFF, 236), small);
     // A small profile selector belongs to the poster, not the utility cards.
     let profile = [x + poster_w - 119., y + 13., 105., 37.];
-    ui.rounded(profile[0], profile[1], profile[2], profile[3], 8., color::hex(0x050714, 159));
+    panel(ui, profile, 9., false);
     ui.text(Face::Medium, 11., profile[0] + 9., profile[1] + 11.,
         color::hex(0xF2F6FF, 245), &format!("Profile {}", view.profile + 1));
     target(profile, HomeAction::Profile);
 
     let play = [x, y + poster_h - 58., poster_w, 58.];
-    ui.rounded(play[0], play[1], play[2], play[3], 9., color::hex(0x497638, 243));
-    // An angular, satin green footer recalls the Xbox 360 NXE dashboard.
+    panel(ui, play, 11., true);
+    // Cool satin edge: dark-chrome surface stays faithful to the user's V7 material.
     ui.fill(play[0] + 7., play[1] + 3., poster_w - 14., 1.,
-        color::hex(0xDAF7C9, 124));
+        color::hex(0xE9F1FA, 102));
     ui.icon(Icon::Play, play[0] + 19., play[1] + 14., 27., color::hex(0xFFFFFF, 255));
     let label = if view.launching { "Getting ready..." } else if view.installed {
         "Play Minecraft"
@@ -895,19 +907,19 @@ fn home_old_school(
     let card_h = if narrow { ((h - poster_h - 3. * gap) / 3.).max(39.) }
         else { (h - gap) * 0.5 };
     let shortcuts = [
-        ("Mods", Icon::Mods, HomeAction::Mods, 0x59466F_u32),
-        ("Packs", Icon::Packs, HomeAction::Packs, 0x36567B_u32),
-        ("Shaders", Icon::Shaders, HomeAction::Shaders, 0x79613D_u32),
-        ("My files", Icon::Folder, HomeAction::Files, 0x34547C_u32),
-        ("Skins", Icon::Person, HomeAction::Skins, 0x456A47_u32),
-        ("Settings", Icon::Gear, HomeAction::Settings, 0x494A57_u32),
+        ("Mods", Icon::Mods, HomeAction::Mods),
+        ("Packs", Icon::Packs, HomeAction::Packs),
+        ("Shaders", Icon::Shaders, HomeAction::Shaders),
+        ("My files", Icon::Folder, HomeAction::Files),
+        ("Skins", Icon::Person, HomeAction::Skins),
+        ("Settings", Icon::Gear, HomeAction::Settings),
     ];
-    for (i, (name, icon, action, rgb)) in shortcuts.into_iter().enumerate() {
+    for (i, (name, icon, action)) in shortcuts.into_iter().enumerate() {
         let row = (i / cols) as f32;
         let col = (i % cols) as f32;
         let card = [tx + col * (card_w + gap), ty + row * (card_h + gap), card_w, card_h];
         if card[1] + card[3] > y + h + 1. { continue; }
-        ui.rounded(card[0], card[1], card[2], card[3], 7., color::hex(rgb, 246));
+        panel(ui, card, 10., false);
         // Satin upper edge and discreet diagonal reflection.
         ui.fill(card[0] + 6., card[1] + 3., card_w - 12., 1., color::hex(0xFFFFFF, 65));
         ui.stroke_rounded(card[0], card[1], card_w, card_h, 7., 0.8, color::hex(0xEBF5FF, 89));
