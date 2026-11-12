@@ -979,7 +979,21 @@ impl<'a> Ui<'a> {
                 ((self.cursor.0 - x - w * 0.5) / (w * 0.5).max(1.)).clamp(-1., 1.),
                 ((self.cursor.1 - y - h * 0.5) / (h * 0.5).max(1.)).clamp(-1., 1.),
             ],
-            profile: launcher_preset_pack::uniform_profile(active_theme().experience),
+            profile: {
+                // Respect the independently saved optical calibration of each
+                // launcher experience. Keep the Glass Lab V7 surface identity.
+                let theme = active_theme();
+                let tuning = theme.glass.normalized();
+                let mut profile = launcher_preset_pack::uniform_profile(theme.experience);
+                if matches!(theme.experience, ExperiencePreset::LiquidGlass | ExperiencePreset::OldSchool) {
+                    profile[2][0] *= (tuning.refraction / 20.).clamp(0., 1.5);
+                    profile[5][0] = (profile[5][0] + (tuning.blur - 1.) * 0.14).clamp(0., 2.2);
+                    if theme.experience == ExperiencePreset::OldSchool {
+                        profile[5][1] = ((tuning.opacity - 0.06) / 0.44).clamp(0., 1.) * 0.56;
+                    }
+                }
+                profile
+            },
         });
     }
     fn px_x(&self, v: f32) -> f32 {
@@ -1225,6 +1239,10 @@ impl<'a> Ui<'a> {
     /// Draw an authentic Material You 3 Switch (`52x28dp` pill track with sliding thumb and checkmark).
     pub fn m3_switch(&mut self, x: f32, y: f32, on: bool) {
         let theme = active_theme();
+        if theme.experience != ExperiencePreset::Standard {
+            launcher_visual::component_switch(self, x, y, on);
+            return;
+        }
         let track_w = 52.0;
         let track_h = 28.0;
         if on {
@@ -2473,6 +2491,12 @@ pub const THEME_BG_SWATCHES_LIGHT: [(u32, &str, &str); 6] = [
 #[serde(default)]
 pub struct LauncherThemeConfig {
     pub glass: launcher_visual::GlassTuning,
+    /// Independently saved V7 optics. Older saved themes transparently fall
+    /// back to the legacy global value, preserving the user's old settings.
+    #[serde(default)]
+    pub glass_liquid: Option<launcher_visual::GlassTuning>,
+    #[serde(default)]
+    pub glass_old_school: Option<launcher_visual::GlassTuning>,
     #[serde(default)]
     pub wallpaper: launcher_visual::Wallpaper,
     #[serde(default = "launcher_visual::default_effects")]
@@ -2497,6 +2521,8 @@ impl Default for LauncherThemeConfig {
     fn default() -> Self {
         Self {
             glass: launcher_visual::GlassTuning::default(),
+            glass_liquid: None,
+            glass_old_school: None,
             wallpaper: launcher_visual::Wallpaper::None,
             glass_effects: true,
             interface_sounds: true,
@@ -2617,6 +2643,23 @@ impl Default for ResolvedTheme {
 }
 
 impl LauncherThemeConfig {
+    pub fn current_optics(&self) -> launcher_visual::GlassTuning {
+        match self.preset {
+            ThemePreset::LiquidGlass => self.glass_liquid.unwrap_or(self.glass),
+            ThemePreset::OldSchool => self.glass_old_school.unwrap_or(self.glass),
+            _ => self.glass,
+        }.normalized()
+    }
+
+    pub fn set_current_optics(&mut self, tuning: launcher_visual::GlassTuning) {
+        let tuning = tuning.normalized();
+        match self.preset {
+            ThemePreset::LiquidGlass => self.glass_liquid = Some(tuning),
+            ThemePreset::OldSchool => self.glass_old_school = Some(tuning),
+            _ => self.glass = tuning,
+        }
+    }
+
     pub fn sanitize(&mut self) {
         if !self.gradient_mid_pos.is_finite() {
             self.gradient_mid_pos = 0.50;
@@ -2785,7 +2828,7 @@ impl LauncherThemeConfig {
 
         ResolvedTheme {
             experience: self.preset.into(),
-            glass: self.glass.normalized(),
+            glass: self.current_optics(),
             wallpaper: self.wallpaper,
             material: if self.glass_effects {
                 match self.preset {

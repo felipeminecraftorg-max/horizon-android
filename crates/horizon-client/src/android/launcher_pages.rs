@@ -91,6 +91,16 @@ pub(crate) struct AnimState {
     pub nav_pill_y: f32,
     pub nav_velocity: f32,
     pub target_nav_y: f32,
+    pub nav_pill_x: f32,
+    pub nav_velocity_x: f32,
+    pub target_nav_x: f32,
+    pub frame_dt: f32,
+    pub scroll_thumb_y: Option<f32>,
+    pub scroll_thumb_velocity: f32,
+    pub scroll_thumb_view: Option<[f32; 2]>,
+    pub installed_tab_position: f32,
+    pub installed_tab_velocity: f32,
+    pub installed_tab_target: f32,
     pub page_fade: f32,
     pub page_slide: f32,
     pub progress_smooth: f32,
@@ -110,9 +120,19 @@ impl Default for AnimState {
             last_page: Page::Play,
             last_category: SettingsCategory::Overview,
             last_has_modal: false,
-            nav_pill_y: 62.0,
+            nav_pill_y: 90.0,
             nav_velocity: 0.,
-            target_nav_y: 62.0,
+            target_nav_y: 90.0,
+            nav_pill_x: 24.0,
+            nav_velocity_x: 0.,
+            target_nav_x: 24.0,
+            frame_dt: 1. / 60.,
+            scroll_thumb_y: None,
+            scroll_thumb_velocity: 0.,
+            scroll_thumb_view: None,
+            installed_tab_position: 0.,
+            installed_tab_velocity: 0.,
+            installed_tab_target: 0.,
             page_fade: 1.0,
             page_slide: 0.0,
             progress_smooth: 0.0,
@@ -132,7 +152,7 @@ impl AnimState {
         &mut self,
         page: Page,
         category: SettingsCategory,
-        target_nav_y: f32,
+        target_nav: [f32; 2],
         has_modal: bool,
         sections: [bool; 3],
     ) {
@@ -144,7 +164,10 @@ impl AnimState {
             .as_secs_f32()
             .clamp(0.001, 0.08);
         self.last_tick = now;
+        let [target_nav_x, target_nav_y] = target_nav;
+        self.target_nav_x = target_nav_x;
         self.target_nav_y = target_nav_y;
+        self.frame_dt = raw_dt;
 
         if horizon_client::ui_theme::motion::reduced_motion() {
             self.intro_done = true;
@@ -153,6 +176,11 @@ impl AnimState {
             self.last_has_modal = has_modal;
             self.nav_pill_y = target_nav_y;
             self.nav_velocity = 0.;
+            self.nav_pill_x = target_nav_x;
+            self.nav_velocity_x = 0.;
+            self.scroll_thumb_velocity = 0.;
+            self.installed_tab_position = self.installed_tab_target;
+            self.installed_tab_velocity = 0.;
             self.page_fade = 1.0;
             self.page_slide = 0.0;
             self.modal_anim = if has_modal { 1.0 } else { 0.0 };
@@ -192,6 +220,15 @@ impl AnimState {
             horizon_client::ui_theme::launcher_preset_pack::spring_position(
                 experience, self.nav_pill_y, self.nav_velocity, target_nav_y, dt,
             );
+        (self.nav_pill_x, self.nav_velocity_x) =
+            horizon_client::ui_theme::launcher_preset_pack::spring_position(
+                experience, self.nav_pill_x, self.nav_velocity_x, target_nav_x, dt,
+            );
+        (self.installed_tab_position, self.installed_tab_velocity) =
+            horizon_client::ui_theme::launcher_preset_pack::spring_position(
+                experience, self.installed_tab_position, self.installed_tab_velocity,
+                self.installed_tab_target, dt,
+            );
         self.page_fade = (self.page_fade + dt * 7.5).min(1.0);
         self.page_slide *= (1.0 - speed).max(0.0);
         let modal_target = if has_modal { 1.0 } else { 0.0 };
@@ -202,6 +239,36 @@ impl AnimState {
             self.section_expand[i] += (target - self.section_expand[i]) * (dt * 14.0).min(1.0);
         }
         self.shimmer_phase = (self.shimmer_phase + dt * 0.95) % 1.0;
+    }
+
+    /// Only the *visual thumb* follows a spring. The actual scroll offset and
+    /// hit-testing remain immediate and faithful to the user's gesture.
+    pub fn soft_scroll_thumb(&mut self, target: f32, view: [f32; 2]) -> f32 {
+        if horizon_client::ui_theme::motion::reduced_motion() {
+            self.scroll_thumb_y = Some(target);
+            self.scroll_thumb_velocity = 0.;
+            self.scroll_thumb_view = Some(view);
+            return target;
+        }
+        let changed_view = self.scroll_thumb_view.is_none_or(|previous|
+            (previous[0] - view[0]).abs() > 2. || (previous[1] - view[1]).abs() > 2.);
+        if changed_view {
+            self.scroll_thumb_y = Some(target);
+            self.scroll_thumb_velocity = 0.;
+        }
+        self.scroll_thumb_view = Some(view);
+        let (next, speed) = horizon_client::ui_theme::launcher_preset_pack::spring_position(
+            horizon_client::ui_theme::active_theme().experience,
+            self.scroll_thumb_y.unwrap_or(target),
+            self.scroll_thumb_velocity,
+            target,
+            self.frame_dt,
+        );
+        let lower = view[0];
+        let upper = view[1];
+        self.scroll_thumb_y = Some(next.clamp(lower, upper));
+        self.scroll_thumb_velocity = speed.clamp(-900., 900.);
+        self.scroll_thumb_y.unwrap_or(target)
     }
 
     pub fn trigger_page_transition(&mut self) {
@@ -230,6 +297,12 @@ impl AnimState {
             || self.page_slide.abs() > 0.35
             || (self.nav_pill_y - self.target_nav_y).abs() > 0.5
             || self.nav_velocity.abs() > 0.2
+            || (self.nav_pill_x - self.target_nav_x).abs() > 0.5
+            || self.nav_velocity_x.abs() > 0.2
+            || self.scroll_thumb_velocity.abs() > 0.2
+            || (self.installed_tab_position - self.installed_tab_target).abs() > 0.003
+            || self.installed_tab_velocity.abs() > 0.01
+            || visual::switch_motion_active()
             || (self.modal_anim > 0.01 && self.modal_anim < 0.99)
             || self.theme_pulse < 0.99
             || self.section_expand.iter().any(|v| *v > 0.01 && *v < 0.99)
@@ -437,7 +510,12 @@ pub(super) fn button(
     accent: bool,
 ) {
     let [x, y, w, h] = rect;
-    let radius = (h * 0.42).clamp(10.0, 22.0);
+    let experience = horizon_client::ui_theme::active_theme().experience;
+    let radius = if experience == horizon_client::ui_theme::ExperiencePreset::OldSchool {
+        (h * 0.27).clamp(8., 14.)
+    } else {
+        h * 0.5
+    };
     visual::panel(ui, rect, radius, accent);
     let padding = (w * 0.10).clamp(8.0, 14.0);
     let font = if w < 90.0 {
@@ -489,24 +567,7 @@ fn toggle(
         if on { my3_accent() } else { my3_muted() },
         if on { "Enabled" } else { "Off" },
     );
-    let track_x = x + w - 52.0;
-    let track_y = y + (h - 26.0) * 0.5;
-    ui.rounded(
-        track_x,
-        track_y,
-        50.0,
-        26.0,
-        13.0,
-        if on { my3_accent() } else { my3_track() },
-    );
-    ui.rounded(
-        track_x + if on { 26.0 } else { 4.0 },
-        track_y + 3.0,
-        20.0,
-        20.0,
-        10.0,
-        if on { my3_on_accent() } else { my3_muted() },
-    );
+    visual::component_switch(ui, x + w - 52., y + (h - 28.) * 0.5, on);
     if let Some(c) = ui.clip_rect([x, y, w, h]) {
         targets.push((c, action));
     }
@@ -558,8 +619,7 @@ fn draw_setting_card(
         let chip_w = (ui.measure(Face::SemiBold, 10.5, badge) + 22.0).clamp(64.0, 124.0);
         let chip_x = x + w - chip_w - 14.0;
         let chip_y = y + (h - 24.0) * 0.5 + 1.0;
-        ui.rounded(chip_x, chip_y, chip_w, 24.0, 12.0, my3_accent_soft());
-        ui.border(chip_x, chip_y, chip_w, 24.0, 12.0, my3_accent());
+        visual::component_chip(ui, [chip_x, chip_y, chip_w, 24.], true);
         ui.centered_fit(
             Face::SemiBold,
             10.0,
@@ -578,15 +638,11 @@ fn draw_setting_card(
     );
     if console {
         // Console-channel rows are tighter, rectangular brushed-metal plates.
-        visual::panel(ui, [x, y, w, h], 10., is_active_card);
+        visual::component_card(ui, [x, y, w, h], is_active_card);
     } else if experience == horizon_client::ui_theme::ExperiencePreset::LiquidGlass {
         // Keep content surfaces lightweight; only true controls get optical
         // lenses. Avoid glass-on-glass and expensive passes on every settings row.
-        ui.rounded(x, y, w, h, 14., if is_active_card {
-            my3_surface_high()
-        } else {
-            color::with_alpha(my3_card_bg(), 0.54)
-        });
+        visual::component_card(ui, [x, y, w, h], is_active_card);
     } else {
         ui.rounded(
             x, y, w, h, 18.0,
@@ -705,30 +761,10 @@ fn draw_setting_card(
             let minus_rect = [track_x - 34.0 - 6.0, y + (h - 34.0) * 0.5, 34.0, 34.0];
 
             let pill_y = y + (h - 36.0) * 0.5;
-            ui.rounded(track_x, pill_y, track_w, 36.0, 12.0, my3_surface());
-            ui.border(track_x, pill_y, track_w, 36.0, 12.0, my3_border());
-
-            // M3 Expressive Value Label + Linear Track Bar with Active Thumb
-            let fitted_v = ui.fit_text(Face::SemiBold, 12.0, value_label, track_w - 12.0);
-            let tw = ui.measure(Face::SemiBold, 12.0, &fitted_v);
-            ui.text(
-                Face::SemiBold,
-                12.0,
-                track_x + (track_w - tw) * 0.5,
-                pill_y + 4.0,
-                my3_accent(),
-                &fitted_v,
-            );
-
-            let bar_x = track_x + 10.0;
-            let bar_w = (track_w - 20.0).max(24.0);
-            let bar_y = pill_y + 24.0;
-            let t = fraction.clamp(0.0, 1.0);
-            ui.rounded(bar_x, bar_y, bar_w, 6.0, 3.0, my3_surface_high());
-            let fill_w = (bar_w * t).max(6.0);
-            ui.rounded(bar_x, bar_y, fill_w, 6.0, 3.0, my3_accent());
-            let thumb_x = (bar_x + bar_w * t - 2.0).clamp(bar_x, bar_x + bar_w - 4.0);
-            ui.rounded(thumb_x, bar_y - 2.0, 4.0, 10.0, 2.0, my3_text());
+            visual::component_slider(ui, [track_x, pill_y, track_w, 36.],
+                fraction, value_label);
+            let bar_x = track_x + 10.;
+            let bar_w = (track_w - 20.).max(24.);
 
             let left_half = [track_x, pill_y, track_w * 0.5, 36.0];
             let right_half = [track_x + track_w * 0.5, pill_y, track_w * 0.5, 36.0];
@@ -1154,7 +1190,10 @@ impl Launcher {
         self.anim.step(
             self.catalog.page,
             self.catalog.settings_category,
-            layout.nav_rect(w, h, selected_idx, Page::ALL.len())[1],
+            {
+                let target = layout.nav_rect(w, h, selected_idx, Page::ALL.len());
+                [target[0], target[1]]
+            },
             has_any_modal,
             self.catalog.sections,
         );
@@ -1167,13 +1206,14 @@ impl Launcher {
             .iter()
             .map(|p| (p.name(), page_icon(*p)))
             .collect();
-        visual::shell(
+        visual::shell_animated(
             &mut ui,
             &items,
             selected_idx,
             &account_name,
             self.login.signed_in,
             &format!("Android {}", crate::backend::VERSION),
+            [self.anim.nav_pill_x, self.anim.nav_pill_y],
             |rect, action| {
                 let action = match action {
                     visual::ShellAction::Page(index) => Action::Page(Page::ALL[index]),
@@ -1324,7 +1364,9 @@ impl Launcher {
                 };
                 let is_console = layout.console && !layout.portrait;
                 let home_top = if is_console { 130.0 } else { 76.0 };
-                let home_reserved_bottom = if is_console { 35.0 } else { 40.0 };
+                // Reserve an actual footer lane. Previously the dashboard
+                // overlapped the Status/GitHub buttons and their lens halos.
+                let home_reserved_bottom = if layout.portrait { 60.0 } else { 78.0 };
                 visual::home(
                     &mut ui,
                     [content_x, home_top + slide_y, content_w,
@@ -1544,8 +1586,7 @@ impl Launcher {
                 if y + 64.0 < top || y > bottom {
                     continue;
                 }
-                ui.rounded(content_x, y, content_w, 64.0, 14.0, my3_card_bg());
-                ui.border(content_x, y, content_w, 64.0, 14.0, my3_card_border());
+                visual::component_card(&mut ui, [content_x, y, content_w, 64.], false);
 
                 // Project icon: fetched Modrinth PFP if available, else MY3 vector icon badge.
                 let drawn_icon = if let Some((iw, ih, rgba)) = self.catalog.icons.get(*id) {
@@ -1859,9 +1900,33 @@ impl Launcher {
                 .map_or(self.catalog.scroll, |c| c.scroll);
             let height = bottom - top;
             let thumb = (height * height / (height + maximum)).max(20.0).min(height);
-            let y = top + (height - thumb) * (scroll / maximum).clamp(0.0, 1.0);
-            ui.rounded(w - 10.0, top, 4.0, height, 2.0, my3_border());
-            ui.rounded(w - 10.0, y, 4.0, thumb, 2.0, my3_muted());
+            let desired = top + (height - thumb) * (scroll / maximum).clamp(0.0, 1.0);
+            let y = self.anim.soft_scroll_thumb(desired, [top, top + height - thumb]);
+            let style = horizon_client::ui_theme::active_theme().experience;
+            let track = if style == horizon_client::ui_theme::ExperiencePreset::OldSchool {
+                horizon_client::ui_theme::color::hex(0xA6B1C4, 38)
+            } else {
+                horizon_client::ui_theme::color::hex(0xDCECF7, 34)
+            };
+            ui.rounded(w - 12., top, 7., height, 3.5, track);
+            if style == horizon_client::ui_theme::ExperiencePreset::OldSchool {
+                // Opaque brushed-steel thumb, independent of the refracting track.
+                ui.rounded(w - 12.5, y, 8., thumb, 3.5,
+                    horizon_client::ui_theme::color::hex(0xDCE4ED, 218));
+                ui.fill(w - 11., y + 4., 1., (thumb - 8.).max(1.),
+                    horizon_client::ui_theme::color::hex(0xFFFFFF, 105));
+            } else {
+                // Liquid Glass stays translucent with a quiet white edge.
+                ui.rounded(w - 12., y, 7., thumb, 3.5,
+                    horizon_client::ui_theme::color::hex(0xE6F5FF, 117));
+                ui.stroke_rounded(w - 12., y, 7., thumb, 3.5, 0.8,
+                    horizon_client::ui_theme::color::hex(0xFFFFFF, 112));
+            }
+        }
+        if self.list_view.is_none_or(|[top, bottom, maximum]| maximum <= 0. || bottom <= top) {
+            self.anim.scroll_thumb_y = None;
+            self.anim.scroll_thumb_view = None;
+            self.anim.scroll_thumb_velocity = 0.;
         }
         if self.catalog.fm_modal.is_some() {
             self.draw_fm_modal(&mut ui, w, h, ime_top_dp);
@@ -2085,22 +2150,20 @@ impl Launcher {
             32.0,
         ];
         let fm_rect = [content_x + content_w - tab_w, header_y - 1.0, tab_w, 32.0];
-        button(
-            ui,
-            &mut self.targets,
-            lib_rect,
-            "Library",
-            Action::SetInstalledSubTab(InstalledSubTab::Library),
-            self.catalog.installed_sub_tab == InstalledSubTab::Library,
-        );
-        button(
-            ui,
-            &mut self.targets,
-            fm_rect,
-            "File Manager",
-            Action::SetInstalledSubTab(InstalledSubTab::FileManager),
-            self.catalog.installed_sub_tab == InstalledSubTab::FileManager,
-        );
+        // Real Glass Lab V7 segmented tabs: one shared track and one
+        // spring-driven active capsule. No double-stacked button lenses.
+        self.anim.installed_tab_target =
+            if self.catalog.installed_sub_tab == InstalledSubTab::Library { 0. } else { 1. };
+        visual::component_tabs(ui,
+            [lib_rect[0], lib_rect[1], tab_w * 2. + 6., 32.],
+            ["Library", "File Manager"],
+            self.anim.installed_tab_position);
+        if let Some(rect) = ui.clip_rect(lib_rect) {
+            self.targets.push((rect, Action::SetInstalledSubTab(InstalledSubTab::Library)));
+        }
+        if let Some(rect) = ui.clip_rect(fm_rect) {
+            self.targets.push((rect, Action::SetInstalledSubTab(InstalledSubTab::FileManager)));
+        }
 
         if self.catalog.installed_sub_tab == InstalledSubTab::Library {
             // Row 1: Search filter input + Sort selector + Quick Import CTA
@@ -2363,18 +2426,7 @@ impl Launcher {
                     &fitted_title,
                 );
                 let badge_x = text_x + title_w + 8.0;
-                ui.rounded(
-                    badge_x,
-                    y + 11.0,
-                    status_w,
-                    18.0,
-                    9.0,
-                    if item.enabled {
-                        my3_accent_soft()
-                    } else {
-                        my3_surface_high()
-                    },
-                );
+                visual::component_chip(ui, [badge_x, y + 11., status_w, 18.], item.enabled);
                 ui.centered_fit(
                     Face::SemiBold,
                     8.5,
@@ -2398,7 +2450,7 @@ impl Launcher {
                 );
 
                 // Enable/Disable M3 switch + Export & Delete buttons
-                ui.m3_switch(toggle_r[0] + 2.0, y + 17.0, item.enabled);
+                visual::component_switch(ui, toggle_r[0] + 2., y + 17., item.enabled);
                 if let Some(c) = ui.clip_rect(toggle_r) {
                     self.targets.push((c, Action::ToggleLocal(orig_idx)));
                 }
@@ -3770,9 +3822,20 @@ impl Launcher {
                 self.catalog.config.disable_launcher_animations,
                 self.catalog.scroll,
                 |r, a| {
-                    self.targets.push((r, Action::Appearance(a)));
+                    let action = Action::Appearance(a);
+                    self.targets.push((r, action));
                     if a != visual::AppearanceAction::Back {
-                        self.list_targets.push((r, Action::Appearance(a)));
+                        self.list_targets.push((r, action));
+                    }
+                    // The optical calibration controls are real drag tracks,
+                    // not decorative sliders or single-tap cycling buttons.
+                    if matches!(a, visual::AppearanceAction::Transparency
+                        | visual::AppearanceAction::Blur
+                        | visual::AppearanceAction::Refraction)
+                    {
+                        SLIDER_TRACK_TARGETS.with(|tracks| {
+                            tracks.borrow_mut().push((r, action, r[0], r[2]));
+                        });
                     }
                 },
             );
@@ -5050,18 +5113,8 @@ impl Launcher {
                         }
                         let chip_w = 78.0;
                         let chip_x = rx + half_w - chip_w - 10.0;
-                        ui.rounded(
-                            chip_x,
-                            picker_y + 10.0,
-                            chip_w,
-                            20.0,
-                            10.0,
-                            if selected {
-                                my3_accent_soft()
-                            } else {
-                                my3_surface_high()
-                            },
-                        );
+                        visual::component_chip(ui,
+                            [chip_x, picker_y + 10., chip_w, 20.], selected);
                         ui.centered_fit(
                             Face::SemiBold,
                             8.5,
@@ -6355,35 +6408,41 @@ impl Launcher {
                         self.catalog.config.theme.glass_effects =
                             !self.catalog.config.theme.glass_effects
                     }
-                    A::Transparency => {
-                        let opacity = self.catalog.config.theme.glass.normalized().opacity;
-                        self.catalog.config.theme.glass.opacity = if opacity < 0.10 {
-                            0.14
-                        } else if opacity < 0.20 {
-                            0.30
-                        } else {
-                            0.08
-                        };
-                    }
-                    A::Blur => {
-                        let blur = self.catalog.config.theme.glass.normalized().blur;
-                        self.catalog.config.theme.glass.blur = if blur < 0.1 {
-                            2.
-                        } else if blur < 6. {
-                            8.
-                        } else {
-                            0.
-                        };
-                    }
-                    A::Refraction => {
-                        let refraction = self.catalog.config.theme.glass.normalized().refraction;
-                        self.catalog.config.theme.glass.refraction = if refraction < 0.1 {
-                            14.
-                        } else if refraction < 18. {
-                            24.
-                        } else {
-                            0.
-                        };
+                    A::Transparency | A::Blur | A::Refraction => {
+                        // Support mouse/keyboard taps as well as touch dragging.
+                        // Optical values are saved independently for each style.
+                        let mut optics = self.catalog.config.theme.current_optics();
+                        match action {
+                            A::Transparency => {
+                                optics.opacity = if optics.opacity < 0.10 {
+                                    0.14
+                                } else if optics.opacity < 0.20 {
+                                    0.30
+                                } else {
+                                    0.08
+                                };
+                            }
+                            A::Blur => {
+                                optics.blur = if optics.blur < 0.1 {
+                                    2.
+                                } else if optics.blur < 6. {
+                                    8.
+                                } else {
+                                    0.
+                                };
+                            }
+                            A::Refraction => {
+                                optics.refraction = if optics.refraction < 0.1 {
+                                    14.
+                                } else if optics.refraction < 18. {
+                                    24.
+                                } else {
+                                    0.
+                                };
+                            }
+                            _ => unreachable!(),
+                        }
+                        self.catalog.config.theme.set_current_optics(optics);
                     }
                     A::Sounds => {
                         self.catalog.config.theme.interface_sounds =
@@ -6854,6 +6913,20 @@ impl Launcher {
     fn apply_slider_fraction(&mut self, action: Action, frac: f32) {
         let t = frac.clamp(0.0, 1.0);
         match action {
+            Action::Appearance(appearance @ (visual::AppearanceAction::Transparency
+            | visual::AppearanceAction::Blur
+            | visual::AppearanceAction::Refraction)) => {
+                let mut optics = self.catalog.config.theme.current_optics();
+                match appearance {
+                    visual::AppearanceAction::Transparency => optics.opacity = 0.06 + t * 0.44,
+                    visual::AppearanceAction::Blur => optics.blur = t * 10.,
+                    visual::AppearanceAction::Refraction => optics.refraction = t * 24.,
+                    _ => unreachable!(),
+                }
+                self.catalog.config.theme.set_current_optics(optics);
+                horizon_client::ui_theme::set_active_theme(self.catalog.config.theme.resolve());
+                let _ = self.catalog.config.save(&self.home);
+            }
             Action::RenderScaleDelta(_) => {
                 let next_pct = (25.0 + t * 75.0).round() as u32;
                 let scale = crate::display::RenderScale::new(next_pct);

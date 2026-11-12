@@ -438,6 +438,16 @@ pub fn panel(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, emphasized: bool) {
         );
         return;
     }
+    if th.experience == ExperiencePreset::OldSchool && th.material == Material::Aero
+        && w > 285. && h > 138.
+    {
+        // Large panels are a *content* layer, never a mirror of previously
+        // rendered controls. This removes repeated ghost labels near edges.
+        ui.rounded(x, y, w, h, radius, color::hex(0x142033, 112));
+        ui.stroke_rounded(x, y, w, h, radius, 0.8,
+            color::hex(0xE4E9F6, 75));
+        return;
+    }
     if th.experience == ExperiencePreset::OldSchool && th.material == Material::Aero {
         // Actual GPU-composited chrome: WGSL samples the live framebuffer and
         // evaluates the PS3 pearl surface from the exported Glass Lab profile.
@@ -448,6 +458,14 @@ pub fn panel(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, emphasized: bool) {
             if compact { 0.05 } else { 0.02 },
             if compact { optics.refraction * 0.48 } else { optics.refraction * 0.27 },
         ]);
+        return;
+    }
+    if th.material == Material::Glass && w > 300. && h > 145. {
+        // A spacious photographic/content surface should not have the same
+        // heavy lens extrusion as a push button or slider handle.
+        ui.rounded(x, y, w, h, radius, color::hex(0x101D29, 100));
+        ui.stroke_rounded(x, y, w, h, radius, 0.9,
+            color::hex(0xDFEBF5, 92));
         return;
     }
     if th.material == Material::Glass {
@@ -578,6 +596,214 @@ pub fn button(ui: &mut Ui<'_>, rect: [f32; 4], label: &str, icon: Option<Icon>, 
     );
 }
 
+/// Glass Lab V7 components adapted to the native Horizon HUD.
+/// These are actual interactive surfaces: callers keep their existing hitboxes,
+/// state and touch handlers rather than replacing them with visual mockups.
+/// The material in panel() is rasterized by the WGSL backdrop-lens pipeline.
+pub fn component_card(ui: &mut Ui<'_>, rect: [f32; 4], emphasized: bool) {
+    let th = active_theme();
+    let [x, y, w, h] = rect;
+    if th.experience == ExperiencePreset::OldSchool {
+        // A wide settings/catalog card should remain readable, not repeat
+        // previously composited text as a giant refractive lens.
+        ui.rounded(x, y, w, h, 12., color::hex(0x101927, if emphasized { 192 } else { 174 }));
+        ui.stroke_rounded(x, y, w, h, 12., 0.75, color::hex(0xC8DAF0, 65));
+        ui.fill(x + 13., y + 2., (w - 26.).max(0.), 0.8,
+            color::hex(0xEFF5FF, 62));
+    } else if th.experience == ExperiencePreset::LiquidGlass {
+        ui.rounded(x, y, w, h, 15., color::hex(0x162A32, if emphasized { 105 } else { 77 }));
+        ui.stroke_rounded(x, y, w, h, 15., 0.8, color::hex(0xE2F7FF, 84));
+    } else {
+        ui.rounded(x, y, w, h, 14., th.surface);
+    }
+}
+
+/// V7 pill/chip: translucent text-bearing object, small enough for GPU optics.
+pub fn component_chip(ui: &mut Ui<'_>, rect: [f32; 4], selected: bool) {
+    let th = active_theme();
+    let [x, y, w, h] = rect;
+    if th.experience == ExperiencePreset::Standard {
+        ui.rounded(x, y, w, h, h / 2., if selected { th.accent } else { th.surface });
+    } else {
+        // The chip's backdrop is a single real lens; the label is emitted
+        // afterwards so glyphs aren't sampled twice by adjacent lenses.
+        panel(ui, rect, if th.experience == ExperiencePreset::OldSchool { 9. } else { h / 2. }, selected);
+        if selected {
+            ui.stroke_rounded(x + 1., y + 1., w - 2., h - 2.,
+                if th.experience == ExperiencePreset::OldSchool { 8. } else { h / 2. - 1. },
+                0.85, color::hex(0xF1F5FF, 137));
+        }
+    }
+}
+
+/// Finger-draggable Glass Lab V7 optical tuning control used in Appearance.
+pub fn optical_calibration_slider(ui: &mut Ui<'_>, rect: [f32; 4],
+    label: &str, value_label: &str, fraction: f32) -> [f32; 4] {
+    let theme = active_theme();
+    let [x, y, w, h] = rect;
+    component_card(ui, rect, false);
+    ui.text(Face::Medium, 13.5, x + 16., y + 8., theme.text_primary, label);
+    let value = ui.fit_text(Face::Medium, 12., value_label, (w * 0.37).max(44.));
+    let text_width = ui.measure(Face::Medium, 12., &value);
+    ui.text(Face::Medium, 12., x + w - text_width - 17., y + 8.,
+        theme.text_muted, &value);
+    let track_x = x + 28.;
+    let track_w = (w - 56.).max(32.);
+    let track_y = y + h - 22.;
+    let t = fraction.clamp(0., 1.);
+    let old = theme.experience == ExperiencePreset::OldSchool;
+    ui.rounded(track_x, track_y, track_w, 5., 2.5,
+        color::hex(if old { 0xA0B0C7 } else { 0xE7F5FF }, 60));
+    if t > 0.005 {
+        ui.rounded(track_x, track_y, (track_w * t).max(2.), 5., 2.5,
+            color::hex(if old { 0xD6E3F4 } else { 0xF2FAFF }, 152));
+    }
+    let size = 19.;
+    let thumb = [track_x + track_w * t - size * 0.5,
+        track_y - 7., size, size];
+    // The thumb is the actual GPU material, keeping text outside the lens.
+    panel(ui, thumb, if old { 6. } else { size * 0.5 }, true);
+    ui.rounded(thumb[0] + 6., thumb[1] + 6., 7., 7., 3.5,
+        color::hex(0xFFFFFF, if old { 220 } else { 150 }));
+    [track_x, track_y - 12., track_w, 28.]
+}
+
+/// Slider uses the same fraction as the native settings gesture handler.
+/// Its thumb is intentionally legible (satin white / aluminium), while the
+/// track stays partially transparent. Works on both Android touch and mouse.
+pub fn component_slider(ui: &mut Ui<'_>, rect: [f32; 4], value: f32, value_label: &str) {
+    let th = active_theme();
+    let [x, y, w, h] = rect;
+    let old = th.experience == ExperiencePreset::OldSchool;
+    panel(ui, rect, if old { 10. } else { h * 0.5 }, false);
+    let caption = ui.fit_text(Face::SemiBold, 12., value_label, w - 16.);
+    ui.centered_fit(Face::SemiBold, 12.,
+        [x + 6., y + 2., w - 12., 18.], color::hex(0xF0F5FC, 245), &caption);
+    let bar_x = x + 10.;
+    let bar_y = y + h - 12.;
+    let bar_w = (w - 20.).max(24.);
+    let t = value.clamp(0., 1.);
+    ui.rounded(bar_x, bar_y, bar_w, 5., 2.5,
+        color::hex(if old { 0x71849B } else { 0xDCE9F5 }, 83));
+    ui.rounded(bar_x, bar_y, (bar_w * t).max(2.), 5., 2.5,
+        color::hex(if old { 0xCAD7EA } else { 0xEDF9FF }, if old { 185 } else { 128 }));
+    let thumb_w = if old { 9. } else { 11. };
+    let thumb_x = (bar_x + bar_w * t - thumb_w * 0.5)
+        .clamp(bar_x - 1., bar_x + bar_w - thumb_w + 1.);
+    ui.rounded(thumb_x, bar_y - 4., thumb_w, 13.,
+        if old { 3.5 } else { thumb_w * 0.5 },
+        color::hex(if old { 0xE1E7EF } else { 0xF7FCFF }, 229));
+    ui.stroke_rounded(thumb_x, bar_y - 4., thumb_w, 13.,
+        if old { 3.5 } else { thumb_w * 0.5 },
+        0.8, color::hex(0xFFFFFF, 155));
+}
+
+/// Spring-state keyed by the switch's actual screen position. Controls are
+/// instant in logic and hit testing; only the visible thumb eases into place.
+struct V7SwitchAnimation {
+    position: f32,
+    velocity: f32,
+    target: f32,
+    last_frame: std::time::Instant,
+}
+std::thread_local! {
+    static V7_SWITCH_ANIMATIONS:
+        std::cell::RefCell<std::collections::HashMap<(i32, i32, u8), V7SwitchAnimation>>
+        = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+pub fn switch_motion_active() -> bool {
+    V7_SWITCH_ANIMATIONS.with(|cache| cache.borrow().values().any(|animation| {
+        animation.last_frame.elapsed().as_secs_f32() < 0.07
+            && ((animation.position - animation.target).abs() > 0.008
+                || animation.velocity.abs() > 0.02)
+    }))
+}
+fn switch_thumb_fraction(x: f32, y: f32, enabled: bool, style: ExperiencePreset) -> f32 {
+    let target = if enabled { 1. } else { 0. };
+    if super::motion::reduced_motion() {
+        return target;
+    }
+    let style_id = match style {
+        ExperiencePreset::OldSchool => 1,
+        ExperiencePreset::LiquidGlass => 2,
+        ExperiencePreset::Standard => 0,
+    };
+    let key = ((x * 2.).round() as i32, (y * 2.).round() as i32, style_id);
+    V7_SWITCH_ANIMATIONS.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        // Prevent long-lived saved page geometries growing the map forever.
+        if cache.len() > 400 {
+            cache.retain(|_, a| a.last_frame.elapsed().as_secs() < 15);
+        }
+        let now = std::time::Instant::now();
+        let motion = cache.entry(key).or_insert_with(|| V7SwitchAnimation {
+            position: target,
+            velocity: 0.,
+            target,
+            last_frame: now,
+        });
+        let dt = now.duration_since(motion.last_frame).as_secs_f32().min(0.08);
+        motion.last_frame = now;
+        motion.target = target;
+        let (position, velocity) = super::launcher_preset_pack::spring_position(
+            style, motion.position, motion.velocity, target, dt,
+        );
+        motion.position = position.clamp(-0.08, 1.08);
+        motion.velocity = velocity.clamp(-10., 10.);
+        motion.position
+    })
+}
+
+/// Toggle: translucent GPU track and an opaque touch-readable thumb, animated
+/// by the same physics that controls the selected navigation bubble.
+pub fn component_switch(ui: &mut Ui<'_>, x: f32, y: f32, on: bool) {
+    let th = active_theme();
+    let old = th.experience == ExperiencePreset::OldSchool;
+    let rect = [x, y, 52., 28.];
+    panel(ui, rect, if old { 10. } else { 14. }, on);
+    let position = switch_thumb_fraction(x, y, on, th.experience);
+    let travel = 4. + 22. * position;
+    let thumb_d = 20.;
+    ui.rounded(x + travel, y + 4., thumb_d, thumb_d,
+        if old { 6. } else { 10. },
+        color::hex(if old { 0xEBEEF3 } else { 0xF7FBFF }, 236));
+    if position > 0.70 {
+        ui.icon(Icon::Check, x + travel + 4., y + 8., 12.,
+            color::hex(if old { 0x253243 } else { 0x3E6872 }, 245));
+    }
+}
+
+/// Track containing *one* active lens; all tab labels remain crisp. The focus
+/// fraction may be supplied by a spring; touch targets are registered by caller.
+pub fn component_tabs(ui: &mut Ui<'_>, rect: [f32; 4],
+    labels: [&str; 2], focused: f32) {
+    let th = active_theme();
+    let [x, y, w, h] = rect;
+    let old = th.experience == ExperiencePreset::OldSchool;
+    ui.rounded(x, y, w, h, if old { 11. } else { h / 2. },
+        color::hex(if old { 0x171C2D } else { 0xB9D5DE }, if old { 144 } else { 34 }));
+    let part_w = w / 2.;
+    let fx = x + part_w * focused.clamp(0., 1.);
+    panel(ui, [fx + 2., y + 2., part_w - 4., h - 4.],
+        if old { 9. } else { (h - 4.) / 2. }, true);
+    for (i, label) in labels.into_iter().enumerate() {
+        let selected = (focused - i as f32).abs() < 0.5;
+        ui.centered_fit(Face::Medium, 13.,
+            [x + i as f32 * part_w + 5., y + 2., part_w - 10., h - 4.],
+            if selected { th.text_primary } else { th.text_muted }, label);
+    }
+}
+
+/// Sidebar selected bubble shares the same V7 optical surface as controls;
+/// scrolling and navigation never draw glyphs into the lens framebuffer.
+pub fn component_circular_icon(ui: &mut Ui<'_>, rect: [f32; 4], icon: Icon) {
+    let th = active_theme();
+    panel(ui, rect, rect[3] / 2., true);
+    let size = (rect[3] * 0.46).clamp(16., 24.);
+    ui.icon(icon, rect[0] + (rect[2] - size) / 2.,
+        rect[1] + (rect[3] - size) / 2., size, th.text_primary);
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum HomeAction {
     Play,
@@ -660,6 +886,7 @@ fn shell_console(
     account: &str,
     signed_in: bool,
     version: &str,
+    focus_x: f32,
     mut target: impl FnMut([f32; 4], ShellAction),
 ) -> Layout {
     let th = active_theme();
@@ -685,6 +912,15 @@ fn shell_console(
     target(settings, ShellAction::Appearance);
     ui.fill(24., 117., w - 48., 1., color::hex(0xD4D8EB, 72));
 
+    // A physically animated lens follows the selected console tab. The
+    // underlying hitboxes remain fixed, so focus and touch never lag.
+    if !items.is_empty() {
+        let step = (w - 48.) / items.len() as f32;
+        let fx = focus_x.clamp(24., w - 24. - step);
+        panel(ui, [fx + 10., 76., (step - 20.).max(22.), 34.], 12., false);
+        ui.fill(fx + step * 0.28, 114., step * 0.44, 1.4,
+            color::hex(0xEEF2FF, 208));
+    }
     for (i, (label, _icon)) in items.iter().enumerate() {
         let tab = layout.nav_rect(w, h, i, items.len());
         let chosen = i == selected;
@@ -697,18 +933,13 @@ fn shell_console(
             if chosen { th.text_primary } else { th.text_muted },
             &fitted,
         );
-        if chosen {
-            let underline_w = (tw + 16.).min(tab[2] - 8.);
-            let underline_x = tab[0] + (tab[2] - underline_w) * 0.5;
-            ui.rounded(underline_x - 12., tab[1] + 36., underline_w + 24., 3., 1.5, color::hex(0xB4A9FF, 35));
-            ui.fill(underline_x, tab[1] + 37., underline_w, 1., color::hex(0xEAE8FF, 230));
-        }
         target(tab, ShellAction::Page(i));
     }
     layout
 }
 
 /// Header and adaptive navigation shared by the app and the native captures.
+/// Backward-compatible non-animated entry, used by the standalone UI harness.
 #[allow(clippy::too_many_arguments)]
 pub fn shell(
     ui: &mut Ui<'_>,
@@ -717,13 +948,33 @@ pub fn shell(
     account: &str,
     signed_in: bool,
     version: &str,
+    target: impl FnMut([f32; 4], ShellAction),
+) -> Layout {
+    let layout = Layout::new(ui.w, ui.h);
+    let index = selected.min(items.len().saturating_sub(1));
+    let target_rect = layout.nav_rect(ui.w, ui.h, index, items.len().max(1));
+    shell_animated(ui, items, selected, account, signed_in, version,
+        [target_rect[0], target_rect[1]], target)
+}
+
+/// Modern glass and console channels each have an animated selected component.
+/// The physical lens moves independently of immutable target hitboxes.
+#[allow(clippy::too_many_arguments)]
+pub fn shell_animated(
+    ui: &mut Ui<'_>,
+    items: &[(&str, Icon)],
+    selected: usize,
+    account: &str,
+    signed_in: bool,
+    version: &str,
+    focus: [f32; 2],
     mut target: impl FnMut([f32; 4], ShellAction),
 ) -> Layout {
     let th = active_theme();
     let (w, h) = (ui.w, ui.h);
     let layout = Layout::new(w, h);
     if layout.console && !layout.portrait {
-        return shell_console(ui, items, selected, account, signed_in, version, target);
+        return shell_console(ui, items, selected, account, signed_in, version, focus[0], target);
     }
     ui.horizon_logo(18., 17., 31.);
     ui.text(Face::SemiBold, 17., 58., 13., th.text_primary, "Horizon");
@@ -754,11 +1005,11 @@ pub fn shell(
     // outside the glass layer; the icons and their hitboxes remain crisp.
     if th.experience == ExperiencePreset::LiquidGlass && !layout.portrait {
         panel(ui, [19., 83., 81., (h - 99.).max(80.)], 31., false);
+        let selected_rect = layout.nav_rect(w, h, selected, items.len().max(1));
+        let selected_y = focus[1].clamp(90., (h - 61.).max(90.));
+        panel(ui, [selected_rect[0] + 3., selected_y + 1., selected_rect[2] - 6., 42.], 18., true);
         for (i, (_, icon)) in items.iter().enumerate() {
             let r = layout.nav_rect(w, h, i, items.len());
-            if i == selected {
-                panel(ui, [r[0] + 3., r[1] + 1., r[2] - 6., 42.], 18., true);
-            }
             ui.icon(
                 *icon, r[0] + (r[2] - 21.) / 2., r[1] + 11., 21.,
                 if i == selected { th.text_primary } else { th.text_muted },
@@ -871,13 +1122,15 @@ fn home_old_school(
     let poster = [x, y, poster_w, poster_h];
     // Drop the placeholder voxel image. Real GPU chrome samples the Graphite wallpaper.
     panel(ui, poster, 16., false);
-    ui.stroke_rounded(x, y, poster_w, poster_h, 9., 1.1, color::hex(0xE2E5FA, 138));
-    ui.rounded(x + 13., y + 15., (poster_w - 27.).min(280.), 64., 6., color::hex(0x101425, 137));
-    ui.text(Face::SemiBold, if narrow { 22. } else { 28. },
-        x + 23., y + 22., color::hex(0xFFFFFF, 255), "MINECRAFT");
-    ui.text(Face::Medium, 16., x + 24., y + 57., color::hex(0xE4E6F5, 255), "26.3");
+    // Satin dark content inset, lit by the current wallpaper.
+    ui.stroke_rounded(x, y, poster_w, poster_h, 16., 0.8, color::hex(0xE2E5FA, 80));
+    ui.rounded(x + 15., y + 16., (poster_w - 30.).min(330.), 104., 12.,
+        color::hex(0x0A1020, 111));
+    ui.text(Face::SemiBold, if narrow { 23. } else { 31. },
+        x + 26., y + 22., color::hex(0xFFFFFF, 255), "MINECRAFT");
+    ui.text(Face::Medium, 16., x + 27., y + 64., color::hex(0xE4E6F5, 243), "26.3");
     let small = if view.installed { "Ready to play" } else { "Installation required" };
-    ui.text(Face::Regular, 11., x + 23., y + 85., color::hex(0xFAFAFF, 236), small);
+    ui.text(Face::Regular, 12.5, x + 27., y + 95., color::hex(0xFAFAFF, 236), small);
     // A small profile selector belongs to the poster, not the utility cards.
     let profile = [x + poster_w - 119., y + 13., 105., 37.];
     panel(ui, profile, 9., false);
@@ -885,10 +1138,12 @@ fn home_old_school(
         color::hex(0xF2F6FF, 245), &format!("Profile {}", view.profile + 1));
     target(profile, HomeAction::Profile);
 
-    let play = [x, y + poster_h - 58., poster_w, 58.];
-    panel(ui, play, 11., true);
+    let play = [x + 12., y + poster_h - 67., poster_w - 24., 54.];
+    panel(ui, play, 13., true);
+    ui.rounded(play[0] + 1., play[1] + 1., play[2] - 2., play[3] - 2.,
+        12., color::hex(0x587B61, 48));
     // Cool satin edge: dark-chrome surface stays faithful to the user's V7 material.
-    ui.fill(play[0] + 7., play[1] + 3., poster_w - 14., 1.,
+    ui.fill(play[0] + 12., play[1] + 3., play[2] - 24., 1.,
         color::hex(0xE9F1FA, 102));
     ui.icon(Icon::Play, play[0] + 19., play[1] + 14., 27., color::hex(0xFFFFFF, 255));
     let label = if view.launching { "Getting ready..." } else if view.installed {
@@ -907,27 +1162,33 @@ fn home_old_school(
     let card_w = (available - gap * (cols - 1) as f32) / cols as f32;
     let card_h = if narrow { ((h - poster_h - 3. * gap) / 3.).max(39.) }
         else { (h - gap) * 0.5 };
+    // A tint is a small *translucent* reflection in the chrome, not a solid
+    // Xbox-style painted tile. Maintain bright typography over each finish.
     let shortcuts = [
-        ("Mods", Icon::Mods, HomeAction::Mods),
-        ("Packs", Icon::Packs, HomeAction::Packs),
-        ("Shaders", Icon::Shaders, HomeAction::Shaders),
-        ("My files", Icon::Folder, HomeAction::Files),
-        ("Skins", Icon::Person, HomeAction::Skins),
-        ("Settings", Icon::Gear, HomeAction::Settings),
+        ("Mods", Icon::Mods, HomeAction::Mods, 0x986C9A_u32),
+        ("Packs", Icon::Packs, HomeAction::Packs, 0x537DB2_u32),
+        ("Shaders", Icon::Shaders, HomeAction::Shaders, 0xB18A57_u32),
+        ("My files", Icon::Folder, HomeAction::Files, 0x5A8DA2_u32),
+        ("Skins", Icon::Person, HomeAction::Skins, 0x619B7A_u32),
+        ("Settings", Icon::Gear, HomeAction::Settings, 0x777E9A_u32),
     ];
-    for (i, (name, icon, action)) in shortcuts.into_iter().enumerate() {
+    for (i, (name, icon, action, tint)) in shortcuts.into_iter().enumerate() {
         let row = (i / cols) as f32;
         let col = (i % cols) as f32;
         let card = [tx + col * (card_w + gap), ty + row * (card_h + gap), card_w, card_h];
         if card[1] + card[3] > y + h + 1. { continue; }
-        panel(ui, card, 10., false);
-        // Satin upper edge and discreet diagonal reflection.
-        ui.fill(card[0] + 6., card[1] + 3., card_w - 12., 1., color::hex(0xFFFFFF, 65));
-        ui.stroke_rounded(card[0], card[1], card_w, card_h, 7., 0.8, color::hex(0xEBF5FF, 89));
-        let icon_size = if narrow { 21. } else { (card_h * 0.30).min(33.) };
+        panel(ui, card, 12., false);
+        ui.rounded(card[0] + 1., card[1] + 1., card_w - 2., card_h - 2.,
+            11., color::hex(tint, 47));
+        // The narrow silver seam is a design accent, not another lens surface.
+        ui.fill(card[0] + 12., card[1] + 3., (card_w - 24.).max(0.), 1.,
+            color::hex(0xFFFFFF, 44));
+        ui.stroke_rounded(card[0], card[1], card_w, card_h, 11., 0.7,
+            color::hex(tint, 126));
+        let icon_size = if narrow { 23. } else { (card_h * 0.30).min(36.) };
         ui.icon(icon, card[0] + (card_w - icon_size) * 0.5,
             card[1] + (card_h * 0.23).min(35.), icon_size, color::hex(0xF5F7FF, 243));
-        let font = if narrow { 12. } else { 15. };
+        let font = if narrow { 13. } else { 16. };
         ui.centered_fit(Face::Medium, font,
             [card[0] + 4., card[1] + card_h - if narrow { 26. } else { 38. }, card_w - 8., 29.],
             color::hex(0xF4F5FB, 255), name);
@@ -968,7 +1229,7 @@ fn home_liquid(
     ui.border(icon_r[0], icon_r[1], 75., 75., 18., color::hex(0xE3F7FF, 67));
     ui.icon(Icon::Gamepad, icon_r[0] + 21., icon_r[1] + 21., 33.,
         color::hex(0xE9F5F7, 250));
-    ui.text(Face::SemiBold, 27., x + 117., y + 50., color::hex(0xFFFFFF, 255),
+    ui.text(Face::SemiBold, 30., x + 117., y + 48., color::hex(0xFFFFFF, 255),
         "Minecraft 26.3");
     let ready = if view.installed { "Ready to play" } else { "Installation required" };
     ui.icon(if view.installed { Icon::Check } else { Icon::Installed },
@@ -1019,10 +1280,10 @@ fn home_liquid(
         let r = [x + i as f32 * (tile_w + gap), tiles_y, tile_w, tiles_h];
         // Independent, restrained physical controls; no stacked nested glass.
         panel(ui, r, 20., false);
-        let size = (tiles_h * 0.36).min(28.);
+        let size = (tiles_h * 0.38).min(31.);
         ui.icon(icon, r[0] + (tile_w - size) * 0.5,
             r[1] + tiles_h * 0.22, size, th.text_primary);
-        ui.centered_fit(Face::Medium, 11.5,
+        ui.centered_fit(Face::Medium, 13.0,
             [r[0] + 4., r[1] + tiles_h - 27., tile_w - 8., 22.],
             th.text_primary, label);
         target(r, action);
@@ -1422,66 +1683,30 @@ pub fn appearance(
             target(r, action);
         }
     }
-    let tuning_y = row_y + 232.;
-    let tuning_height = if cfg.preset == ThemePreset::LiquidGlass && cfg.glass_effects {
-        let optics = cfg.glass.normalized();
-        for (i, (label, value, action)) in [
-            (
-                "Transparency",
-                format!("{}%", ((1. - optics.opacity) * 100.).round() as u32),
-                AppearanceAction::Transparency,
-            ),
-            (
-                "Backdrop blur",
-                if optics.blur < 0.1 {
-                    "Off · lightest".into()
-                } else if optics.blur < 6. {
-                    "Soft".into()
-                } else {
-                    "Strong".into()
-                },
-                AppearanceAction::Blur,
-            ),
-            (
-                "Refraction",
-                if optics.refraction < 0.1 {
-                    "Off".into()
-                } else if optics.refraction < 18. {
-                    "Natural".into()
-                } else {
-                    "Strong".into()
-                },
-                AppearanceAction::Refraction,
-            ),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let r = [x, tuning_y + i as f32 * 58., w, 50.];
-            panel(ui, r, 14., false);
-            ui.text(
-                Face::Medium,
-                12.,
-                x + 16.,
-                r[1] + 15.,
-                th.text_primary,
-                label,
-            );
-            let text = ui.fit_text(Face::Regular, 11., &value, w * 0.40);
-            let tw = ui.measure(Face::Regular, 11., &text);
-            ui.text(
-                Face::Regular,
-                11.,
-                x + w - 16. - tw,
-                r[1] + 16.,
-                th.text_primary,
-                &text,
-            );
-            if let Some(r) = ui.clip_rect(r) {
-                target(r, action);
+    // Native calibration: separate saved optical properties per experience.
+    let tuning_height = if cfg.glass_effects
+        && matches!(cfg.preset, ThemePreset::LiquidGlass | ThemePreset::OldSchool)
+    {
+        let optics = cfg.current_optics();
+        let tuning_y = row_y + 232.;
+        for (i, (label, value, fraction, action)) in [
+            ("Opacidade", format!("{}%", (optics.opacity * 100.).round() as u32),
+                ((optics.opacity - 0.06) / 0.44).clamp(0., 1.),
+                AppearanceAction::Transparency),
+            ("Desfoque", format!("{:.1}", optics.blur),
+                (optics.blur / 10.).clamp(0., 1.),
+                AppearanceAction::Blur),
+            ("Refração", format!("{:.0}", optics.refraction),
+                (optics.refraction / 24.).clamp(0., 1.),
+                AppearanceAction::Refraction),
+        ].into_iter().enumerate() {
+            let control = [x, tuning_y + i as f32 * 82., w, 74.];
+            let hitbox = optical_calibration_slider(ui, control, label, &value, fraction);
+            if let Some(hitbox) = ui.clip_rect(hitbox) {
+                target(hitbox, action);
             }
         }
-        182.
+        248.
     } else {
         0.
     };
