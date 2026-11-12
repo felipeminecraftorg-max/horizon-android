@@ -891,7 +891,7 @@ fn home_old_school(
     let ty = if narrow { y + poster_h + gap } else { y };
     let available = if narrow { w } else { w - poster_w - 10. };
     let card_w = (available - gap * (cols - 1) as f32) / cols as f32;
-    let card_h = if narrow { ((h - poster_h - 2. * gap) / 3.).max(39.) }
+    let card_h = if narrow { ((h - poster_h - 3. * gap) / 3.).max(39.) }
         else { (h - gap) * 0.5 };
     let shortcuts = [
         ("Mods", Icon::Mods, HomeAction::Mods, 0x59466F_u32),
@@ -1477,7 +1477,7 @@ pub fn appearance(
     let cw = (w - 8. * (cols - 1) as f32) / cols as f32;
     for (i, preset) in ThemePreset::ALL
         .into_iter()
-        .filter(|p| !matches!(p, ThemePreset::LiquidGlass | ThemePreset::DarkAero))
+        .filter(|p| !matches!(p, ThemePreset::LiquidGlass | ThemePreset::OldSchool))
         .enumerate()
     {
         let r = [
