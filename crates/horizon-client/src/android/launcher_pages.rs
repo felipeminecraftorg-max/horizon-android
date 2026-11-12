@@ -1327,6 +1327,9 @@ impl Launcher {
                             visual::HomeAction::Appearance => {
                                 Action::SettingsCat(SettingsCategory::Theme)
                             }
+                            visual::HomeAction::Settings => {
+                                Action::SettingsCat(SettingsCategory::Overview)
+                            }
                             visual::HomeAction::Mods => Action::Page(Page::Mods),
                             visual::HomeAction::Packs => Action::Page(Page::Packs),
                             visual::HomeAction::Shaders => Action::Page(Page::Shaders),
