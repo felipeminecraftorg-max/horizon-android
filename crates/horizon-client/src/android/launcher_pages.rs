@@ -523,37 +523,7 @@ fn toggle(
     );
     let track_x = x + w - 52.0;
     let track_y = y + (h - 26.0) * 0.5;
-    let experience = horizon_client::ui_theme::active_theme().experience;
-    match experience {
-        horizon_client::ui_theme::ExperiencePreset::OldSchool => {
-            // Dark Aero metal rocker: the track is a restrained matte inset
-            // and the moving pearl is a real WGSL chrome surface.
-            ui.rounded(track_x, track_y, 50., 26., 13., color::hex(0x0D1119, 171));
-            ui.stroke_rounded(track_x, track_y, 50., 26., 13., 0.9,
-                color::hex(0xDFE8F3, if on { 126 } else { 66 }));
-            let x = track_x + if on { 26. } else { 4. };
-            visual::panel(ui, [x, track_y + 3., 20., 20.], 10., on);
-            ui.rounded(x + 4., track_y + 7., 12., 12., 6.,
-                color::hex(0xF3F6FC, 125));
-        }
-        horizon_client::ui_theme::ExperiencePreset::LiquidGlass => {
-            // The track stays translucent; the thumb alone is optical glass.
-            ui.rounded(track_x, track_y, 50., 26., 13., color::hex(0xE8F9FF, 23));
-            ui.stroke_rounded(track_x, track_y, 50., 26., 13., 0.8,
-                color::hex(0xEAF8FF, if on { 149 } else { 75 }));
-            let x = track_x + if on { 26. } else { 4. };
-            visual::panel(ui, [x, track_y + 3., 20., 20.], 10., on);
-            ui.rounded(x + 6., track_y + 9., 8., 8., 4.,
-                color::hex(0xFCFFFF, 96));
-        }
-        horizon_client::ui_theme::ExperiencePreset::Standard => {
-            ui.rounded(track_x, track_y, 50., 26., 13.,
-                if on { my3_accent() } else { my3_track() });
-            ui.rounded(track_x + if on { 26. } else { 4. }, track_y + 3.,
-                20., 20., 10.,
-                if on { my3_on_accent() } else { my3_muted() });
-        }
-    }
+    visual::glass_switch(ui, [track_x, track_y, 50., 26.], on);
     if let Some(c) = ui.clip_rect([x, y, w, h]) {
         targets.push((c, action));
     }
