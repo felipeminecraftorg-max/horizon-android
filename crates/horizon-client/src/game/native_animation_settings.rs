@@ -11,10 +11,14 @@ pub struct ReAnimated {
     pub speed: f32,
     pub reduced_motion: bool,
     pub buttons: bool,
+    pub hotbar: bool,
+    pub hotbar_speed: f32,
+    pub toasts: bool,
 }
 impl Default for ReAnimated {
     fn default() -> Self {
-        Self { enabled:false, speed:1.0, reduced_motion:false, buttons:true }
+        Self { enabled:false, speed:1.0, reduced_motion:false,
+            buttons:true,hotbar:true,hotbar_speed:1.0,toasts:true }
     }
 }
 
@@ -57,6 +61,9 @@ impl PreviewSettings {
             out.reanimated.speed=scalar(re,"speed",1.0,0.25,3.0);
             out.reanimated.reduced_motion=boolean(re,"reduced_motion",false);
             out.reanimated.buttons=boolean(re,"buttons",true);
+            out.reanimated.hotbar=boolean(re,"hotbar",true);
+            out.reanimated.hotbar_speed=scalar(re,"hotbar_speed",1.0,0.25,4.0);
+            out.reanimated.toasts=boolean(re,"toasts",true);
         }
         if let Some(ci)=root.get("cinematic") {
             out.cinematic.enabled=boolean(ci,"enabled",false);
@@ -82,7 +89,7 @@ mod tests {
     use super::*;
     #[test] fn parses_both_mods_and_clamps_settings() {
         let settings=PreviewSettings::parse(r#"{
-            "reanimated":{"enabled":true,"speed":500,"buttons":false},
+            "reanimated":{"enabled":true,"speed":500,"buttons":false,"hotbar_speed":100,"toasts":false},
             "cinematic":{"enabled":true,"roll_strength":-8,"speed":0.0}
         }"#);
         assert!(settings.reanimated.enabled && settings.cinematic.enabled);
@@ -90,6 +97,8 @@ mod tests {
         assert_eq!(settings.cinematic.roll_strength,0.0);
         assert_eq!(settings.cinematic.speed,0.35);
         assert!(!settings.reanimated.buttons);
+        assert!(!settings.reanimated.toasts);
+        assert_eq!(settings.reanimated.hotbar_speed,4.0);
     }
     #[test] fn malformed_settings_fail_closed() {
         assert_eq!(PreviewSettings::parse("{bad"),PreviewSettings::default());
