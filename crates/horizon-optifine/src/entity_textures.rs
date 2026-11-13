@@ -62,6 +62,7 @@ fn weights(s: &str, size: usize) -> Result<Vec<u32>, ()> {
 fn heights(s: &str) -> Result<Vec<(i32, i32)>, ()> {
     let mut ranges = Vec::new();
     for t in s.split_whitespace() {
+        if !t.is_ascii() || t.is_empty() { return Err(()); }
         // Negative heights are valid; split after the first digit/sign group.
         let (a, b) = if let Some(i) = t[1..].find('-').map(|i| i + 1) {
             (t[..i].parse::<i32>().map_err(|_| ())?, t[i+1..].parse::<i32>().map_err(|_| ())?)
@@ -154,6 +155,7 @@ pub fn parse(src: &str) -> Result<TextureRules, Error> {
             None => vec![1; textures.len()],
         };
         let name = match raw.get("name").or_else(|| raw.get("names")) {
+            Some(s) if s.len() > 256 => { result.skipped.push(format!("rule {id}: name predicate too long")); continue; },
             Some(s) => match Name::parse(s) {
                 Some(matcher) => Some(matcher),
                 None => { result.skipped.push(format!("rule {id}: invalid name")); continue; }
@@ -182,7 +184,7 @@ mod tests {
     }
     #[test] fn stable_selection_and_weights() {
         let rules = parse("skins.1=1 2 3\nweights.1=1 9 1").unwrap();
-        assert_eq!(rules.rules[0].weights, [1,9,1]);
+        assert_eq!(rules.rules[0].weights, vec![1,9,1]);
         assert_eq!(rules.select(ctx(7)), rules.select(ctx(7)));
     }
     #[test] fn rules_respect_predicates() {
