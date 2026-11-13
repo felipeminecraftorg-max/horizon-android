@@ -2332,6 +2332,26 @@ impl HudRenderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn xmb_wallpaper_shader_validates_with_naga() {
+        // The exact source passed to wgpu at runtime, not a separately
+        // maintained approximation. Reject undefined symbols, WGSL errors
+        // and invalid resource or control-flow use before shipping Android.
+        let source = format!(
+            "{}\n{}",
+            include_str!("hud.wgsl"),
+            include_str!("hud/xmb_wallpaper.wgsl")
+        );
+        let module = naga::front::wgsl::parse_str(&source)
+            .expect("XMB must be valid WGSL");
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        ).validate(&module).expect("XMB must validate on wgpu/Naga");
+        assert!(source.contains("fn xmb_wallpaper("));
+        assert!(source.contains("in.uv.x < -2.0"));
+    }
     #[test]
     fn inset_only_moves_the_information_overlay_not_controls_or_viewport() {
         let mut batch = HudBatch::new([1280, 720]);
