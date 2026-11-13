@@ -2119,7 +2119,18 @@ impl Launcher {
             );
         }
         if let Some(action) = self.pending_focus.take() {
-            self.focus = self.targets.iter().position(|(_, a)| *a == action);
+            // Home item actions may also exist in the category strip
+            // (for example Mods and Shaders). XMB focus belongs to the
+            // vertical item row; never steal it back to the category icon.
+            self.focus = if self.xmb_navigation_available()
+                && self.catalog.page == Page::Play
+                && horizon_client::ui_theme::launcher_xmb::HOME_ACTIONS
+                    .iter().any(|home| xmb_home_to_action(*home) == action)
+            {
+                self.targets.iter().rposition(|(_, a)| *a == action)
+            } else {
+                self.targets.iter().position(|(_, a)| *a == action)
+            };
         }
         if let Some(index) = self.focus
             && let Some(([x, y, w, h], _)) = self.targets.get(index)
