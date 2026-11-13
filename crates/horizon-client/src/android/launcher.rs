@@ -59,6 +59,10 @@ pub(super) struct Launcher {
     pub(super) xmb: horizon_client::ui_theme::launcher_xmb::Navigation,
     /// 0: files, 1: named locations, 2: file commands. XMB only.
     xmb_files_panel: u8,
+    /// Transient, independent context overlay: focused action and finger anchor in dp.
+    xmb_context: Option<(pages::Action, [f32; 2])>,
+    /// Prevents held D-pad and rapid swipe sequences from overlapping UI samples.
+    xmb_last_sound: Option<Instant>,
     pub(super) control_editor: Option<horizon_client::touch::TouchControls>,
     worker: Option<mpsc::Receiver<std::result::Result<(), String>>>,
     error: Option<String>,
@@ -244,6 +248,8 @@ impl Launcher {
             anim: Default::default(),
             xmb: Default::default(),
             xmb_files_panel: 0,
+            xmb_context: None,
+            xmb_last_sound: None,
             control_editor: None,
             worker: None,
             error: None,
@@ -289,6 +295,7 @@ impl Launcher {
         horizon_client::ui_theme::reset_atlas();
         self.cursor = (0.0, 0.0);
         self.drag = None;
+        self.xmb_context = None;
         self.chooser = None;
         self.exit_confirmation = false;
         self.focus = None;
@@ -391,6 +398,12 @@ impl Launcher {
     }
 
     fn request_back(&mut self) {
+        if self.xmb_context.take().is_some() {
+            self.xmb_play_back();
+            self.focus = None;
+            self.pending_focus = None;
+            return;
+        }
         if self.catalog.page == Page::Settings
             && self.catalog.settings_category == crate::catalog::SettingsCategory::Theme
             && self.theme_advanced
@@ -463,6 +476,7 @@ impl Launcher {
         }
         self.focus = None;
         self.pending_focus = self.exit_confirmation.then_some(pages::Action::Dismiss);
+        self.xmb_play_back();
         self.targets.clear();
         self.list_targets.clear();
         self.drag = None;
