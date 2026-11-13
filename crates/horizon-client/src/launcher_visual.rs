@@ -957,7 +957,7 @@ fn shell_console(
     let (w, h) = (ui.w, ui.h);
     let layout = Layout::new(w, h);
     ui.horizon_logo(24., 15., 30.);
-    ui.text(Face::SemiBold, 20., 62., 12., th.text_primary, "Horizon");
+    ui.text(Face::ConsoleDisplay, 20., 62., 12., th.text_primary, "Horizon");
     ui.text(Face::Regular, 9.5, 62., 38., th.text_muted, version);
 
     let aw = (w * 0.22).clamp(138., 196.);
@@ -987,16 +987,22 @@ fn shell_console(
         ui.fill(fx + step * 0.24, 115., step * 0.52, 1.5,
             color::hex(0xD7E9FF, 226));
     }
-    for (i, (label, _icon)) in items.iter().enumerate() {
+    for (i, (label, icon)) in items.iter().enumerate() {
         let tab = layout.nav_rect(w, h, i, items.len());
         let chosen = i == selected;
-        let fitted = ui.fit_text(Face::Medium, 13., label, tab[2] - 12.);
-        let tw = ui.measure(Face::Medium, 13., &fitted);
+        let foreground = if chosen { th.text_primary } else { th.text_muted };
+        // XMB-like two-level channel: small original outline glyph above
+        // a restrained label. Every icon routes through the Old School set
+        // while hit-testing keeps the existing 44dp control rectangle.
+        ui.icon(*icon, tab[0] + (tab[2] - 17.) * 0.5,
+            tab[1] + 2., 17., foreground);
+        let fitted = ui.fit_text(Face::ConsoleMedium, 10.5, label, tab[2] - 12.);
+        let tw = ui.measure(Face::ConsoleMedium, 10.5, &fitted);
         ui.text(
-            Face::Medium, 13.,
+            Face::ConsoleMedium, 10.5,
             tab[0] + (tab[2] - tw) * 0.5,
-            tab[1] + 8.,
-            if chosen { th.text_primary } else { th.text_muted },
+            tab[1] + 23.,
+            foreground,
             &fitted,
         );
         target(tab, ShellAction::Page(i));
@@ -1203,8 +1209,8 @@ fn home_old_school(
     ui.text(Face::Medium, 10., hx + 22., hy + 20.,
         color::hex(0xA6B7CB, 205), "GAME LIBRARY / 01");
     let heading_size = if hw < 390. { 27. } else { 32. };
-    let heading = ui.fit_text(Face::SemiBold, heading_size, "MINECRAFT", hw - 43.);
-    ui.text(Face::SemiBold, heading_size, hx + 22., hy + 43.,
+    let heading = ui.fit_text(Face::ConsoleDisplay, heading_size, "MINECRAFT", hw - 43.);
+    ui.text(Face::ConsoleDisplay, heading_size, hx + 22., hy + 43.,
         color::hex(0xF2F5FC, 255), &heading);
 
     let ready = if view.installed { "Ready to play" } else { "Installation required" };
