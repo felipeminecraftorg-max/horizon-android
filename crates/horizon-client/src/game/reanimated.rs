@@ -60,11 +60,12 @@ pub struct Config {
     pub buttons: bool,
     pub hotbar: bool,
     pub hotbar_speed: f32,
+    pub toasts: bool,
 }
 impl Default for Config {
     fn default() -> Self {
         Self { enabled:false,reduced_motion:false,speed:1.0,
-            ease:Ease::OutCubic,scale:true,buttons:true,hotbar:true,hotbar_speed:1.0 }
+            ease:Ease::OutCubic,scale:true,buttons:true,hotbar:true,hotbar_speed:1.0,toasts:true }
     }
 }
 
@@ -73,6 +74,12 @@ struct WidgetState {
     hover: f32,
     press: f32,
     updated: f32,
+}
+
+#[derive(Clone, Debug, Default)]
+struct ToastState {
+    visible: bool,
+    entered: f32,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -85,6 +92,7 @@ pub struct ReAnimated {
     widgets: BTreeMap<u64, WidgetState>,
     hotbar_position: Option<f32>,
     hotbar_time: Option<f32>,
+    toast_states: BTreeMap<&'static str, ToastState>,
     pub changes: u64,
 }
 
@@ -248,6 +256,36 @@ impl ReAnimated {
         }
     }
 
+    /// Animate only newly appended toast vertices. Each category keeps its
+    /// own entrance clock, so unrelated toasts do not restart one another.
+    /// This runs after a toast drawer and never alters screen interaction.
+    pub fn animate_toast_layer(
+        &mut self, channel: &'static str, now: f32,
+        start: usize, batch: &mut HudBatch,
+    ) {
+        if !self.config.enabled || !self.config.toasts
+            || self.config.reduced_motion || !now.is_finite() {return;}
+        let visible = start < batch.vertices.len();
+        let state = self.toast_states.entry(channel).or_default();
+        if !visible {
+            state.visible=false;
+            return;
+        }
+        if !state.visible || now < state.entered {
+            state.visible=true;
+            state.entered=now;
+        }
+        let duration=(0.30/self.config.speed.clamp(0.25,3.0)).max(0.07);
+        let t=((now-state.entered)/duration).clamp(0.0,1.0);
+        let eased=Ease::OutCubic.apply(t);
+        let vertical=(1.0-eased)*7.0;
+        for v in &mut batch.vertices[start..] {
+            v.pos[1]-=vertical;
+            let alpha=((v.color>>24) as f32*eased).round() as u32;
+            v.color=(v.color&0x00ff_ffff)|(alpha.min(255)<<24);
+        }
+    }
+
     /// Reports a suggested frame-clock delta, for other animation systems
     /// that should never jump forward on app resume.
     pub fn bounded_dt(&self, now: f32) -> f32 {
@@ -298,6 +336,34 @@ mod tests {
         assert_eq!(m.changes,2);
         m.config.reduced_motion=true;
         assert_eq!(m.frame("options",0.11),ScreenMotion::default());
+    }
+    #[test] fn new_toast_layer_animates_then_settles() {
+        let mut m=ReAnimated::new(Config {enabled:true,..Default::default()});
+        let mut first=HudBatch::new([900,500]);
+        first.quad([[5.0,15.0],[15.0,15.0],[15.0,25.0],[5.0,25.0]],
+            [[0.0,0.0];4],u32::MAX);
+        m.animate_toast_layer("general",1.0,0,&mut first);
+        assert_eq!(first.vertices[0].color>>24,0);
+        assert!(first.vertices[0].pos[1]<15.0);
+        let mut settled=HudBatch::new([900,500]);
+        settled.quad([[5.0,15.0],[15.0,15.0],[15.0,25.0],[5.0,25.0]],
+            [[0.0,0.0];4],u32::MAX);
+        m.animate_toast_layer("general",1.4,0,&mut settled);
+        assert_eq!(settled.vertices[0].color>>24,255);
+        assert_eq!(settled.vertices[0].pos[1],15.0);
+        let mut empty=HudBatch::new([900,500]);
+        m.animate_toast_layer("general",1.5,0,&mut empty);
+        assert!(!m.toast_states["general"].visible);
+    }
+    #[test] fn two_toast_channels_have_independent_clocks() {
+        let mut m=ReAnimated::new(Config {enabled:true,..Default::default()});
+        for (key,at) in [("general",0.0),("music",0.2)] {
+            let mut b=HudBatch::new([900,500]);
+            b.quad([[0.0,0.0];4],[[0.0,0.0];4],u32::MAX);
+            m.animate_toast_layer(key,at,0,&mut b);
+        }
+        assert_eq!(m.toast_states["general"].entered,0.0);
+        assert_eq!(m.toast_states["music"].entered,0.2);
     }
     #[test] fn fps_independent_fade() {
         let mut a=ReAnimated::new(Config {enabled:true,..Default::default()});
