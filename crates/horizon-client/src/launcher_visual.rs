@@ -311,6 +311,67 @@ fn scene(ui: &mut Ui<'_>, r: [f32; 4], corner: f32, sunset: bool) {
     band(y + corner, (h - 2. * corner).max(0.), 0.);
 }
 
+// A dedicated XMB-inspired backdrop for Old School. The existing Graphite
+// wallpaper is intentionally NOT modified: Dark Aero still relies on it.
+// Pixels are generated once and uploaded to the native atlas; there is no
+// per-frame CPU redraw, animation texture upload or external console asset.
+fn console_paper_pixel(u: f32, v: f32) -> [u8; 4] {
+    let lateral = (u - 0.48).abs();
+    let soft_light = (-((u - 0.68) / 0.46).powi(2)
+        - ((v - 0.58) / 0.55).powi(2)).exp() * 10.0;
+    let wave_a = 0.68 + 0.11 * (u * 4.15 + 0.28).sin() + 0.06 * (u - 0.5);
+    let wave_b = 0.81 + 0.075 * (u * 5.1 - 0.6).sin() - 0.025 * u;
+    // Wide diffuse ribbons provide atmosphere without bright, cutting
+    // diagonal lines through the control labels.
+    let broad_a = (-((v - wave_a) / 0.13).powi(2)).exp() * 18.0;
+    let broad_b = (-((v - wave_b) / 0.09).powi(2)).exp() * 11.0;
+    let satin_edge = (-((v - wave_a - 0.016) / 0.024).powi(2)).exp() * 6.0;
+    let fade = (1.0 - lateral * 0.30).clamp(0.68, 1.0);
+    let light = (soft_light + broad_a + broad_b + satin_edge) * fade;
+    [
+        (8.0 + light * 0.73).clamp(0.0, 255.0) as u8,
+        (12.0 + light * 0.85).clamp(0.0, 255.0) as u8,
+        (22.0 + light * 1.05).clamp(0.0, 255.0) as u8,
+        255,
+    ]
+}
+
+thread_local! {
+    static CONSOLE_PAPER: RefCell<Option<Vec<u8>>> = const { RefCell::new(None) };
+}
+
+/// Draw the Old School console's private, low-glare background.
+/// Keep Liquid Glass and user-selected alternate wallpapers untouched.
+pub fn console_background(ui: &mut Ui<'_>, r: [f32; 4]) {
+    CONSOLE_PAPER.with(|paper| {
+        let mut paper = paper.borrow_mut();
+        let pixels = paper.get_or_insert_with(|| {
+            let mut pixels = Vec::with_capacity((TEX_W * TEX_H * 4) as usize);
+            for y in 0..TEX_H {
+                for x in 0..TEX_W {
+                    pixels.extend(console_paper_pixel(
+                        x as f32 / TEX_W as f32,
+                        y as f32 / TEX_H as f32,
+                    ));
+                }
+            }
+            pixels
+        });
+        if let Some(t) = super::with_cache(ui.atlas, |cache| {
+            cache.image(ui.atlas, "launcher-wallpaper:oldschool-console-v2",
+                TEX_W, TEX_H, pixels)
+        }) {
+            let [x, y, w, h] = r;
+            ui.emit_clipped_uv(
+                ui.px_x(x), ui.px_y(y), ui.px_x(x + w), ui.px_y(y + h),
+                t.u0, t.v0, t.u1, t.v1, u32::MAX,
+            );
+        } else {
+            ui.fill(r[0], r[1], r[2], r[3], color::hex(0x080C16, 255));
+        }
+    });
+}
+
 pub fn background(ui: &mut Ui<'_>, r: [f32; 4], paper: Wallpaper) {
     if let Some(t) = texture(ui, paper, false) {
         let [x, y, w, h] = r;
@@ -1841,6 +1902,20 @@ mod tests {
                             || o[1] >= r[1] + r[3]
                     );
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn old_school_private_backdrop_has_no_hot_white_streaks() {
+        // Old School's procedural wallpaper must stay muted even at
+        // wave intersections; Graphite and Liquid Glass remain unchanged.
+        for y in 0..48 {
+            for x in 0..64 {
+                let px = console_paper_pixel(x as f32 / 63., y as f32 / 47.);
+                assert!(px[0] < 70 && px[1] < 70 && px[2] < 90,
+                    "console wallpaper unexpectedly bright: {px:?}");
+                assert_eq!(px[3], 255);
             }
         }
     }
