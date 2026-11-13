@@ -128,11 +128,36 @@ impl Parser {
         Ok(left)
     }
 }
+
+fn validate(node: &Node) -> Result<(), Error> {
+    match node {
+        Node::Number(_) | Node::Variable(_) => Ok(()),
+        Node::Unary(_, child) => validate(child),
+        Node::Binary(_, left, right) => { validate(left)?; validate(right) },
+        Node::Call(name, args) => {
+            let count = args.len();
+            let valid = match name.as_str() {
+                "sin" | "cos" | "tan" | "asin" | "acos" | "atan"
+                | "abs" | "sqrt" | "floor" | "ceil" | "round" | "frac" => count == 1,
+                "atan2" | "pow" | "mod" => count == 2,
+                "clamp" | "lerp" => count == 3,
+                "min" | "max" => count >= 1,
+                "if" => count >= 3 && count % 2 == 1,
+                _ => return Err(Error::UnknownFunction(name.clone())),
+            };
+            if !valid { return Err(Error::Arity); }
+            for arg in args { validate(arg)?; }
+            Ok(())
+        }
+    }
+}
+
 impl Compiled {
     pub fn parse(text: &str) -> Result<Self, Error> {
         let mut p = Parser { tokens: tokenize(text)?, pos: 0 };
         let ast = p.expr(0, 0)?;
         if p.pos != p.tokens.len() { return Err(Error::UnexpectedToken); }
+        validate(&ast)?;
         Ok(Self { ast })
     }
     /// Variables come from the renderer's current entity state; never from filesystem or scripts.
@@ -242,6 +267,7 @@ mod tests {
     #[test] fn invalid_expression_fails() {
         assert!(Compiled::parse("sin(").is_err());
         assert!(Compiled::parse("1 + self.execute()").is_err());
+        assert!(matches!(Compiled::parse("clamp(1,2)"), Err(Error::Arity)));
     }
     #[test] fn mathematical_domain_fails() {
         assert_eq!(Compiled::parse("sqrt(-1)").unwrap().eval(&|_|None), Err(Error::NonFinite));
