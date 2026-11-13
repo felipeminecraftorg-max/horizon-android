@@ -60,6 +60,7 @@ at startup. For example:
     "enabled": true,
     "speed": 1.0,
     "roll_strength": 1.0,
+    "scene_move": true,
     "reduced_motion": false
   }
 }
@@ -81,6 +82,17 @@ decorations around buttons, tabs, sliders, list entries and inventory slots,
 without moving touch or controller targets. The animations use the
 last-published frame widget rectangles, and the original button input handlers
 remain in charge of all clicks.
+
+Cinematic's `scene_move` setting performs a capped, smooth visual approach
+to a nearby workstation (at most 0.2 blocks). It does not move the player
+or reposition the directional audio listener. It requires a valid local
+station position; remote or invalid positions fall back to the normal view.
+
+EMF's experimental CEM preview now resolves safe model-level PNG texture
+references, either within the CEM folder or as a namespaced vanilla texture.
+Missing or invalid images fall back to the complete vanilla entity renderer,
+instead of placing custom model UVs on the wrong image. Per-part textures
+remain unsupported. These resources are loaded only by the opt-in atlas.
 
 Cinematic Interactions now also animates first-person *hand presentation*
 without changing the FirstPerson Model path, plus a short camera accent
