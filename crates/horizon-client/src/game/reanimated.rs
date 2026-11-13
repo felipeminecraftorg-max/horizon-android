@@ -5,7 +5,7 @@
 //! it transforms *rendered* screen vertices only. Input hitboxes, pointer
 //! coordinates, touch regions and screen click behavior are left unchanged.
 use super::Game;
-use horizon_client::{hud::{HudAtlas, HudBatch, rgba}, widgets::{self, Widget, Kind}};
+use horizon_client::{hud::{HudAtlas, HudBatch, rgba}, hud_layout::GuiDraw, widgets::{self, Widget, Kind}};
 use std::collections::BTreeMap;
 
 const START_ALPHA: f32 = 0.72;
@@ -58,11 +58,13 @@ pub struct Config {
     pub ease: Ease,
     pub scale: bool,
     pub buttons: bool,
+    pub hotbar: bool,
+    pub hotbar_speed: f32,
 }
 impl Default for Config {
     fn default() -> Self {
         Self { enabled:false,reduced_motion:false,speed:1.0,
-            ease:Ease::OutCubic,scale:true,buttons:true }
+            ease:Ease::OutCubic,scale:true,buttons:true,hotbar:true,hotbar_speed:1.0 }
     }
 }
 
@@ -81,6 +83,8 @@ pub struct ReAnimated {
     last_frame: Option<f32>,
     widget_frame: Option<f32>,
     widgets: BTreeMap<u64, WidgetState>,
+    hotbar_position: Option<f32>,
+    hotbar_time: Option<f32>,
     pub changes: u64,
 }
 
@@ -211,6 +215,36 @@ impl ReAnimated {
                 a.1.updated.total_cmp(&b.1.updated)).map(|(k,_)|*k)
             else {break};
             self.widgets.remove(&id);
+        }
+    }
+
+    /// Interpolate only the decorative hotbar selection frame.
+    /// The selected item and input controls keep their original values.
+    pub fn animate_hotbar(
+        &mut self, draws: &mut [GuiDraw], selected: usize, now: f32,
+    ) {
+        let selected=selected.min(8) as f32;
+        if !self.config.enabled || !self.config.hotbar
+            || self.config.reduced_motion || !now.is_finite() {
+            self.hotbar_position=Some(selected);
+            self.hotbar_time=None;
+            return;
+        }
+        let dt=self.hotbar_time.map_or(0.0,|last|
+            (now-last).clamp(0.0,MAX_FRAME_STEP));
+        self.hotbar_time=Some(now);
+        let prev=self.hotbar_position.unwrap_or(selected);
+        let factor=1.0-(-dt*20.0*self.config.hotbar_speed.clamp(0.25,4.0)).exp();
+        let next=prev+(selected-prev)*factor;
+        let next=if (next-selected).abs()<0.002 {selected}else{next};
+        self.hotbar_position=Some(next);
+        for draw in draws {
+            if let GuiDraw::Sprite{sprite,x,..}=draw {
+                if sprite.as_ref()=="hud/hotbar_selection" {
+                    *x+=((next-selected)*20.0).round() as i32;
+                    break;
+                }
+            }
         }
     }
 
