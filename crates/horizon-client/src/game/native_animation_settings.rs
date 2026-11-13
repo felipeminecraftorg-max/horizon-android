@@ -31,10 +31,12 @@ pub struct Cinematic {
     pub speed: f32,
     pub roll_strength: f32,
     pub reduced_motion: bool,
+    pub scene_move: bool,
 }
 impl Default for Cinematic {
     fn default()->Self {
-        Self { enabled:false, speed:1.0, roll_strength:1.0, reduced_motion:false }
+        Self { enabled:false, speed:1.0, roll_strength:1.0,
+            reduced_motion:false, scene_move:true }
     }
 }
 
@@ -97,6 +99,7 @@ impl PreviewSettings {
             out.cinematic.speed=scalar(ci,"speed",1.0,0.35,2.5);
             out.cinematic.roll_strength=scalar(ci,"roll_strength",1.0,0.0,1.0);
             out.cinematic.reduced_motion=boolean(ci,"reduced_motion",false);
+            out.cinematic.scene_move=boolean(ci,"scene_move",true);
         }
         out
     }
@@ -117,12 +120,13 @@ mod tests {
     #[test] fn parses_both_mods_and_clamps_settings() {
         let settings=PreviewSettings::parse(r#"{
             "reanimated":{"enabled":true,"speed":500,"buttons":false,"hotbar_speed":100,"toasts":false},
-            "cinematic":{"enabled":true,"roll_strength":-8,"speed":0.0}
+            "cinematic":{"enabled":true,"roll_strength":-8,"speed":0.0,"scene_move":false}
         }"#);
         assert!(settings.reanimated.enabled && settings.cinematic.enabled);
         assert_eq!(settings.reanimated.speed,3.0);
         assert_eq!(settings.cinematic.roll_strength,0.0);
         assert_eq!(settings.cinematic.speed,0.35);
+        assert!(!settings.cinematic.scene_move);
         assert!(!settings.reanimated.buttons);
         assert!(!settings.reanimated.toasts);
         assert_eq!(settings.reanimated.hotbar_speed,4.0);
