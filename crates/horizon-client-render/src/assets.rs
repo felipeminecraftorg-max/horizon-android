@@ -209,6 +209,19 @@ impl Assets {
     }
 }
 impl RenderAssets {
+    /// ETF texture selection behind the renderer resource boundary, so the
+    /// playable game does not depend directly on a specific OptiFine parser.
+    pub fn cem_texture_variant(
+        &self, vanilla: &str, seed: u64, name: Option<&str>, y: i32,
+    ) -> Option<String> {
+        self.entity_resources.variation_sprite(
+            vanilla,
+            horizon_optifine::entity_textures::EntityContext {
+                seed, name, biome: None, block_y: Some(y),
+            },
+        )
+    }
+
     pub fn load(root: &Path, assets: &Assets) -> Result<Self> {
         Self::load_with(root, assets, true)
     }
