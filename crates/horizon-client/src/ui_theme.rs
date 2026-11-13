@@ -3301,5 +3301,7 @@ mod tests {
 
 #[path = "launcher_visual.rs"]
 pub mod launcher_visual;
+#[path = "launcher_xmb.rs"]
+pub mod launcher_xmb;
 #[path = "launcher_preset_pack.rs"]
 pub mod launcher_preset_pack;
