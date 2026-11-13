@@ -9,6 +9,7 @@ on:
       - 'crates/horizon-client/src/game/creatures.rs'
       - 'crates/horizon-client/src/game.rs'
       - 'crates/horizon-client/src/game/reanimated.rs'
+      - 'crates/horizon-client/src/game/stations.rs'
       - 'crates/horizon-client/src/game/cinematic_interactions.rs'
       - '.github/workflows/native-animation-compat.yml'
   pull_request:
@@ -18,6 +19,7 @@ on:
       - 'crates/horizon-client/src/game/creatures.rs'
       - 'crates/horizon-client/src/game.rs'
       - 'crates/horizon-client/src/game/reanimated.rs'
+      - 'crates/horizon-client/src/game/stations.rs'
       - 'crates/horizon-client/src/game/cinematic_interactions.rs'
       - '.github/workflows/native-animation-compat.yml'
   workflow_dispatch:
