@@ -9,7 +9,9 @@ use horizon_client::{hud::{HudAtlas, HudBatch, rgba}, widgets::{self, Widget, Ki
 use std::collections::BTreeMap;
 
 const START_ALPHA: f32 = 0.72;
-const TRANSITION_SECONDS: f32 = 0.23;
+const SCREEN_SECONDS: f32 = 0.35;
+const CONTAINER_SECONDS: f32 = 0.45;
+const PAUSE_SECONDS: f32 = 0.20;
 const MAX_SCALE_INSET: f32 = 0.012;
 const MAX_FRAME_STEP: f32 = 0.10;
 const MAX_WIDGET_STATES: usize = 192;
@@ -19,6 +21,7 @@ pub enum Ease {
     Smooth,
     OutCubic,
     OutQuart,
+    OutBack,
 }
 
 impl Ease {
@@ -28,6 +31,10 @@ impl Ease {
             Ease::Smooth => t*t*(3.0-2.0*t),
             Ease::OutCubic => 1.0-(1.0-t).powi(3),
             Ease::OutQuart => 1.0-(1.0-t).powi(4),
+            Ease::OutBack => {
+                let u=t-1.0;
+                1.0+2.70158*u*u*u+1.70158*u*u
+            },
         }
     }
 }
@@ -55,7 +62,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self { enabled:false,reduced_motion:false,speed:1.0,
-            ease:Ease::OutQuart,scale:true,buttons:true }
+            ease:Ease::OutCubic,scale:true,buttons:true }
     }
 }
 
@@ -93,10 +100,19 @@ impl ReAnimated {
             self.entered=now;
             self.changes=self.changes.saturating_add(1);
         }
-        let duration=(TRANSITION_SECONDS/self.config.speed.clamp(0.25,3.0)).max(0.06);
+        // These defaults match the supplied ReAnimated 26.3+1.8 JAR:
+        // screenOpenDuration=0.35 OUT_CUBIC; containerDuration=0.45
+        // OUT_BACK; pauseSpeedTicks=4 (20Hz => 0.20s) OUT_CUBIC.
+        let (base, easing)=match screen {
+            "inventory" | "creative" | "station" | "crafting" =>
+                (CONTAINER_SECONDS, Ease::OutBack),
+            "paused" => (PAUSE_SECONDS, Ease::OutCubic),
+            _ => (SCREEN_SECONDS, self.config.ease),
+        };
+        let duration=(base/self.config.speed.clamp(0.25,3.0)).max(0.06);
         let t=((now-self.entered)/duration).clamp(0.0,1.0);
-        let e=self.config.ease.apply(t);
-        let alpha=START_ALPHA+(1.0-START_ALPHA)*e;
+        let e=easing.apply(t);
+        let alpha=START_ALPHA+(1.0-START_ALPHA)*e.clamp(0.0,1.0);
         let scale=if self.config.scale { 1.0-MAX_SCALE_INSET*(1.0-e) } else { 1.0 };
         self.last_frame=Some(now);
         ScreenMotion { opacity:alpha,scale }
@@ -170,7 +186,7 @@ impl ReAnimated {
             let hover_target=if hovered {1.0}else{0.0};
             let press_target=if hovered && pressed {1.0}else{0.0};
             state.hover+=(hover_target-state.hover)*easing;
-            state.press+=(press_target-state.press)*easing;
+            state.press+=(press_target-state.press)*(dt/0.18).clamp(0.0,1.0);
             state.updated=now;
             if state.hover<0.005 && state.press<0.005 {continue;}
             let (r,g,b) = match category {
@@ -226,8 +242,20 @@ mod tests {
         let a=m.frame("inventory",1.0);
         assert!((a.opacity-START_ALPHA).abs()<0.001);
         assert!(a.scale<1.0);
-        assert_eq!(m.frame("inventory",1.30),ScreenMotion::default());
+        assert_eq!(m.frame("inventory",1.60),ScreenMotion::default());
         assert_eq!(m.changes,1);
+    }
+    #[test] fn vanilla_jar_screen_timing_profiles() {
+        let mut menu=ReAnimated::new(Config{enabled:true,..Default::default()});
+        menu.frame("options",0.0);
+        assert!(menu.frame("options",0.36).opacity>=0.999);
+        let mut container=ReAnimated::new(Config{enabled:true,..Default::default()});
+        container.frame("inventory",0.0);
+        assert!(container.frame("inventory",0.36).scale>0.998);
+        assert_eq!(container.frame("inventory",0.46),ScreenMotion::default());
+        let mut paused=ReAnimated::new(Config{enabled:true,..Default::default()});
+        paused.frame("paused",0.0);
+        assert_eq!(paused.frame("paused",0.21),ScreenMotion::default());
     }
     #[test] fn changes_screen_and_obeys_reduced_motion() {
         let mut m=ReAnimated::new(Config {enabled:true,..Default::default()});
