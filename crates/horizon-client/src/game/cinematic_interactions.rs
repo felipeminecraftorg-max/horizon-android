@@ -64,9 +64,19 @@ pub struct Rig {
     velocity: [f32;4],
     last_time: Option<f32>,
     pub transitions: u64,
+    /// Time since last client-side workstation click; visual only.
+    interaction_age: Option<f32>,
 }
 impl Rig {
     pub fn new(config:Config)->Self{Self{config,..Default::default()}}
+
+    /// A workstation's existing menu action has already completed; add only
+    /// a client-side camera accent. Never delay or re-send the action.
+    pub fn pulse(&mut self) {
+        if self.config.enabled && !self.config.reduced_motion && self.station.is_some() {
+            self.interaction_age=Some(0.0);
+        }
+    }
 
     /// Critically damped second-order motion: integrates a bounded timestep
     /// and targets an exact rest pose on scene close or accessibility disable.
@@ -76,6 +86,7 @@ impl Rig {
             self.station=None;
             self.velocity=[0.0;4];
             self.current=Pose::default();
+            self.interaction_age=None;
             self.last_time=None;
             return self.current;
         }
@@ -84,6 +95,10 @@ impl Rig {
             None=>0.0,
         };
         self.last_time=Some(seconds);
+        if let Some(age)=self.interaction_age {
+            let age=age+dt;
+            self.interaction_age=(age<0.9).then_some(age);
+        }
         if station!=self.station {
             self.station=station;
             self.transitions=self.transitions.saturating_add(1);
@@ -124,10 +139,13 @@ impl Rig {
             // Preserve vanilla camera values and custom FoV configurations.
             return (yaw,pitch,roll,fov);
         }
+        let accent=self.interaction_age.map_or(0.0, |age|
+            (-7.0*age).exp()*(20.0*age).sin()
+        );
         (
-            yaw+self.current.yaw,
-            (pitch+self.current.pitch).clamp(-89.9,89.9),
-            roll+self.current.roll,
+            yaw+self.current.yaw+accent*0.12,
+            (pitch+self.current.pitch+accent*0.3).clamp(-89.9,89.9),
+            roll+self.current.roll+accent*0.18,
             fov+self.current.fov,
         )
     }
@@ -210,6 +228,24 @@ mod tests {
         r.advance(Some(Station::Smithing),0.1);
         r.config.reduced_motion=true;
         assert_eq!(r.advance(Some(Station::Smithing),0.2),Pose::default());
+    }
+    #[test] fn workstation_actions_add_small_transient_camera_motion() {
+        let mut r=Rig::new(Config{enabled:true,..Default::default()});
+        r.advance(Some(Station::Anvil),0.0);
+        r.advance(Some(Station::Anvil),0.1);
+        let before=r.apply(0.0,0.0,0.0,75.0);
+        r.pulse();
+        r.advance(Some(Station::Anvil),0.14);
+        let after=r.apply(0.0,0.0,0.0,75.0);
+        assert_ne!(before.2,after.2);
+        for i in 15..180 { r.advance(None,i as f32/60.0); }
+        assert_eq!(r.interaction_age,None);
+        assert!(r.current.roll.abs()<0.01);
+    }
+    #[test] fn disabled_interaction_never_pulses() {
+        let mut r=Rig::default();
+        r.pulse();
+        assert_eq!(r.interaction_age,None);
     }
     #[test] fn clamp_applies_after_existing_camera() {
         let mut r=Rig::new(Config{enabled:true,..Default::default()});
