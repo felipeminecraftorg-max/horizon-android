@@ -315,6 +315,177 @@ impl Login {
         targets.push(([x, y, w, h], action));
     }
 
+    /// Native XMB account system: all legacy card/pill/provider tiles are
+    /// replaced by contextual rows. No authentication logic or token handling
+    /// changes. Real saved-account, offline and device code actions preserved.
+    fn draw_xmb(
+        &self, ui:&mut Ui, targets:&mut Vec<([f32;4],Action)>,
+        offline_name:&str, editing:Option<&str>,
+    ){
+        targets.clear();
+        let (w,h)=(ui.w,ui.h);
+        // The same XMB shader stays visible as atmospheric depth.
+        ui.fill(0.,0.,w,h,color::hex(0x040A16,189));
+        let x=if h>w{22.}else{(w*0.18).max(32.)};
+        let width=(w-x-24.).min(615.).max(100.);
+        let white=color::hex(0xEAF5FF,249);
+        let muted=color::hex(0xB0CDE6,181);
+        let title=if self.providers{"Escolher conta"}
+            else if self.choosing{"Contas salvas"}
+            else if self.ely{"Entrar na Ely.by"}
+            else if self.offline{"Perfil offline"}else{"Conta Microsoft"};
+        ui.text(Face::Regular,10.,x,20.,color::hex(0xADD4F1,176),
+            "HORIZON / CONTAS");
+        ui.text(Face::Medium,20.,x,38.,white,title);
+        let status=self.status(offline_name);
+        let fitted=ui.fit_text(Face::Regular,11.,&status,width);
+        ui.text(Face::Regular,11.,x,73.,muted,&fitted);
+        let back=[x,h-49.,125.,38.];
+        let close=[x+width-100.,h-49.,98.,38.];
+
+        let entry=|ui:&mut Ui,targets:&mut Vec<([f32;4],Action)>,
+                   row_y:f32,label:&str,subtitle:&str,
+                   act:Action,active:bool|{
+            if row_y+46.>h-50.{return;}
+            if active{
+                ui.fill(x+2.,row_y+8.,2.,31.,
+                    color::hex(0xD5EDFF,210));
+            }
+            let px=x+if active{21.}else{12.};
+            let max=(width-28.).max(25.);
+            let label=ui.fit_text(Face::Medium,14.8,label,max);
+            ui.text(Face::Medium,14.8,px,row_y+3.,
+                color::hex(0xEAF5FF,if active{251}else{220}),&label);
+            let subtitle=ui.fit_text(Face::Regular,10.3,subtitle,max);
+            ui.text(Face::Regular,10.3,px,row_y+26.,
+                color::hex(0xA9C8E1,164),&subtitle);
+            ui.fill(x+12.,row_y+49.,width-24.,0.7,
+                color::hex(0x8FBFD8,23));
+            if let Some(r)=ui.clip_rect([x,row_y,width,50.]) {
+                targets.push((r,act));
+            }
+        };
+        let field=|ui:&mut Ui,targets:&mut Vec<([f32;4],Action)>,
+                   y:f32,label:&str,value:&str,
+                   name:&'static str,active:bool|{
+            let caption=ui.fit_text(Face::Regular,10.5,label,width);
+            ui.text(Face::Regular,10.5,x+8.,y,
+                color::hex(0xB6D2E6,181),&caption);
+            let value=ui.fit_text(Face::Regular,13.5,value,(width-25.).max(30.));
+            ui.text(Face::Regular,13.5,x+8.,y+18.,
+                color::hex(0xEBF6FF,if active{251}else{217}),&value);
+            ui.fill(x+6.,y+44.,width-12.,1.,
+                color::hex(0xD7EBFB,if active{212}else{75}));
+            if let Some(r)=ui.clip_rect([x,y,width,48.]) {
+                targets.push((r,Action::Field(name)));
+            }
+        };
+
+        let y=116.;
+        if self.providers{
+            for(i,(label,sub,action))in [
+                ("Microsoft","Xbox e Minecraft oficiais",Action::MicrosoftAccount),
+                ("Ely.by","Conta alternativa",Action::ElySignIn),
+                ("Offline","Nome local sem autenticação online",Action::OfflineAccount),
+                ("Contas salvas","Trocar perfil existente",Action::SavedAccounts),
+            ].into_iter().enumerate(){
+                entry(ui,targets,y+i as f32*57.,label,sub,action,false);
+            }
+        }else if self.choosing{
+            entry(ui,targets,y,
+                if offline_name.trim().is_empty(){"Jogador offline"}else{offline_name},
+                "Perfil local",
+                Action::SelectOffline,self.profile.is_none());
+            for (n,(index,account)) in self.saved_accounts.iter().enumerate()
+                .skip(self.account_offset).take(3).enumerate(){
+                entry(ui,targets,y+(n+1)as f32*57.,&account.name,
+                    if account.provider==account::Provider::Microsoft {
+                        "Microsoft / Xbox"
+                    }else{"Ely.by"},
+                    Action::SelectAccount(index),
+                    self.profile.as_deref()==Some(account.name.as_str()));
+            }
+            // A compact paging lane for any number of saved profiles.
+            button(ui,targets,[x,h-96.,67.,34.],"←",Action::SavedPage(false),false);
+            button(ui,targets,[x+73.,h-96.,67.,34.],"→",Action::SavedPage(true),false);
+            button(ui,targets,[x+148.,h-96.,150.,34.],"Adicionar conta",
+                Action::AddAccount,false);
+        }else if self.ely{
+            let fields=[
+                ("Usuário ou email",self.username.as_str(),"ely_username",false),
+                ("Senha",self.password.as_str(),"ely_password",true),
+                ("Código 2FA (opcional)",self.otp.as_str(),"ely_otp",true),
+            ];
+            for (i,(label,value,key,secret)) in fields.into_iter().enumerate(){
+                let display=if secret{"•".repeat(value.chars().count().min(40))}
+                    else{value.to_owned()};
+                field(ui,targets,y+i as f32*59.,label,&display,key,
+                    editing==Some(key));
+            }
+            let msg=ui.fit_text(Face::Regular,11.,&self.message,width);
+            ui.text(Face::Regular,11.,x+8.,y+193.,muted,&msg);
+            button(ui,targets,[x,h-96.,width.min(238.),36.],
+                if editing.is_some(){"Concluir edição"}else{"Entrar na Ely.by"},
+                if editing.is_some(){Action::FinishNameEdit}else{Action::SubmitEly},true);
+        }else if self.offline{
+            field(ui,targets,y,"Nome do jogador",offline_name,"name",
+                editing==Some("name"));
+            ui.text(Face::Regular,10.5,x+8.,y+58.,muted,
+                "Nome local: não representa autenticação Microsoft.");
+            button(ui,targets,[x,h-96.,width.min(254.),36.],
+                if editing==Some("name"){"Concluir edição"}else{"Usar conta offline"},
+                if editing==Some("name"){Action::FinishNameEdit}else{Action::SelectOffline},true);
+        }else{
+            let name=self.profile.as_deref().unwrap_or(offline_name);
+            ui.avatar_head_2d(x+8.,y+1.,50.,name);
+            let fitted=ui.fit_text(Face::Medium,17.,name,(width-71.).max(40.));
+            ui.text(Face::Medium,17.,x+71.,y+8.,white,&fitted);
+            let sub=if self.signed_in{"CONECTADO"}else{"AGUARDANDO LOGIN"};
+            ui.text(Face::Regular,10.5,x+72.,y+37.,muted,sub);
+            if let Some(SignInState::Code(code))=&self.state {
+                ui.text(Face::Regular,10.5,x+8.,y+70.,muted,
+                    "CÓDIGO DE AUTENTICAÇÃO");
+                let code=ui.fit_text(Face::SemiBold,24.,&code.user_code,
+                    (width-20.).max(40.));
+                ui.text(Face::SemiBold,24.,x+8.,y+88.,white,&code);
+                button(ui,targets,[x,y+125.,130.,34.],"Copiar código",
+                    Action::CopyLoginCode,false);
+                button(ui,targets,[x+136.,y+125.,150.,34.],"Abrir navegador",
+                    Action::LoginLink,true);
+            }else{
+                let message=if self.pending(){"Solicitando autorização..."}
+                    else if self.signed_in{"Sessão salva neste dispositivo."}
+                    else{"Faça login com segurança pelo navegador."};
+                let fitted=ui.fit_text(Face::Regular,11.5,message,width);
+                ui.text(Face::Regular,11.5,x+8.,y+75.,muted,&fitted);
+            }
+            if !self.message.is_empty(){
+                let msg=ui.fit_text(Face::Regular,11.,&self.message,width);
+                ui.text(Face::Regular,11.,x+8.,h-140.,white,&msg);
+                if self.message.contains("not approved by Mojang") {
+                    button(ui,targets,[x,h-180.,width.min(305.),29.],
+                        "Solicitar aprovação da API",Action::ReviewApp,false);
+                }
+            }
+            // Real "device code" action remains independently clickable.
+            button(ui,targets,[x,h-96.,(width*0.48).max(72.),36.],
+                "Entrar pelo navegador",Action::SignIn,true);
+            button(ui,targets,[x+width*0.5,h-96.,(width*0.48).max(72.),36.],
+                "Código do dispositivo",Action::DeviceSignIn,false);
+            if self.pending(){
+                button(ui,targets,[x+width-142.,y+161.,139.,30.],
+                    "Cancelar login",Action::CancelLogin,false);
+            }else if self.profile.is_some(){
+                button(ui,targets,[x+width-113.,y+161.,109.,30.],
+                    "Sair da conta",Action::SignOut,false);
+            }
+        }
+        button(ui,targets,back,
+            if self.providers{"Fechar"}else{"Voltar"},
+            if self.providers{Action::CloseLogin}else{Action::Account},false);
+        button(ui,targets,close,"Fechar",Action::CloseLogin,false);
+    }
+
     pub fn draw(
         &self,
         ui: &mut Ui,
@@ -323,6 +494,10 @@ impl Login {
         editing: Option<&str>,
         modal_anim: f32,
     ) {
+        if horizon_client::ui_theme::active_theme().experience
+            == horizon_client::ui_theme::ExperiencePreset::OldSchool {
+            return self.draw_xmb(ui,targets,offline_name,editing);
+        }
         targets.clear();
         let modal_t = modal_anim.clamp(0.2, 1.0);
         let scale_in = 0.95 + 0.05 * modal_t;
