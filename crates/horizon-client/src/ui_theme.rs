@@ -109,6 +109,23 @@ fn launcher_face(face: Face, experience: ExperiencePreset) -> Face {
     }
 }
 
+/// Every Old School screen shares one distinct outlined pictogram family.
+/// Resolve before atlas lookup, never by globally replacing the original
+/// icons, which remain unchanged for Liquid Glass and Standard.
+fn launcher_icon(icon: Icon, experience: ExperiencePreset) -> Icon {
+    if experience != ExperiencePreset::OldSchool { return icon; }
+    match icon {
+        Icon::Mods => Icon::ConsoleMods,
+        Icon::Packs => Icon::ConsolePacks,
+        Icon::Shaders => Icon::ConsoleShaders,
+        Icon::Installed | Icon::Folder => Icon::ConsoleFiles,
+        Icon::Person => Icon::ConsoleSkins,
+        Icon::Settings | Icon::Gear => Icon::ConsoleSettings,
+        Icon::Play => Icon::ConsolePlay,
+        _ => icon,
+    }
+}
+
 /// Vector icons used by the Material You 3 Android launcher navigation rail,
 /// top bar, and progress controls.
 static ANDROID_DPI_BITS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
@@ -1241,6 +1258,7 @@ impl<'a> Ui<'a> {
 
     /// Draw a supersampled vector icon in `size x size` dp.
     pub fn icon(&mut self, icon: Icon, x: f32, y: f32, size: f32, color: u32) {
+        let icon = launcher_icon(icon, active_theme().experience);
         if color >> 24 == 0 || size <= 0.0 {
             return;
         }
@@ -3077,6 +3095,26 @@ pub mod motion {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn console_icon_routing_does_not_change_other_presets() {
+        let cases = [
+            (Icon::Mods, Icon::ConsoleMods),
+            (Icon::Packs, Icon::ConsolePacks),
+            (Icon::Shaders, Icon::ConsoleShaders),
+            (Icon::Installed, Icon::ConsoleFiles),
+            (Icon::Folder, Icon::ConsoleFiles),
+            (Icon::Person, Icon::ConsoleSkins),
+            (Icon::Settings, Icon::ConsoleSettings),
+            (Icon::Gear, Icon::ConsoleSettings),
+            (Icon::Play, Icon::ConsolePlay),
+        ];
+        for (source, adapted) in cases {
+            assert_eq!(launcher_icon(source, ExperiencePreset::OldSchool), adapted);
+            assert_eq!(launcher_icon(source, ExperiencePreset::LiquidGlass), source);
+            assert_eq!(launcher_icon(source, ExperiencePreset::Standard), source);
+        }
+    }
+
     #[test]
     fn console_typography_is_preset_scoped_and_preserves_monospace() {
         assert_eq!(launcher_face(Face::Regular, ExperiencePreset::OldSchool),
