@@ -1068,6 +1068,9 @@ impl ApplicationHandler for Launcher {
             && !self.catalog.config.battery_perf_mode
             && !self.catalog.config.super_perf_mode;
         let animating = self.anim.is_active()
+            || (horizon_client::ui_theme::active_theme().experience
+                == horizon_client::ui_theme::ExperiencePreset::OldSchool
+                && self.xmb.motion_active())
             || self.catalog.editing.is_some()
             || self.controller_repeat.is_some()
             || self.drag.is_some()
