@@ -23,3 +23,5 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Test OptiFine model, ETF and animation modules
         run: cargo test --locked -p horizon-optifine
+      - name: Check renderer resource-loader integration
+        run: cargo check --locked -p horizon-client-render
