@@ -310,7 +310,7 @@ fn icon_hit(icon: Icon, u: f32, v: f32) -> bool {
                 || seg_dist(u, v, 0.50, 0.40, 0.50, 0.60) < 0.024
         }
         Icon::ConsolePacks => {
-            [(0.29, 0.44), (0.47, 0.60), (0.64, 0.76)].iter().any(|&y| {
+            [0.29_f32, 0.47, 0.65].iter().any(|&y| {
                 seg_dist(u, v, 0.19, y, 0.50, y - 0.15) < 0.039
                     || seg_dist(u, v, 0.50, y - 0.15, 0.81, y) < 0.039
                     || seg_dist(u, v, 0.19, y, 0.50, y + 0.15) < 0.039
