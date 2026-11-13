@@ -515,11 +515,22 @@ pub(super) fn button(
 ) {
     let [x, y, w, h] = rect;
     let experience = horizon_client::ui_theme::active_theme().experience;
-    let radius = if experience == horizon_client::ui_theme::ExperiencePreset::OldSchool {
-        (h * 0.27).clamp(8., 14.)
-    } else {
-        h * 0.5
-    };
+    if experience == horizon_client::ui_theme::ExperiencePreset::OldSchool {
+        // A true PS3-like contextual text command. No more Material, satin,
+        // chrome, filled pill, border or dashboard shortcut plate.
+        if accent {
+            ui.fill(x + 4., y + h - 3., (w - 8.).max(0.), 1.1,
+                color::hex(0xD8EFFF, 152));
+        }
+        let size = if w < 85. { 11. } else { 12.5 };
+        let fitted = ui.fit_text(Face::Regular, size, label, (w - 10.).max(10.));
+        ui.centered_fit(Face::Regular, size, [x + 3., y, (w - 6.).max(8.), h],
+            color::hex(if accent { 0xE6F5FF } else { 0xBDD2E8 },
+                if accent { 242 } else { 197 }), &fitted);
+        if let Some(hit) = ui.clip_rect(rect) { targets.push((hit, action)); }
+        return;
+    }
+    let radius = h * 0.5;
     visual::panel(ui, rect, radius, accent);
     let padding = (w * 0.10).clamp(8.0, 14.0);
     let font = if w < 90.0 {
@@ -571,7 +582,16 @@ fn toggle(
         if on { my3_accent() } else { my3_muted() },
         if on { "Enabled" } else { "Off" },
     );
-    visual::component_switch(ui, x + w - 52., y + (h - 28.) * 0.5, on);
+    if horizon_client::ui_theme::active_theme().experience
+        == horizon_client::ui_theme::ExperiencePreset::OldSchool {
+        ui.text(Face::Regular, 11.5, x + w - 46., y + (h - 18.) * 0.5,
+            color::hex(0xDAEEFF, if on { 245 } else { 125 }),
+            if on { "ON" } else { "OFF" });
+        ui.fill(x + w - 60., y + h - 7., 2., 2.,
+            color::hex(0xD9EDFF, if on { 215 } else { 60 }));
+    } else {
+        visual::component_switch(ui, x + w - 52., y + (h - 28.) * 0.5, on);
+    }
     if let Some(c) = ui.clip_rect([x, y, w, h]) {
         targets.push((c, action));
     }
@@ -592,6 +612,12 @@ fn draw_setting_card(
 ) {
     let experience = horizon_client::ui_theme::active_theme().experience;
     let console = experience == horizon_client::ui_theme::ExperiencePreset::OldSchool;
+    if console {
+        xmb_pages::xmb_setting_row(
+            ui, targets, list_targets, x, y, w, h, title, subtitle, right_control,
+        );
+        return;
+    }
     if let SettingControl::SectionHeader(badge, icon) = right_control {
         if console {
             visual::panel(ui, [x, y + 6.0, w, h - 10.0], 10.0, true);
@@ -1929,7 +1955,10 @@ impl Launcher {
             let offset = if layout.console && !layout.portrait { 67.0 } else { 0.0 };
             self.draw_installed(&mut ui, content_x, content_w, h, compact, slide_y + offset);
         } else {
-            let offset = if layout.console && !layout.portrait { 67.0 } else { 0.0 };
+            let offset = if layout.console {
+                let cross = horizon_client::ui_theme::launcher_xmb::Cross::from_screen(w, h);
+                cross.category_y + 48. - 60.
+            } else { 0.0 };
             self.draw_settings_page(
                 &mut ui, content_x, content_w, h, compact, slide_y + offset, ime_top_dp,
             );
