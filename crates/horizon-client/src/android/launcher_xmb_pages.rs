@@ -406,6 +406,7 @@ impl Launcher {
             }
         }
     }
+}
 
 impl Launcher {
     pub(super) fn draw_xmb_catalog(
