@@ -1,0 +1,49 @@
+name: Native animation compatibility tests
+on:
+  push:
+    branches:
+      - feature/build46-emf-etf-core
+    paths:
+      - 'crates/horizon-optifine/**'
+      - 'crates/horizon-client-render/**'
+      - 'crates/horizon-client/src/game/creatures.rs'
+      - 'crates/horizon-client/src/game.rs'
+      - 'crates/horizon-client/src/game/reanimated.rs'
+      - 'crates/horizon-client/src/game/native_animation_settings.rs'
+      - 'crates/horizon-client/src/game/stations.rs'
+      - 'crates/horizon-client/src/game/cinematic_interactions.rs'
+      - '.github/workflows/native-animation-compat.yml'
+  pull_request:
+    paths:
+      - 'crates/horizon-optifine/**'
+      - 'crates/horizon-client-render/**'
+      - 'crates/horizon-client/src/game/creatures.rs'
+      - 'crates/horizon-client/src/game.rs'
+      - 'crates/horizon-client/src/game/reanimated.rs'
+      - 'crates/horizon-client/src/game/native_animation_settings.rs'
+      - 'crates/horizon-client/src/game/stations.rs'
+      - 'crates/horizon-client/src/game/cinematic_interactions.rs'
+      - '.github/workflows/native-animation-compat.yml'
+  workflow_dispatch:
+
+jobs:
+  optifine-parsers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Test OptiFine model, ETF and animation modules
+        run: cargo test --locked -p horizon-optifine
+      - name: Check renderer resource-loader integration
+        run: cargo check --locked -p horizon-client-render
+      - name: Check playable client with both native mods
+        run: cargo check --locked -p horizon-client --no-default-features
+      - name: Check native ReAnimated and Cinematic tests compile
+        run: cargo check --locked -p horizon-client --no-default-features --tests
+      - name: Run ReAnimated native unit tests
+        run: cargo test --locked -p horizon-client --no-default-features --bin horizon-client reanimated::tests
+      - name: Run Cinematic Interactions native unit tests
+        run: cargo test --locked -p horizon-client --no-default-features --bin horizon-client cinematic_interactions::tests

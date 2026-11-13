@@ -5992,7 +5992,81 @@ impl Game<'_> {
                 Vec::new()
             };
             let body = out.len();
-            let render = if layers_only {
+            // Experimental CEM rendering stays opt-in while GPU texture variants,
+            // per-mob CEM pose parity and complete EMF support are still in progress.
+            // Only try simple non-player models and fall back to vanilla if their
+            // resource, pose, or atlas is unavailable. FirstPerson stays untouched.
+            static CEM_PREVIEW: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+            let cem_enabled = *CEM_PREVIEW.get_or_init(|| {
+                std::env::var("HORIZON_CEM_PREVIEW").is_ok_and(|v| v == "1")
+                    // Android debug profiles cannot normally set process
+                    // environment variables. An explicit local file next to
+                    // prepared game resources enables this experiment after
+                    // restarting; downloading a resource pack cannot set it.
+                    || std::fs::read_to_string(
+                        self.options.resources.join("horizon-cem-preview.flag")
+                    ).is_ok_and(|v| v.trim() == "enabled")
+            });
+            let cem_body = if cem_enabled && !layers_only && !is_player
+                && matches!(mob.kind.id.as_str(), "minecraft:zombie" | "minecraft:creeper")
+            {
+                let resources = &self.pack.render.entity_resources;
+                let compiled = &self.pack.render.cem_meshes;
+                // ETF variants are optional: if a rule selects a texture not
+                // present in the opt-in atlas, draw with the vanilla sprite.
+                let vanilla_id = format!("minecraft:textures/{}.png",mob.kind.texture);
+                let variation = self.pack.render.cem_texture_variant(
+                    &vanilla_id,
+                    u64::from(mob.id),
+                    mob.custom_name.as_deref(),
+                    mob.position.y.floor() as i32,
+                );
+                // A CEM root texture must resolve to an actual atlas
+                // sprite. Never draw custom UVs against the wrong vanilla
+                // image: use the vanilla geometry if the image is missing.
+                let root_texture = resources.model_for_entity(&mob.kind.id)
+                    .is_some_and(|model|model.model.texture.is_some());
+                let texture_uv = if root_texture {
+                    resources.cem_texture_sprite(&mob.kind.id)
+                        .as_deref().and_then(&lookup)
+                } else {
+                    variation.as_deref().and_then(&lookup)
+                        .or_else(|| lookup(&mob.kind.texture))
+                };
+                match (resources.model_for_entity(&mob.kind.id), compiled.get(&mob.kind.id),
+                    texture_uv)
+                {
+                    (Some(model),Some(mesh),Some(uv)) => {
+                        let lerp = alpha as f32;
+                        let variables = |name:&str| -> Option<f64> {
+                            Some(f64::from(match name {
+                                "age" => mob.age as f32 + lerp,
+                                "limb_swing" | "limb_swing_pos" => mob.limb_position,
+                                "limb_speed" => mob.previous_limb_speed
+                                    + (mob.limb_speed - mob.previous_limb_speed) * lerp,
+                                "head_yaw" => (mob.previous_head_yaw
+                                    + (mob.head_yaw-mob.previous_head_yaw)*lerp).to_radians(),
+                                "head_pitch" => (mob.previous_head_pitch
+                                    + (mob.head_pitch-mob.previous_head_pitch)*lerp).to_radians(),
+                                "is_baby" => if mob.is_baby() {1.0} else {0.0},
+                                "is_in_water" => if mob.fluids.in_water {1.0} else {0.0},
+                                _ => return None,
+                            }))
+                        };
+                        match model.pose(&variables) {
+                            Ok((pose, errors)) if errors.is_empty() => {
+                                let base = horizon_client::mobs::render::base_transform(
+                                    mob, alpha as f32, camera
+                                );
+                                mesh.draw(&pose, base, uv, packed, out)
+                            }
+                            _ => false,
+                        }
+                    },
+                    _ => false,
+                }
+            } else { false };
+            let render = if layers_only || cem_body {
                 horizon_client::mobs::render::render_layers
             } else {
                 horizon_client::mobs::render::render_with

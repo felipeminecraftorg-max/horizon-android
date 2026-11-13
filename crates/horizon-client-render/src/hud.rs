@@ -659,6 +659,29 @@ impl HudAtlas {
         for folder in folders {
             walk(&textures.join(folder), &mut files);
         }
+        // The ETF preview is opt-in: loading every random entity texture from
+        // a large resource pack consumes too much Android atlas memory.
+        // Never include these folders on ordinary vanilla launches.
+        let cem_preview = full && (
+            std::env::var("HORIZON_CEM_PREVIEW").is_ok_and(|v| v == "1")
+            || fs::read_to_string(defaults.join("horizon-cem-preview.flag"))
+                .is_ok_and(|v| v.trim() == "enabled")
+        );
+        if cem_preview {
+            let mut extra = Vec::new();
+            if let Ok(namespaces) = fs::read_dir(root.join("assets")) {
+                for ns in namespaces.flatten() {
+                    for top in ["optifine", "mcpatcher"] {
+                        for folder in ["random/entity", "mob", "cem"] {
+                            walk(&ns.path().join(top).join(folder), &mut extra);
+                        }
+                    }
+                }
+            }
+            extra.sort();
+            extra.truncate(256);
+            files.extend(extra);
+        }
         // Content mods' entity textures: their equipment assets name them as
         // `<ns>:<path>`, and native mods draw their block entities with them
         // (`native_draw_quad`: `<ns>:entity/...`); and their mob effects'
@@ -707,8 +730,24 @@ impl HudAtlas {
                 Err(_) => {
                     let rel = path.strip_prefix(&assets).ok()?.with_extension("");
                     let rel = rel.to_string_lossy().replace('\\', "/");
-                    let (namespace, rest) = rel.split_once("/textures/")?;
-                    format!("{namespace}:{rest}")
+                    if let Some((namespace, rest)) = rel.split_once("/textures/") {
+                        format!("{namespace}:{rest}")
+                    } else if cem_preview {
+                        // OptiFine's random entity images live outside /textures.
+                        // Keep their full path in the namespaced atlas key.
+                        let (namespace, rest) = rel.split_once('/')?;
+                        if rest.starts_with("optifine/random/entity/")
+                            || rest.starts_with("optifine/mob/")
+                            || rest.starts_with("mcpatcher/random/entity/")
+                            || rest.starts_with("mcpatcher/mob/")
+                            || rest.starts_with("optifine/cem/")
+                            || rest.starts_with("mcpatcher/cem/")
+                        {
+                            format!("{namespace}:{rest}")
+                        } else { return None; }
+                    } else {
+                        return None;
+                    }
                 }
             };
             // LabPBR's maps beside a texture are the world's (sprites.rs), not images to draw.

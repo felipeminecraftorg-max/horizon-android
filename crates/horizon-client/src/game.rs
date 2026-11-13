@@ -98,6 +98,7 @@ mod copper_golems;
 mod creaking;
 mod creative_hotbar;
 mod creatures;
+mod cinematic_interactions;
 mod crossbow;
 pub(crate) mod cushions;
 mod debug_keys;
@@ -217,6 +218,7 @@ mod native_recipes;
 mod native_server;
 mod native_shaders;
 mod native_visuals;
+mod native_animation_settings;
 mod native_world_read;
 mod natural_spawning;
 mod nautili;
@@ -259,6 +261,7 @@ mod remote_projectiles;
 mod remote_stations;
 mod remote_vehicles;
 mod render_control;
+mod reanimated;
 mod render_tick;
 mod respawn_anchor;
 mod saves_control;
@@ -2270,6 +2273,10 @@ struct Game<'a> {
     pause: bool,
     debug: bool,
     screen: Screen,
+    /// Native ReAnimated visual transitions; input hitboxes unchanged.
+    reanimated: reanimated::ReAnimated,
+    /// Native Cinematic Interactions presentation camera.
+    cinematic_rig: cinematic_interactions::Rig,
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
     /// CPU geometry storage retained across frames, including empty/title frames.
@@ -8101,6 +8108,8 @@ impl Game<'_> {
             self.frame_graph
                 .draw(self.settings.horizon.overlay, b, &self.gui.atlas);
         });
+        // Screen animations are applied in hud_layers, *before* overlays and
+        // tooltips; the cursor always remains in the original hitbox space.
         self.draw_pad_cursor(&mut batch);
         self.resolve_inline_profiles(&batch.inline_profiles);
         batch
@@ -8123,6 +8132,7 @@ impl Game<'_> {
             // The early return skips the match below: the hook still sees the
             // screen, after its own drawing.
             self.fire_screen_render_post(&mut batch);
+            self.animate_reanimated("win", &mut batch);
             return batch;
         }
         if self.screen == Screen::Options && !self.touch_editing() {
@@ -8132,12 +8142,14 @@ impl Game<'_> {
             }
             self.draw_options(&mut batch);
             self.fire_screen_render_post(&mut batch);
+            self.animate_reanimated("options", &mut batch);
             self.draw_split_hud(&mut batch, true);
             return batch;
         }
         // A mod's settings page opened from Options > Mods at the title.
         if self.screen == Screen::Mod && self.title.is_some() {
             self.draw_mod_screen(&mut batch);
+            self.animate_reanimated("mod", &mut batch);
             return batch;
         }
         if let Some(title) = &mut self.title {
@@ -8175,10 +8187,20 @@ impl Game<'_> {
                     self.settings.file.bool("hideSplashTexts"),
                 );
             }
+            self.animate_reanimated("title", &mut batch);
+            let at=self.started.elapsed().as_secs_f32();
+            let start=batch.vertices.len();
             self.draw_toasts(&mut batch, false);
+            self.reanimated.animate_toast_layer("general",at,start,&mut batch);
+            let start=batch.vertices.len();
             self.draw_tutorial_toasts(&mut batch, false);
+            self.reanimated.animate_toast_layer("tutorial",at,start,&mut batch);
+            let start=batch.vertices.len();
             self.draw_pack_toasts(&mut batch, false);
+            self.reanimated.animate_toast_layer("packs",at,start,&mut batch);
+            let start=batch.vertices.len();
             self.draw_music_toast(&mut batch, false);
+            self.reanimated.animate_toast_layer("music",at,start,&mut batch);
             return batch;
         }
         let atlas_ptr: *const HudAtlas = &self.gui.atlas;
@@ -8254,7 +8276,10 @@ impl Game<'_> {
                 let attack_left = Some(self.settings.touch.attack_indicator_left);
                 #[cfg(not(target_os = "android"))]
                 let attack_left = None;
-                let draws = hud_layout::hotbar_with_attack_side(wi, hi, &inputs, attack_left);
+                let mut draws = hud_layout::hotbar_with_attack_side(wi, hi, &inputs, attack_left);
+                self.reanimated.animate_hotbar(
+                    &mut draws, self.selected, self.started.elapsed().as_secs_f32()
+                );
                 hud_layout::paint(&mut batch, &self.gui.atlas, &draws);
                 for d in &draws {
                     if let hud_layout::GuiDraw::Item { slot, x, y, .. } = *d {
@@ -8477,17 +8502,38 @@ impl Game<'_> {
             Screen::Playing | Screen::Options | Screen::Win => {}
         }
         self.fire_screen_render_post(&mut batch);
+        // Only screen/UI vertices since blur_at are animated, not the HUD,
+        // tooltips, toasts, saved indicator or native touch controls.
+        if screen != Screen::Playing {
+            let key = if self.station.is_some() {
+                "station"
+            } else if self.craft_table.is_some() {
+                "crafting"
+            } else {
+                screen.id()
+            };
+            self.animate_reanimated(key, &mut batch);
+        }
         horizon_client::hud::inset_overlay(&mut batch, margins, |b| self.draw_saving_indicator(b));
+        let at=self.started.elapsed().as_secs_f32();
+        let start=batch.vertices.len();
         horizon_client::hud::inset_overlay(&mut batch, margins, |b| self.draw_toasts(b, !show_hud));
+        self.reanimated.animate_toast_layer("general",at,start,&mut batch);
+        let start=batch.vertices.len();
         horizon_client::hud::inset_overlay(&mut batch, margins, |b| {
             self.draw_pack_toasts(b, !show_hud)
         });
+        self.reanimated.animate_toast_layer("packs",at,start,&mut batch);
+        let start=batch.vertices.len();
         horizon_client::hud::inset_overlay(&mut batch, margins, |b| {
             self.draw_tutorial_toasts(b, !show_hud)
         });
+        self.reanimated.animate_toast_layer("tutorial",at,start,&mut batch);
+        let start=batch.vertices.len();
         horizon_client::hud::inset_overlay(&mut batch, margins, |b| {
             self.draw_music_toast(b, !show_hud)
         });
+        self.reanimated.animate_toast_layer("music",at,start,&mut batch);
         if self.server_packs.prompt.is_none() {
             self.remote_hud(&mut batch);
             self.draw_sign_editor(&mut batch);
@@ -13414,7 +13460,10 @@ impl Game<'_> {
         });
         let heights = self.heights.interpolated(a);
         // The hand sway: both hands turn by a tenth of the bobs' lag.
-        let to_world = self.sway.to_world(a, &self.view);
+        // Workstation interactions move only the existing first-person arms.
+        // FirstPerson Model with body arms still returns above unchanged.
+        let to_world=self.sway.to_world(a, &self.view)
+            * self.cinematic_rig.hand_offset();
         let eye = self.eye_position().unwrap_or_default();
         let light = self.world.light(
             eye[0].floor() as i32,
@@ -15007,8 +15056,23 @@ impl Game<'_> {
             view_yaw,
             view_pitch,
         );
-        self.audio
-            .set_listener([camera.x, camera.y, camera.z], view_yaw, view_pitch);
+        // Snapshot listener angles before the cinematic visual effect.
+        // Preserve Sound Physics' stereo/directional sound orientation.
+        let listener_angles = (view_yaw, view_pitch);
+        // Only adjust the presentation camera, after the native camera stack.
+        // No input/world/network angle changes or positional displacements.
+        let station_scene = self.cinematic_station();
+        self.cinematic_rig.advance(
+            station_scene, self.started.elapsed().as_secs_f32()
+        );
+        let (view_yaw, view_pitch, view_roll, cinematic_fov) =
+            self.cinematic_rig.apply(view_yaw, view_pitch, view_roll, 85.0);
+        let cinematic_fov = cinematic_fov - 85.0;
+        self.audio.set_listener(
+            [camera.x, camera.y, camera.z],
+            listener_angles.0,
+            listener_angles.1,
+        );
         android_bundled::native_sound_physics(self, [camera.x, camera.y, camera.z], underwater);
         let block = [
             camera.x.floor() as i32,
@@ -15106,8 +15170,16 @@ impl Game<'_> {
         } else {
             Vec::new()
         };
+        // Cinematic scenes apply only a small world-view translation. The
+        // actual camera location used for physics, occlusion and directional
+        // audio above remains unchanged.
+        let station_block=self.cinematic_block();
+        let scene_offset=self.cinematic_rig.camera_translation(
+            camera,station_block,self.started.elapsed().as_secs_f32()
+        );
         let view = glam::Mat4::from_rotation_z(view_roll.to_radians())
-            * horizon_client::camera::view_matrix(view_yaw, view_pitch);
+            * horizon_client::camera::view_matrix(view_yaw, view_pitch)
+            * glam::Mat4::from_translation(-scene_offset);
         let at = camera.to_array();
         // GameRenderer.render3dHud: the debug crosshair, first person with the HUD shown.
         let mut crosshair = horizon_client::gizmos::Gizmos::default();
@@ -15326,7 +15398,8 @@ impl Game<'_> {
         let fov_degrees = if title {
             85.0
         } else {
-            self.fov_degrees(camera_alpha as f32, camera.to_array())
+            (self.fov_degrees(camera_alpha as f32, camera.to_array()) + cinematic_fov)
+                .clamp(30.0, 110.0)
         };
         self.locator_camera =
             (!title).then_some((camera.to_array(), view_yaw, view_pitch, fov_degrees));
@@ -18548,6 +18621,7 @@ impl<'a> Game<'a> {
         prepared: Option<GameCpuResources>,
     ) -> Result<Self> {
         let root = options.resources.clone();
+        let native_preview = native_animation_settings::PreviewSettings::load(&root);
         let registry = pack.assets.registry;
         // Until a world is opened the streamer is idle.
         let mut streaming = Streaming::new(
@@ -18680,6 +18754,35 @@ impl<'a> Game<'a> {
             pause: false,
             debug: false,
             screen: Screen::Playing,
+            reanimated: reanimated::ReAnimated::new(reanimated::Config {
+                enabled: native_preview.reanimated.enabled
+                    || std::env::var("HORIZON_REANIMATED_PREVIEW").is_ok_and(|v|v == "1")
+                    || std::fs::read_to_string(root.join("horizon-reanimated-preview.flag"))
+                        .is_ok_and(|v|v.trim() == "enabled"),
+                speed: native_preview.reanimated.speed,
+                reduced_motion: native_preview.reanimated.reduced_motion,
+                buttons: native_preview.reanimated.buttons,
+                hotbar: native_preview.reanimated.hotbar,
+                hotbar_speed: native_preview.reanimated.hotbar_speed,
+                toasts: native_preview.reanimated.toasts,
+                per_screen: native_preview.reanimated.per_screen.clone(),
+                // Touch hitboxes remain aligned during the fade.
+                scale: !cfg!(target_os = "android"),
+                ..Default::default()
+            }),
+            cinematic_rig: cinematic_interactions::Rig::new(
+                cinematic_interactions::Config {
+                    enabled: native_preview.cinematic.enabled
+                        || std::env::var("HORIZON_CINEMATIC_PREVIEW").is_ok_and(|v|v == "1")
+                        || std::fs::read_to_string(
+                            root.join("horizon-cinematic-preview.flag")
+                        ).is_ok_and(|v|v.trim() == "enabled"),
+                    speed: native_preview.cinematic.speed,
+                    roll_strength: native_preview.cinematic.roll_strength,
+                    reduced_motion: native_preview.cinematic.reduced_motion,
+                    scene_move: native_preview.cinematic.scene_move,
+                },
+            ),
             window: None,
             renderer: None,
             entity_vertices: Vec::new(),

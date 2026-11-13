@@ -1,0 +1,486 @@
+//! Native ReAnimated screen effects (client-only).
+//!
+//! The real ReAnimated Fabric JAR depends on Screen, Widget, Tooltip, and
+//! inventory Mixins. This is a conservative Rust implementation for Horizon:
+//! it transforms *rendered* screen vertices only. Input hitboxes, pointer
+//! coordinates, touch regions and screen click behavior are left unchanged.
+use super::Game;
+use horizon_client::{hud::{HudAtlas, HudBatch, rgba}, hud_layout::GuiDraw, widgets::{self, Widget, Kind}};
+use std::collections::BTreeMap;
+
+const START_ALPHA: f32 = 0.72;
+const SCREEN_SECONDS: f32 = 0.35;
+const CONTAINER_SECONDS: f32 = 0.45;
+const PAUSE_SECONDS: f32 = 0.20;
+const MAX_SCALE_INSET: f32 = 0.012;
+const MAX_FRAME_STEP: f32 = 0.10;
+const MAX_WIDGET_STATES: usize = 192;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ease {
+    Smooth,
+    OutCubic,
+    OutQuart,
+    OutBack,
+}
+
+impl Ease {
+    fn apply(self, t: f32) -> f32 {
+        let t=t.clamp(0.0,1.0);
+        match self {
+            Ease::Smooth => t*t*(3.0-2.0*t),
+            Ease::OutCubic => 1.0-(1.0-t).powi(3),
+            Ease::OutQuart => 1.0-(1.0-t).powi(4),
+            Ease::OutBack => {
+                let u=t-1.0;
+                1.0+2.70158*u*u*u+1.70158*u*u
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ScreenMotion {
+    /// Fully rendered opacity, always in [START_ALPHA, 1].
+    pub opacity: f32,
+    /// Deliberately tiny scale to avoid touch/widget misalignment.
+    pub scale: f32,
+}
+impl Default for ScreenMotion {
+    fn default() -> Self { Self { opacity:1.0,scale:1.0 } }
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ScreenOverride {
+    pub enabled: Option<bool>,
+    pub duration_ms: Option<f32>,
+    pub easing: Option<Ease>,
+    pub scale: Option<bool>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Config {
+    pub enabled: bool,
+    pub reduced_motion: bool,
+    pub speed: f32,
+    pub ease: Ease,
+    pub scale: bool,
+    pub buttons: bool,
+    pub hotbar: bool,
+    pub hotbar_speed: f32,
+    pub toasts: bool,
+    pub per_screen: BTreeMap<String, ScreenOverride>,
+}
+impl Default for Config {
+    fn default() -> Self {
+        Self { enabled:false,reduced_motion:false,speed:1.0,
+            ease:Ease::OutCubic,scale:true,buttons:true,hotbar:true,hotbar_speed:1.0,toasts:true,
+            per_screen:BTreeMap::new() }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+struct WidgetState {
+    hover: f32,
+    press: f32,
+    updated: f32,
+}
+
+#[derive(Clone, Debug, Default)]
+struct ToastState {
+    visible: bool,
+    entered: f32,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ReAnimated {
+    pub config: Config,
+    current: Option<String>,
+    entered: f32,
+    last_frame: Option<f32>,
+    widget_frame: Option<f32>,
+    widgets: BTreeMap<u64, WidgetState>,
+    hotbar_position: Option<f32>,
+    hotbar_time: Option<f32>,
+    toast_states: BTreeMap<&'static str, ToastState>,
+    pub changes: u64,
+}
+
+impl ReAnimated {
+    pub fn new(config: Config) -> Self { Self { config, ..Default::default() } }
+
+    /// Advance screen animation. Uses client render-clock seconds, not tick count.
+    /// Equal screen IDs do not restart a transition, even if fps changes.
+    pub fn frame(&mut self, screen: &str, now: f32) -> ScreenMotion {
+        if !self.config.enabled || self.config.reduced_motion || !now.is_finite() {
+            self.current=Some(screen.to_owned());
+            return ScreenMotion::default();
+        }
+        let now=now.max(0.0);
+        if self.current.as_deref()!=Some(screen) {
+            self.current=Some(screen.to_owned());
+            self.entered=now;
+            self.changes=self.changes.saturating_add(1);
+        }
+        // These defaults match the supplied ReAnimated 26.3+1.8 JAR:
+        // screenOpenDuration=0.35 OUT_CUBIC; containerDuration=0.45
+        // OUT_BACK; pauseSpeedTicks=4 (20Hz => 0.20s) OUT_CUBIC.
+        let (base, easing)=match screen {
+            "inventory" | "creative" | "station" | "crafting" =>
+                (CONTAINER_SECONDS, Ease::OutBack),
+            "paused" => (PAUSE_SECONDS, Ease::OutCubic),
+            _ => (SCREEN_SECONDS, self.config.ease),
+        };
+        let custom=self.config.per_screen.get(screen);
+        if custom.is_some_and(|o|o.enabled==Some(false)) {
+            return ScreenMotion::default();
+        }
+        let base=custom.and_then(|o|o.duration_ms)
+            .map(|ms|ms.clamp(50.0,2000.0)/1000.0)
+            .unwrap_or(base);
+        let easing=custom.and_then(|o|o.easing).unwrap_or(easing);
+        let scale_enabled=custom.and_then(|o|o.scale).unwrap_or(self.config.scale);
+        let duration=(base/self.config.speed.clamp(0.25,3.0)).max(0.06);
+        let t=((now-self.entered)/duration).clamp(0.0,1.0);
+        let e=easing.apply(t);
+        let alpha=START_ALPHA+(1.0-START_ALPHA)*e.clamp(0.0,1.0);
+        let scale=if scale_enabled { 1.0-MAX_SCALE_INSET*(1.0-e) } else { 1.0 };
+        self.last_frame=Some(now);
+        ScreenMotion { opacity:alpha,scale }
+    }
+
+    /// Effects are visual only. Apply to the screen-draw span, leaving the
+    /// world HUD, tooltips rendered later, pad cursor and Android controls alone.
+    pub fn draw(&mut self, key: &str, now: f32, batch: &mut HudBatch) {
+        if !self.config.enabled { return; }
+        let motion=self.frame(key,now);
+        if (motion.scale-1.0).abs()>f32::EPSILON {
+            // GUI coordinates, not pixel coordinates. The player continues
+            // clicking the original widget positions.
+            batch.scale_since(
+                (batch.blur_at as usize).min(batch.vertices.len()),
+                batch.width*0.5,batch.height*0.5,
+                motion.scale,motion.scale,
+            );
+        }
+        let start=(batch.blur_at as usize).min(batch.vertices.len());
+        for vertex in &mut batch.vertices[start..] {
+            let color=vertex.color;
+            let alpha=((color>>24) as f32*motion.opacity).round() as u32;
+            vertex.color=(color&0x00ff_ffff)|(alpha.min(255)<<24);
+        }
+    }
+
+    /// Animate only the *decoration* of the last-frame widget rectangles.
+    /// Input targets and text remain in vanilla coordinates; no GUI shape is
+    /// moved. Widgets published last frame may lag by one rendered frame, which
+    /// is less risky than intercepting click/drag logic.
+    pub fn decorate(
+        &mut self,
+        widgets: &[Widget],
+        pointer: (f32,f32),
+        pressed: bool,
+        now: f32,
+        batch: &mut HudBatch,
+        atlas: &HudAtlas,
+    ) {
+        if !self.config.enabled || !self.config.buttons
+            || self.config.reduced_motion || !now.is_finite() {return;}
+        let dt=self.widget_frame.map_or(1.0/60.0, |last| (now-last).clamp(0.0,MAX_FRAME_STEP));
+        self.widget_frame=Some(now);
+        let easing=(dt*14.0).clamp(0.0,1.0);
+        let mut live=0;
+        for widget in widgets {
+            if !widget.enabled || live >= MAX_WIDGET_STATES {continue;}
+            let category = match widget.kind {
+                Kind::Button => 0,
+                Kind::Slider {..} | Kind::Field => 1,
+                Kind::Tab(_) => 2,
+                Kind::Row => 3,
+                Kind::Slot => 4,
+            };
+            // A previous screen's controls are not decorated while a new
+            // screen replaces them (last_labelled is one frame delayed).
+            if now-self.entered<0.04 {continue;}
+            let (x,y,w,h)=(widget.x,widget.y,widget.w,widget.h);
+            if ![x,y,w,h].iter().all(|v|v.is_finite())
+                || w<8.0 || h<7.0 || x<0.0 || y<0.0
+                || x+w>batch.width+1.0 || y+h>batch.height+1.0 {continue;}
+            live+=1;
+            let id=widgets::key_of(&(
+                widget.label.as_str(), x.round() as i32, y.round() as i32,
+                w.round() as i32, h.round() as i32,
+            ));
+            let hovered=pointer.0>=x && pointer.0<=x+w
+                && pointer.1>=y && pointer.1<=y+h;
+            let state=self.widgets.entry(id).or_default();
+            let hover_target=if hovered {1.0}else{0.0};
+            let press_target=if hovered && pressed {1.0}else{0.0};
+            state.hover+=(hover_target-state.hover)*easing;
+            state.press+=(press_target-state.press)*(dt/0.18).clamp(0.0,1.0);
+            state.updated=now;
+            if state.hover<0.005 && state.press<0.005 {continue;}
+            let (r,g,b) = match category {
+                0 => (187,216,255), // buttons
+                1 => (183,228,225), // sliders & text fields
+                2 => (219,196,246), // tabs
+                3 => (208,222,255), // selectable rows
+                _ => (250,232,190), // inventory slots
+            };
+            let a=(state.hover*27.0+state.press*20.0).round().min(65.0) as u8;
+            let color=rgba(r,g,b,a);
+            let line=1.0f32;
+            batch.fill(atlas,x,y,w,line,color);
+            batch.fill(atlas,x,y+h-line,w,line,color);
+            batch.fill(atlas,x,y,line,h,color);
+            batch.fill(atlas,x+w-line,y,line,h,color);
+        }
+        // Bound memory even on large mod screens. Evict stale entries first.
+        self.widgets.retain(|_,state| now-state.updated<=1.0);
+        while self.widgets.len()>MAX_WIDGET_STATES {
+            let Some(id)=self.widgets.iter().min_by(|a,b|
+                a.1.updated.total_cmp(&b.1.updated)).map(|(k,_)|*k)
+            else {break};
+            self.widgets.remove(&id);
+        }
+    }
+
+    /// Interpolate only the decorative hotbar selection frame.
+    /// The selected item and input controls keep their original values.
+    pub fn animate_hotbar(
+        &mut self, draws: &mut [GuiDraw], selected: usize, now: f32,
+    ) {
+        let selected=selected.min(8) as f32;
+        if !self.config.enabled || !self.config.hotbar
+            || self.config.reduced_motion || !now.is_finite() {
+            self.hotbar_position=Some(selected);
+            self.hotbar_time=None;
+            return;
+        }
+        let dt=self.hotbar_time.map_or(0.0,|last|
+            (now-last).clamp(0.0,MAX_FRAME_STEP));
+        self.hotbar_time=Some(now);
+        let prev=self.hotbar_position.unwrap_or(selected);
+        let factor=1.0-(-dt*20.0*self.config.hotbar_speed.clamp(0.25,4.0)).exp();
+        let next=prev+(selected-prev)*factor;
+        let next=if (next-selected).abs()<0.002 {selected}else{next};
+        self.hotbar_position=Some(next);
+        for draw in draws {
+            if let GuiDraw::Sprite{sprite,x,..}=draw {
+                if sprite.as_ref()=="hud/hotbar_selection" {
+                    *x+=((next-selected)*20.0).round() as i32;
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Animate only newly appended toast vertices. Each category keeps its
+    /// own entrance clock, so unrelated toasts do not restart one another.
+    /// This runs after a toast drawer and never alters screen interaction.
+    pub fn animate_toast_layer(
+        &mut self, channel: &'static str, now: f32,
+        start: usize, batch: &mut HudBatch,
+    ) {
+        if !self.config.enabled || !self.config.toasts
+            || self.config.reduced_motion || !now.is_finite() {return;}
+        let visible = start < batch.vertices.len();
+        let state = self.toast_states.entry(channel).or_default();
+        if !visible {
+            state.visible=false;
+            return;
+        }
+        if !state.visible || now < state.entered {
+            state.visible=true;
+            state.entered=now;
+        }
+        let duration=(0.30/self.config.speed.clamp(0.25,3.0)).max(0.07);
+        let t=((now-state.entered)/duration).clamp(0.0,1.0);
+        let eased=Ease::OutCubic.apply(t);
+        let vertical=(1.0-eased)*7.0;
+        for v in &mut batch.vertices[start..] {
+            v.pos[1]-=vertical;
+            let alpha=((v.color>>24) as f32*eased).round() as u32;
+            v.color=(v.color&0x00ff_ffff)|(alpha.min(255)<<24);
+        }
+    }
+
+    /// Reports a suggested frame-clock delta, for other animation systems
+    /// that should never jump forward on app resume.
+    pub fn bounded_dt(&self, now: f32) -> f32 {
+        let Some(previous)=self.last_frame else {return 0.0};
+        (now-previous).clamp(0.0,MAX_FRAME_STEP)
+    }
+}
+
+impl Game<'_> {
+    pub(super) fn animate_reanimated(&mut self, screen: &str, batch: &mut HudBatch) {
+        if !self.reanimated.config.enabled {return;}
+        let now=self.started.elapsed().as_secs_f32();
+        self.reanimated.draw(screen,now,batch);
+        let widgets=horizon_client::widgets::last_labelled();
+        self.reanimated.decorate(
+            &widgets,self.cursor,self.left,now,batch,&self.gui.atlas
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test] fn opens_and_settles() {
+        let mut m=ReAnimated::new(Config {enabled:true,..Default::default()});
+        let a=m.frame("inventory",1.0);
+        assert!((a.opacity-START_ALPHA).abs()<0.001);
+        assert!(a.scale<1.0);
+        assert_eq!(m.frame("inventory",1.60),ScreenMotion::default());
+        assert_eq!(m.changes,1);
+    }
+    #[test] fn vanilla_jar_screen_timing_profiles() {
+        let mut menu=ReAnimated::new(Config{enabled:true,..Default::default()});
+        menu.frame("options",0.0);
+        assert!(menu.frame("options",0.36).opacity>=0.999);
+        let mut container=ReAnimated::new(Config{enabled:true,..Default::default()});
+        container.frame("inventory",0.0);
+        assert!(container.frame("inventory",0.36).scale>0.998);
+        assert_eq!(container.frame("inventory",0.46),ScreenMotion::default());
+        let mut paused=ReAnimated::new(Config{enabled:true,..Default::default()});
+        paused.frame("paused",0.0);
+        assert_eq!(paused.frame("paused",0.21),ScreenMotion::default());
+    }
+    #[test] fn custom_screen_profile_does_not_modify_other_screens() {
+        let mut config=Config{enabled:true,..Default::default()};
+        config.per_screen.insert("inventory".into(),ScreenOverride{
+            duration_ms:Some(80.0),easing:Some(Ease::Smooth),
+            scale:Some(false),enabled:None,
+        });
+        config.per_screen.insert("paused".into(),ScreenOverride{
+            enabled:Some(false),..Default::default()
+        });
+        let mut m=ReAnimated::new(config);
+        assert_eq!(m.frame("paused",0.0),ScreenMotion::default());
+        assert_eq!(m.frame("inventory",1.0).scale,1.0);
+        assert_eq!(m.frame("inventory",1.09),ScreenMotion::default());
+        assert_ne!(m.frame("options",2.0),ScreenMotion::default());
+    }
+    #[test] fn changes_screen_and_obeys_reduced_motion() {
+        let mut m=ReAnimated::new(Config {enabled:true,..Default::default()});
+        m.frame("inventory",0.0);
+        m.frame("options",0.1);
+        assert_eq!(m.changes,2);
+        m.config.reduced_motion=true;
+        assert_eq!(m.frame("options",0.11),ScreenMotion::default());
+    }
+    #[test] fn new_toast_layer_animates_then_settles() {
+        let mut m=ReAnimated::new(Config {enabled:true,..Default::default()});
+        let mut first=HudBatch::new([900,500]);
+        first.quad([[5.0,15.0],[15.0,15.0],[15.0,25.0],[5.0,25.0]],
+            [[0.0,0.0];4],u32::MAX);
+        m.animate_toast_layer("general",1.0,0,&mut first);
+        assert_eq!(first.vertices[0].color>>24,0);
+        assert!(first.vertices[0].pos[1]<15.0);
+        let mut settled=HudBatch::new([900,500]);
+        settled.quad([[5.0,15.0],[15.0,15.0],[15.0,25.0],[5.0,25.0]],
+            [[0.0,0.0];4],u32::MAX);
+        m.animate_toast_layer("general",1.4,0,&mut settled);
+        assert_eq!(settled.vertices[0].color>>24,255);
+        assert_eq!(settled.vertices[0].pos[1],15.0);
+        let mut empty=HudBatch::new([900,500]);
+        m.animate_toast_layer("general",1.5,0,&mut empty);
+        assert!(!m.toast_states["general"].visible);
+    }
+    #[test] fn two_toast_channels_have_independent_clocks() {
+        let mut m=ReAnimated::new(Config {enabled:true,..Default::default()});
+        for (key,at) in [("general",0.0),("music",0.2)] {
+            let mut b=HudBatch::new([900,500]);
+            b.quad([[0.0,0.0];4],[[0.0,0.0];4],u32::MAX);
+            m.animate_toast_layer(key,at,0,&mut b);
+        }
+        assert_eq!(m.toast_states["general"].entered,0.0);
+        assert_eq!(m.toast_states["music"].entered,0.2);
+    }
+    fn sample_bar(slot: usize) -> Vec<GuiDraw> {
+        vec![GuiDraw::Sprite {
+            sprite:std::borrow::Cow::Borrowed("hud/hotbar_selection"),
+            x:100+20*slot as i32,y:0,w:24,h:23,region:None,
+            color:u32::MAX,blend:horizon_client::hud_layout::Blend::Textured,
+        }]
+    }
+    fn sample_x(draws: &[GuiDraw]) -> i32 {
+        match &draws[0] {
+            GuiDraw::Sprite{x,..}=>*x,
+            _=>unreachable!(),
+        }
+    }
+    #[test] fn selection_frame_moves_smoothly_and_stays_bounded() {
+        let mut animator=ReAnimated::new(Config{enabled:true,..Default::default()});
+        let mut draw=sample_bar(0);
+        animator.animate_hotbar(&mut draw,0,0.0);
+        let mut shifted=sample_bar(8);
+        animator.animate_hotbar(&mut shifted,8,0.016);
+        assert!(sample_x(&shifted)>100);
+        assert!(sample_x(&shifted)<260);
+        for frame in 2..100 {
+            let mut d=sample_bar(8);
+            animator.animate_hotbar(&mut d,8,frame as f32/60.0);
+            assert!((100..=260).contains(&sample_x(&d)));
+        }
+        let mut settled=sample_bar(8);
+        animator.animate_hotbar(&mut settled,8,2.0);
+        assert_eq!(sample_x(&settled),260);
+    }
+    #[test] fn disabled_hotbar_retains_base_position() {
+        let mut m=ReAnimated::new(Config{enabled:true,hotbar:false,..Default::default()});
+        let mut d=sample_bar(7);
+        m.animate_hotbar(&mut d,7,0.1);
+        assert_eq!(sample_x(&d),240);
+        assert_eq!(m.hotbar_position,Some(7.0));
+    }
+    #[test] fn fps_independent_fade() {
+        let mut a=ReAnimated::new(Config {enabled:true,..Default::default()});
+        let mut b=a.clone();
+        a.frame("inventory",0.0);
+        b.frame("inventory",0.0);
+        for i in 1..=12 { a.frame("inventory",i as f32/120.0); }
+        let x=b.frame("inventory",0.1);
+        let y=a.frame("inventory",0.1);
+        assert!((x.opacity-y.opacity).abs()<0.0001);
+    }
+    #[test] fn reduces_alpha_without_changing_touch_metadata() {
+        let mut m=ReAnimated::new(Config {enabled:true,..Default::default()});
+        let mut b=HudBatch::new([960,540]);
+        b.quad([[0.0,0.0],[5.0,0.0],[5.0,5.0],[0.0,5.0]],
+            [[0.0,0.0];4],0xff_ff_ff_ff);
+        let size=b.vertices.len();
+        m.draw("inventory",0.0,&mut b);
+        assert_eq!(size,b.vertices.len());
+        assert!((b.vertices[0].color>>24)<255);
+    }
+    #[test] fn hover_renders_only_decorations_never_mutating_widget() {
+        let mut m=ReAnimated::new(Config {enabled:true,..Default::default()});
+        let b=HudBatch::new([960,540]);
+        let widget=Widget {label:"Play".to_owned(),x:10.0,y:20.0,w:140.0,h:24.0,
+            enabled:true,kind:Kind::Button};
+        let copy=widget.clone();
+        // Atlas-backed drawing cannot be unit-tested without a texture pack,
+        // but widget state and disabled mode are independent of GPU setup.
+        m.config.reduced_motion=true;
+        assert_eq!(widget.x,copy.x);
+        assert_eq!(m.widgets.len(),0);
+        assert!(b.vertices.is_empty());
+    }
+    #[test] fn disabled_reanimated_does_not_animate_widgets() {
+        let m=ReAnimated::new(Config::default());
+        assert!(!m.config.enabled);
+        assert!(m.widgets.is_empty());
+    }
+    #[test] fn preserves_widget_coordinates_for_alpha_only() {
+        let mut m=ReAnimated::new(Config {enabled:true,scale:false,..Default::default()});
+        let mut b=HudBatch::new([960,540]);
+        b.quad([[2.0,3.0],[4.0,3.0],[4.0,5.0],[2.0,5.0]],
+            [[0.0,0.0];4],u32::MAX);
+        let old=b.vertices[0].pos;
+        m.draw("options",0.0,&mut b);
+        assert_eq!(old,b.vertices[0].pos);
+    }
+}

@@ -1104,6 +1104,7 @@ impl Game<'_> {
         let shift = self.has_shift_down();
         if let Some(kind) = self.station.as_ref().map(|s| s.kind) {
             if kind == Kind::Merchant && !right && self.merchant_click(local) {
+                self.cinematic_rig.pulse();
                 return true;
             }
             if kind == Kind::Merchant && self.remote.is_some() {
@@ -1111,9 +1112,11 @@ impl Game<'_> {
                 return false;
             }
             if kind == Kind::Loom && !right && self.loom_click(local) {
+                self.cinematic_rig.pulse();
                 return true;
             }
             if kind == Kind::Beacon && !right && self.beacon_click(local) {
+                self.cinematic_rig.pulse();
                 return true;
             }
             if kind == Kind::Enchanting && !right {
@@ -1121,11 +1124,13 @@ impl Game<'_> {
                     let (x, y, w, h) = enchant_button(i);
                     if inside(local, x, y, w, h) {
                         self.click_enchant(i);
+                        self.cinematic_rig.pulse();
                         return true;
                     }
                 }
             }
             if kind == Kind::Stonecutter && self.stonecutter_click(local) {
+                self.cinematic_rig.pulse();
                 return true;
             }
             if kind == Kind::Anvil && !right && self.anvil_name_click(ox, oy) {
@@ -1143,6 +1148,7 @@ impl Game<'_> {
             horizon_client::menu::Input::Pickup
         };
         self.menu_click(Some(slot), i32::from(right), input);
+        self.cinematic_rig.pulse();
         true
     }
     /// Recompute after slot changes; the anvil box follows its input item.

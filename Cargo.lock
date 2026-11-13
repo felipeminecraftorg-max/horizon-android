@@ -1796,6 +1796,7 @@ dependencies = [
  "horizon-core",
  "horizon-hdr",
  "horizon-items",
+ "horizon-optifine",
  "horizon-narrator",
  "horizon-protocol",
  "horizon-shader-api",
@@ -1940,7 +1941,9 @@ dependencies = [
 name = "horizon-optifine"
 version = "0.1.0"
 dependencies = [
+ "glam",
  "regex",
+ "serde_json",
 ]
 
 [[package]]
