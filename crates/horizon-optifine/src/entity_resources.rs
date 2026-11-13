@@ -26,6 +26,8 @@ pub struct PreparedModel {
 #[derive(Default, Debug)]
 pub struct EntityResources {
     pub models: BTreeMap<String, PreparedModel>,
+    /// Entity identifier to resolved active CEM resource path.
+    pub models_by_entity: BTreeMap<String,String>,
     pub texture_rules: BTreeMap<String, entity_textures::TextureRules>,
     pub warnings: Vec<String>,
     /// Diagnostics omitted after reaching the mobile memory/telemetry cap.
@@ -180,6 +182,9 @@ impl EntityResources {
                     for err in &prepared.unsupported_expressions {
                         resources.warn(format!("{relative}: {err}"));
                     }
+                    if let Some(entity_id) = Self::cem_entity_id(&relative) {
+                        resources.models_by_entity.insert(entity_id, relative.clone());
+                    }
                     resources.models.insert(relative, prepared);
                 },
                 Err(err) => resources.warn(format!("{relative}: {err:?}")),
@@ -206,6 +211,28 @@ impl EntityResources {
             }
         }
         resources
+    }
+
+    /// Resolve an entity model for the vanilla render path without scanning files.
+    /// Returns None for an unsupported/unloaded model; the caller should draw vanilla.
+    pub fn model_for_entity(&self, entity_id: &str) -> Option<&PreparedModel> {
+        self.models.get(self.models_by_entity.get(entity_id)?)
+    }
+
+    /// Resolve an ETF random texture rule set using the vanilla texture identifier.
+    /// Example: minecraft:textures/entity/zombie/zombie.png.
+    pub fn rules_for_texture(&self, texture_id: &str) -> Option<&entity_textures::TextureRules> {
+        let (ns, rest) = texture_id.split_once(':')?;
+        if !ns.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+            || rest.contains("..") || rest.contains('\\') { return None; }
+        let path = rest.strip_prefix("textures/entity/")?.strip_suffix(".png")?;
+        for top in ["optifine","mcpatcher"] {
+            for feature in ["random/entity", "mob"] {
+                let key = format!("assets/{ns}/{top}/{feature}/{path}.properties");
+                if let Some(rules) = self.texture_rules.get(&key) { return Some(rules); }
+            }
+        }
+        None
     }
 
     /// Namespaced entity ID associated with a source CEM path, e.g.
@@ -260,6 +287,8 @@ mod tests {
         assert!(loaded.warnings.is_empty(), "{:?}",loaded.warnings);
         assert_eq!(loaded.models.len(),1);
         assert_eq!(loaded.texture_rules.len(),1);
+        assert!(loaded.model_for_entity("minecraft:zombie").is_some());
+        assert!(loaded.rules_for_texture("minecraft:textures/entity/zombie/zombie.png").is_some());
         let model = loaded.models.values().next().unwrap();
         assert_eq!(model.model.parts[0].boxes[0].coords[3],8.0);
         assert_eq!(model.sample(&|name| (name=="limb_swing").then_some(0.0)).0[0].1,0.0);
