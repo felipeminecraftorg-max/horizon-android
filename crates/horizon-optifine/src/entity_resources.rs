@@ -28,6 +28,8 @@ pub struct EntityResources {
     pub models: BTreeMap<String, PreparedModel>,
     pub texture_rules: BTreeMap<String, entity_textures::TextureRules>,
     pub warnings: Vec<String>,
+    /// Diagnostics omitted after reaching the mobile memory/telemetry cap.
+    pub warnings_suppressed: usize,
     pub files_seen: usize,
 }
 
@@ -140,6 +142,14 @@ impl PreparedModel {
 }
 
 impl EntityResources {
+    fn warn(&mut self, message: String) {
+        if self.warnings.len() < MAX_WARNINGS {
+            self.warnings.push(message);
+        } else {
+            self.warnings_suppressed += 1;
+        }
+    }
+
     /// Read CEM and ETF partial rules from the *merged* resource-pack root.
     /// Never enumerate an APK's private storage or arbitrary user-provided path.
     ///
@@ -152,7 +162,7 @@ impl EntityResources {
             resources.files_seen += 1;
             let text = match read_bounded(&path) {
                 Ok(text) => text, Err(err) => {
-                    resources.warnings.push(format!("{relative}: {err}")); continue;
+                    resources.warn(format!("{relative}: {err}")); continue;
                 },
             };
             let dir = path.parent().unwrap_or(root);
@@ -168,11 +178,11 @@ impl EntityResources {
                 Ok(model) => {
                     let prepared = PreparedModel::prepare(model);
                     for err in &prepared.unsupported_expressions {
-                        resources.warnings.push(format!("{relative}: {err}"));
+                        resources.warn(format!("{relative}: {err}"));
                     }
                     resources.models.insert(relative, prepared);
                 },
-                Err(err) => resources.warnings.push(format!("{relative}: {err:?}")),
+                Err(err) => resources.warn(format!("{relative}: {err:?}")),
             }
         }
         for feature in ["random/entity", "mob"] {
@@ -183,22 +193,17 @@ impl EntityResources {
                     Ok(src) => match entity_textures::parse(&src) {
                         Ok(rules) => {
                             for skipped in &rules.skipped {
-                                resources.warnings.push(format!("{relative}: {skipped}"));
+                                resources.warn(format!("{relative}: {skipped}"));
                             }
                             if !rules.rules.is_empty() {
                                 resources.texture_rules.insert(relative, rules);
                             }
                         }
-                        Err(err) => resources.warnings.push(format!("{relative}: {err:?}")),
+                        Err(err) => resources.warn(format!("{relative}: {err:?}")),
                     },
-                    Err(err) => resources.warnings.push(format!("{relative}: {err}")),
+                    Err(err) => resources.warn(format!("{relative}: {err}")),
                 }
             }
-        }
-        if resources.warnings.len() > MAX_WARNINGS {
-            let discarded = resources.warnings.len() - MAX_WARNINGS;
-            resources.warnings.truncate(MAX_WARNINGS);
-            resources.warnings.push(format!("{discarded} additional compatibility warnings omitted"));
         }
         resources
     }
