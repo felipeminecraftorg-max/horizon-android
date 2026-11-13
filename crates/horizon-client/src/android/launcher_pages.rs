@@ -1308,7 +1308,13 @@ impl Launcher {
                 || self.catalog.config.super_perf_mode;
             let phase = if reduced { 0. } else { self.anim.intro_elapsed };
             let detail = if reduced { 0.38 } else { 1. };
-            horizon_client::ui_theme::launcher_xmb::background(&mut ui, phase, detail);
+            if self.catalog.config.theme.glass_effects {
+                horizon_client::ui_theme::launcher_xmb::background(&mut ui, phase, detail);
+            } else {
+                // The actual "atmospheric effects" switch remains functional:
+                // no shader dispatch or legacy wallpaper when disabled.
+                ui.fill(0., 0., w, h, color::hex(0x080E1D, 255));
+            }
         } else {
             ui.draw_theme_background(0.0, 0.0, w, h, &active_th);
         }
