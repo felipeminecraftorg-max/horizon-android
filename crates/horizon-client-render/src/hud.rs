@@ -1804,7 +1804,13 @@ impl HudRenderer {
     ) -> Result<Self> {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Horizon HUD"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("hud.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(
+                format!(
+                    "{}\n{}",
+                    include_str!("hud.wgsl"),
+                    include_str!("hud/xmb_wallpaper.wgsl")
+                ).into()
+            ),
         });
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
