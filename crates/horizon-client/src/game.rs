@@ -8188,10 +8188,19 @@ impl Game<'_> {
                 );
             }
             self.animate_reanimated("title", &mut batch);
+            let at=self.started.elapsed().as_secs_f32();
+            let start=batch.vertices.len();
             self.draw_toasts(&mut batch, false);
+            self.reanimated.animate_toast_layer("general",at,start,&mut batch);
+            let start=batch.vertices.len();
             self.draw_tutorial_toasts(&mut batch, false);
+            self.reanimated.animate_toast_layer("tutorial",at,start,&mut batch);
+            let start=batch.vertices.len();
             self.draw_pack_toasts(&mut batch, false);
+            self.reanimated.animate_toast_layer("packs",at,start,&mut batch);
+            let start=batch.vertices.len();
             self.draw_music_toast(&mut batch, false);
+            self.reanimated.animate_toast_layer("music",at,start,&mut batch);
             return batch;
         }
         let atlas_ptr: *const HudAtlas = &self.gui.atlas;
@@ -8506,16 +8515,25 @@ impl Game<'_> {
             self.animate_reanimated(key, &mut batch);
         }
         horizon_client::hud::inset_overlay(&mut batch, margins, |b| self.draw_saving_indicator(b));
+        let at=self.started.elapsed().as_secs_f32();
+        let start=batch.vertices.len();
         horizon_client::hud::inset_overlay(&mut batch, margins, |b| self.draw_toasts(b, !show_hud));
+        self.reanimated.animate_toast_layer("general",at,start,&mut batch);
+        let start=batch.vertices.len();
         horizon_client::hud::inset_overlay(&mut batch, margins, |b| {
             self.draw_pack_toasts(b, !show_hud)
         });
+        self.reanimated.animate_toast_layer("packs",at,start,&mut batch);
+        let start=batch.vertices.len();
         horizon_client::hud::inset_overlay(&mut batch, margins, |b| {
             self.draw_tutorial_toasts(b, !show_hud)
         });
+        self.reanimated.animate_toast_layer("tutorial",at,start,&mut batch);
+        let start=batch.vertices.len();
         horizon_client::hud::inset_overlay(&mut batch, margins, |b| {
             self.draw_music_toast(b, !show_hud)
         });
+        self.reanimated.animate_toast_layer("music",at,start,&mut batch);
         if self.server_packs.prompt.is_none() {
             self.remote_hud(&mut batch);
             self.draw_sign_editor(&mut batch);
