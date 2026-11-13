@@ -15170,8 +15170,16 @@ impl Game<'_> {
         } else {
             Vec::new()
         };
+        // Cinematic scenes apply only a small world-view translation. The
+        // actual camera location used for physics, occlusion and directional
+        // audio above remains unchanged.
+        let station_block=self.cinematic_block();
+        let scene_offset=self.cinematic_rig.camera_translation(
+            camera,station_block,self.started.elapsed().as_secs_f32()
+        );
         let view = glam::Mat4::from_rotation_z(view_roll.to_radians())
-            * horizon_client::camera::view_matrix(view_yaw, view_pitch);
+            * horizon_client::camera::view_matrix(view_yaw, view_pitch)
+            * glam::Mat4::from_translation(-scene_offset);
         let at = camera.to_array();
         // GameRenderer.render3dHud: the debug crosshair, first person with the HUD shown.
         let mut crosshair = horizon_client::gizmos::Gizmos::default();
