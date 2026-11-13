@@ -98,6 +98,7 @@ mod copper_golems;
 mod creaking;
 mod creative_hotbar;
 mod creatures;
+mod cinematic_interactions;
 mod crossbow;
 pub(crate) mod cushions;
 mod debug_keys;
@@ -259,6 +260,7 @@ mod remote_projectiles;
 mod remote_stations;
 mod remote_vehicles;
 mod render_control;
+mod reanimated;
 mod render_tick;
 mod respawn_anchor;
 mod saves_control;
@@ -2270,6 +2272,10 @@ struct Game<'a> {
     pause: bool,
     debug: bool,
     screen: Screen,
+    /// Native ReAnimated visual transitions; input hitboxes unchanged.
+    reanimated: reanimated::ReAnimated,
+    /// Native Cinematic Interactions presentation camera.
+    cinematic_rig: cinematic_interactions::Rig,
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
     /// CPU geometry storage retained across frames, including empty/title frames.
@@ -8101,6 +8107,15 @@ impl Game<'_> {
             self.frame_graph
                 .draw(self.settings.horizon.overlay, b, &self.gui.atlas);
         });
+        let screen_key = if self.title.is_some() {
+            "title"
+        } else if self.station.is_some() {
+            "station"
+        } else {
+            self.screen.id()
+        };
+        // Transform screen visuals before the cursor and touch UI draw.
+        self.reanimated.draw(screen_key, self.started.elapsed().as_secs_f32(), &mut batch);
         self.draw_pad_cursor(&mut batch);
         self.resolve_inline_profiles(&batch.inline_profiles);
         batch
@@ -15007,6 +15022,15 @@ impl Game<'_> {
             view_yaw,
             view_pitch,
         );
+        // Only adjust the presentation camera, after the native camera stack.
+        // No input/world/network angle changes or positional displacements.
+        let station_scene = self.cinematic_station();
+        self.cinematic_rig.advance(
+            station_scene, self.started.elapsed().as_secs_f32()
+        );
+        let (view_yaw, view_pitch, view_roll, cinematic_fov) =
+            self.cinematic_rig.apply(view_yaw, view_pitch, view_roll, 85.0);
+        let cinematic_fov = cinematic_fov - 85.0;
         self.audio
             .set_listener([camera.x, camera.y, camera.z], view_yaw, view_pitch);
         android_bundled::native_sound_physics(self, [camera.x, camera.y, camera.z], underwater);
@@ -15326,7 +15350,8 @@ impl Game<'_> {
         let fov_degrees = if title {
             85.0
         } else {
-            self.fov_degrees(camera_alpha as f32, camera.to_array())
+            (self.fov_degrees(camera_alpha as f32, camera.to_array()) + cinematic_fov)
+                .clamp(30.0, 110.0)
         };
         self.locator_camera =
             (!title).then_some((camera.to_array(), view_yaw, view_pitch, fov_degrees));
@@ -18680,6 +18705,23 @@ impl<'a> Game<'a> {
             pause: false,
             debug: false,
             screen: Screen::Playing,
+            reanimated: reanimated::ReAnimated::new(reanimated::Config {
+                enabled: std::env::var("HORIZON_REANIMATED_PREVIEW").is_ok_and(|v|v == "1")
+                    || std::fs::read_to_string(root.join("horizon-reanimated-preview.flag"))
+                        .is_ok_and(|v|v.trim() == "enabled"),
+                // Touch hitboxes remain aligned during the fade.
+                scale: !cfg!(target_os = "android"),
+                ..Default::default()
+            }),
+            cinematic_rig: cinematic_interactions::Rig::new(
+                cinematic_interactions::Config {
+                    enabled: std::env::var("HORIZON_CINEMATIC_PREVIEW").is_ok_and(|v|v == "1")
+                        || std::fs::read_to_string(
+                            root.join("horizon-cinematic-preview.flag")
+                        ).is_ok_and(|v|v.trim() == "enabled"),
+                    ..Default::default()
+                },
+            ),
             window: None,
             renderer: None,
             entity_vertices: Vec::new(),
