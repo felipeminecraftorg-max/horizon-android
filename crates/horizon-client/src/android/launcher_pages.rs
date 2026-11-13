@@ -1140,6 +1140,7 @@ impl Launcher {
         let next = current.saturating_add_signed(delta).min(Page::ALL.len() - 1);
         let page = Page::ALL[next];
         if page != self.catalog.page {
+            self.xmb.move_category(next as isize - current as isize);
             if page == Page::Skins {
                 self.wardrobe.open(
                     &self.catalog.config.name,
@@ -1403,6 +1404,10 @@ impl Launcher {
             has_any_modal,
             self.catalog.sections,
         );
+        if layout.console {
+            self.xmb.animate(self.anim.frame_dt,
+                horizon_client::ui_theme::motion::reduced_motion());
+        }
         let account_name = self
             .login
             .profile
@@ -2248,6 +2253,12 @@ impl Launcher {
                 true,
             );
         }
+        if layout.console {
+            horizon_client::ui_theme::launcher_xmb::focus_trails(
+                &mut ui, &self.xmb, page == Page::Play,
+            );
+        }
+
         // The context list is a native XMB sheet, not a Material dialog.
         // A long press never executes its action. The backdrop captures taps
         // behind the menu; all visible commands use normal Action dispatch.
