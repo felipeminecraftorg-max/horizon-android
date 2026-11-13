@@ -1122,8 +1122,8 @@ fn home_old_school(
     let poster = [x, y, poster_w, poster_h];
     // Drop the placeholder voxel image. Real GPU chrome samples the Graphite wallpaper.
     panel(ui, poster, 16., false);
-    // Satin dark content inset, lit by the current wallpaper.
-    ui.stroke_rounded(x, y, poster_w, poster_h, 16., 0.8, color::hex(0xE2E5FA, 80));
+    // The panel already draws its own border. A second outline here
+    // doubled the contour around the Old School game hero.
     ui.rounded(x + 15., y + 16., (poster_w - 30.).min(330.), 104., 12.,
         color::hex(0x0A1020, 111));
     ui.text(Face::SemiBold, if narrow { 23. } else { 31. },
@@ -1180,11 +1180,10 @@ fn home_old_school(
         panel(ui, card, 12., false);
         ui.rounded(card[0] + 1., card[1] + 1., card_w - 2., card_h - 2.,
             11., color::hex(tint, 47));
-        // The narrow silver seam is a design accent, not another lens surface.
+        // A restrained tinted glint keeps each shortcut distinct without
+        // painting a second border over the existing optical chrome edge.
         ui.fill(card[0] + 12., card[1] + 3., (card_w - 24.).max(0.), 1.,
-            color::hex(0xFFFFFF, 44));
-        ui.stroke_rounded(card[0], card[1], card_w, card_h, 11., 0.7,
-            color::hex(tint, 126));
+            color::hex(tint, 110));
         let icon_size = if narrow { 23. } else { (card_h * 0.30).min(36.) };
         ui.icon(icon, card[0] + (card_w - icon_size) * 0.5,
             card[1] + (card_h * 0.23).min(35.), icon_size, color::hex(0xF5F7FF, 243));
