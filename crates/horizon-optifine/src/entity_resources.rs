@@ -235,6 +235,31 @@ impl EntityResources {
         None
     }
 
+    /// Translate a supported ETF selection into the sprite key registered
+    /// in the opt-in GUI/entity atlas. Variant 1 is the vanilla image, so it
+    /// deliberately returns None. The caller must fall back if absent.
+    pub fn variation_sprite(
+        &self,
+        vanilla: &str,
+        context: entity_textures::EntityContext<'_>,
+    ) -> Option<String> {
+        let (ns,rest) = vanilla.split_once(':')?;
+        if ns.is_empty() || !ns.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'_'||b==b'-')
+            || rest.contains("..") || rest.contains('\\') { return None; }
+        let file = rest.strip_prefix("textures/entity/")?.strip_suffix(".png")?;
+        for top in ["optifine","mcpatcher"] {
+            for feature in ["random/entity","mob"] {
+                let key = format!("assets/{ns}/{top}/{feature}/{file}.properties");
+                if let Some(rules) = self.texture_rules.get(&key) {
+                    let variant = rules.select(context)?;
+                    if variant == 1 { return None; }
+                    return Some(format!("{ns}:{top}/{feature}/{file}{variant}"));
+                }
+            }
+        }
+        None
+    }
+
     /// Namespaced entity ID associated with a source CEM path, e.g.
     /// assets/minecraft/optifine/cem/zombie.jem -> minecraft:zombie.
     pub fn cem_entity_id(path: &str) -> Option<String> {
@@ -289,6 +314,17 @@ mod tests {
         assert_eq!(loaded.texture_rules.len(),1);
         assert!(loaded.model_for_entity("minecraft:zombie").is_some());
         assert!(loaded.rules_for_texture("minecraft:textures/entity/zombie/zombie.png").is_some());
+        let choices: Vec<_> = (0..30).filter_map(|seed| {
+            loaded.variation_sprite(
+                "minecraft:textures/entity/zombie/zombie.png",
+                entity_textures::EntityContext {
+                    seed, name: None, biome: None, block_y: Some(64),
+                },
+            )
+        }).collect();
+        assert!(!choices.is_empty());
+        assert!(choices.iter().all(|name| name ==
+            "minecraft:optifine/random/entity/zombie/zombie2"));
         let model = loaded.models.values().next().unwrap();
         assert_eq!(model.model.parts[0].boxes[0].coords[3],8.0);
         assert_eq!(model.sample(&|name| (name=="limb_swing").then_some(0.0)).0[0].1,0.0);
