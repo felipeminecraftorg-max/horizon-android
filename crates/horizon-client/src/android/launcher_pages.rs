@@ -6847,6 +6847,10 @@ impl Launcher {
                 }
             }
             Some(Action::FmNavigateRoot(rel)) => {
+                // Selecting a contextual root returns to the actual files;
+                // otherwise the new XMB location list would stay onscreen.
+                self.xmb_files_panel = 0;
+                self.catalog.scroll = 0.;
                 self.catalog.fm_navigate(&self.home, (*rel).to_owned());
             }
             Some(Action::FmBreadcrumb(depth)) => {
