@@ -7,12 +7,18 @@ on:
       - 'crates/horizon-optifine/**'
       - 'crates/horizon-client-render/**'
       - 'crates/horizon-client/src/game/creatures.rs'
+      - 'crates/horizon-client/src/game.rs'
+      - 'crates/horizon-client/src/game/reanimated.rs'
+      - 'crates/horizon-client/src/game/cinematic_interactions.rs'
       - '.github/workflows/native-animation-compat.yml'
   pull_request:
     paths:
       - 'crates/horizon-optifine/**'
       - 'crates/horizon-client-render/**'
       - 'crates/horizon-client/src/game/creatures.rs'
+      - 'crates/horizon-client/src/game.rs'
+      - 'crates/horizon-client/src/game/reanimated.rs'
+      - 'crates/horizon-client/src/game/cinematic_interactions.rs'
       - '.github/workflows/native-animation-compat.yml'
   workflow_dispatch:
 
@@ -29,5 +35,7 @@ jobs:
         run: cargo test --locked -p horizon-optifine
       - name: Check renderer resource-loader integration
         run: cargo check --locked -p horizon-client-render
-      - name: Check playable client CEM draw integration
+      - name: Check playable client with both native mods
         run: cargo check --locked -p horizon-client --no-default-features
+      - name: Check native ReAnimated and Cinematic tests compile
+        run: cargo check --locked -p horizon-client --no-default-features --tests
