@@ -52,9 +52,11 @@ pub struct Config {
     pub speed: f32,
     /// Set to 0 to disable roll motion (accessible mode).
     pub roll_strength: f32,
+    /// Visual camera approach to the nearby workstation, never gameplay motion.
+    pub scene_move: bool,
 }
 impl Default for Config {
-    fn default()->Self {Self{enabled:false,reduced_motion:false,speed:1.0,roll_strength:1.0}}
+    fn default()->Self {Self{enabled:false,reduced_motion:false,speed:1.0,roll_strength:1.0,scene_move:true}}
 }
 #[derive(Clone, Debug, Default)]
 pub struct Rig {
@@ -66,6 +68,8 @@ pub struct Rig {
     pub transitions: u64,
     /// Time since last client-side workstation click; visual only.
     interaction_age: Option<f32>,
+    world_offset: glam::Vec3,
+    last_view_time: Option<f32>,
 }
 impl Rig {
     pub fn new(config:Config)->Self{Self{config,..Default::default()}}
@@ -87,6 +91,8 @@ impl Rig {
             self.velocity=[0.0;4];
             self.current=Pose::default();
             self.interaction_age=None;
+            self.world_offset=glam::Vec3::ZERO;
+            self.last_view_time=None;
             self.last_time=None;
             return self.current;
         }
@@ -132,6 +138,44 @@ impl Rig {
         self.current.fov=self.current.fov.clamp(-4.0,4.0);
         self.current
     }
+    /// Offset only the final visual view matrix towards the opened station.
+    /// Camera/audio listener positions, culling, input and player physics
+    /// remain tied to the original camera. The 0.2 block limit is deliberate
+    /// to avoid sudden perspective jumps on narrow mobile displays.
+    pub fn camera_translation(
+        &mut self, camera: glam::DVec3, block: Option<[i32;3]>, seconds:f32,
+    ) -> glam::Vec3 {
+        if !self.config.enabled || self.config.reduced_motion || !self.config.scene_move
+            || !seconds.is_finite() {
+            self.world_offset=glam::Vec3::ZERO;
+            self.last_view_time=None;
+            return self.world_offset;
+        }
+        let dt=self.last_view_time.map_or(0.0,|last|
+            (seconds-last).clamp(0.0,0.08));
+        self.last_view_time=Some(seconds);
+        let target=block.and_then(|pos| {
+            let center=glam::DVec3::new(
+                pos[0] as f64+0.5,pos[1] as f64+0.85,pos[2] as f64+0.5
+            );
+            let delta=center-camera;
+            let length=delta.length();
+            if !length.is_finite() || length>2.8 || length<0.1 {
+                return None;
+            }
+            Some((delta.as_vec3()*0.20).clamp_length_max(0.20))
+        }).unwrap_or(glam::Vec3::ZERO);
+        let blend=1.0-(-12.0*dt).exp();
+        self.world_offset=self.world_offset.lerp(target,blend);
+        if !self.world_offset.is_finite() {
+            self.world_offset=glam::Vec3::ZERO;
+        }
+        if (self.world_offset-target).length()<0.0001 {
+            self.world_offset=target;
+        }
+        self.world_offset
+    }
+
     /// Render-only first-person arm movement during workstation scenes.
     /// The original FirstPerson Model body rendering stays untouched; callers
     /// apply this only inside the vanilla hand geometry path.
@@ -179,6 +223,13 @@ pub fn station_of_container_block(name: &str) -> Option<Station> {
 }
 
 impl Game<'_> {
+    pub(super) fn cinematic_block(&self) -> Option<[i32;3]> {
+        self.cinematic_station()?;
+        if let Some(pos)=self.craft_table {return Some(pos);}
+        if let Some(station)=self.station.as_ref() {return Some(station.pos);}
+        self.container.map(|pos|[pos.0,pos.1,pos.2])
+    }
+
     /// Identify workstation scenes from the same state that renders the
     /// inventory screen. No server packets, block edits, or click interception.
     pub(super) fn cinematic_station(&self) -> Option<Station> {
@@ -275,6 +326,22 @@ mod tests {
         let mut r=Rig::default();
         r.pulse();
         assert_eq!(r.interaction_age,None);
+    }
+    #[test] fn camera_moves_towards_nearby_station_without_teleporting() {
+        let mut r=Rig::new(Config{enabled:true,..Default::default()});
+        let camera=glam::DVec3::new(0.5,1.6,2.0);
+        r.camera_translation(camera,Some([0,0,0]),0.0);
+        let offset=r.camera_translation(camera,Some([0,0,0]),0.016);
+        assert!(offset.length()>0.0 && offset.length()<0.20);
+        for i in 2..120 {
+            r.camera_translation(camera,Some([0,0,0]),i as f32/60.0);
+        }
+        assert!(r.world_offset.length()<=0.201);
+        let far=r.camera_translation(
+            glam::DVec3::new(100.0,10.0,100.0),Some([0,0,0]),2.1);
+        assert!(far.length()<=0.20);
+        r.config.scene_move=false;
+        assert_eq!(r.camera_translation(camera,Some([0,0,0]),2.2),glam::Vec3::ZERO);
     }
     #[test] fn clamp_applies_after_existing_camera() {
         let mut r=Rig::new(Config{enabled:true,..Default::default()});
