@@ -1273,7 +1273,12 @@ impl Launcher {
         if active_th.experience == horizon_client::ui_theme::ExperiencePreset::OldSchool {
             // New independent XMB environment. Even custom Old School wallpapers
             // must not go through the retired console dashboard material.
-            horizon_client::ui_theme::launcher_xmb::background(&mut ui, w, h);
+            let reduced = horizon_client::ui_theme::motion::reduced_motion()
+                || self.catalog.config.battery_perf_mode
+                || self.catalog.config.super_perf_mode;
+            let phase = if reduced { 0. } else { self.anim.intro_elapsed };
+            let detail = if reduced { 0.38 } else { 1. };
+            horizon_client::ui_theme::launcher_xmb::background(&mut ui, phase, detail);
         } else {
             ui.draw_theme_background(0.0, 0.0, w, h, &active_th);
         }

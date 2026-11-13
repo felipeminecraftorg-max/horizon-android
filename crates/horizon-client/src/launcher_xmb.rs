@@ -1,54 +1,42 @@
-//! Horizon XMB Mobile: independent spatial navigation and home compositor.
+//! Horizon XMB Mobile — an original console-inspired spatial interface.
 //!
-//! The Old School experience is rebuilt from the XMB interaction grammar:
-//! a horizontal current-category axis crossing a vertical focused-item axis.
-//! This code intentionally does NOT call the previous Old School dashboard,
-//! Material cards, glass panels, old chrome wallpaper, or console icon family.
-//! The lightweight vector language below is original to Horizon.
-//!
-//! Part 1: production shell and Home layout. Subsequent parts add WGSL waves,
-//! richer iconography, contextual content surfaces and inertial touch navigation.
+//! This is not the previous "Old School" dashboard with a new background.
+//! It has an independent cross of category and item axes, an independent
+//! GPU atmosphere, and a fresh super-sampled icon language. The sole reused
+//! presentation asset is the user's existing licensed launcher sound pack.
+//! Other presets never enter this file.
 use super::{color, Face, Icon, Ui};
 use super::launcher_visual::{HomeAction, HomeView, Layout, ShellAction};
 
 pub const HOME_ACTIONS: [HomeAction; 8] = [
-    HomeAction::Play,
-    HomeAction::Profile,
-    HomeAction::Mods,
-    HomeAction::Packs,
-    HomeAction::Shaders,
-    HomeAction::Files,
-    HomeAction::Skins,
-    HomeAction::Settings,
+    HomeAction::Play, HomeAction::Profile, HomeAction::Mods,
+    HomeAction::Packs, HomeAction::Shaders, HomeAction::Files,
+    HomeAction::Skins, HomeAction::Settings,
 ];
 
 const HOME_LABELS: [&str; 8] = [
-    "Minecraft 26.3",
-    "Selecionar perfil",
-    "Mods",
-    "Pacotes de recursos",
-    "Shaders",
-    "Meus arquivos",
-    "Skins",
-    "Configurações",
+    "Minecraft 26.3", "Selecionar perfil", "Mods",
+    "Pacotes de recursos", "Shaders", "Meus arquivos",
+    "Skins", "Configurações",
 ];
 
-#[derive(Clone, Debug)]
+const CATEGORY_LABELS: [&str; 7] = [
+    "Jogo", "Mods", "Pacotes", "Shaders", "Biblioteca", "Sistema", "Skins",
+];
+
+const CATEGORY_ICONS: [Icon; 7] = [
+    Icon::XmbGame, Icon::XmbMods, Icon::XmbPacks, Icon::XmbShaders,
+    Icon::XmbFiles, Icon::XmbSystem, Icon::XmbIdentity,
+];
+
+#[derive(Clone, Debug, Default)]
 pub struct Navigation {
     selected_home: usize,
 }
-impl Default for Navigation {
-    fn default() -> Self {
-        Self { selected_home: 0 }
-    }
-}
 impl Navigation {
-    pub fn selected_home(&self) -> usize {
-        self.selected_home
-    }
+    pub fn selected_home(&self) -> usize { self.selected_home }
     pub fn step_home(&mut self, delta: i32) -> HomeAction {
-        self.selected_home = self.selected_home
-            .saturating_add_signed(delta as isize)
+        self.selected_home = self.selected_home.saturating_add_signed(delta as isize)
             .min(HOME_ACTIONS.len() - 1);
         HOME_ACTIONS[self.selected_home]
     }
@@ -57,9 +45,7 @@ impl Navigation {
             self.selected_home = index;
         }
     }
-    pub fn selected_action(&self) -> HomeAction {
-        HOME_ACTIONS[self.selected_home]
-    }
+    pub fn selected_action(&self) -> HomeAction { HOME_ACTIONS[self.selected_home] }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -82,156 +68,73 @@ impl Cross {
         };
         Self {
             portrait,
-            x: if portrait { w * 0.47 } else { w * 0.395 },
+            // The item icons and the selected category share this exact axis.
+            // Portrait shifts the cross left for thumb reach and long labels.
+            x: if portrait { w * 0.32 } else { w * 0.395 },
             category_y,
             item_y: (if portrait { h * 0.37 } else { h * 0.47 })
                 .max(category_y + if portrait { 95. } else { 76. })
                 .min(h - 100.),
             category_step: if portrait { 79. } else { 112. },
             item_step: if portrait { 57. } else { 54. },
-            bottom: h - if portrait { 48. } else { 57. },
+            bottom: h - if portrait { 60. } else { 57. },
         }
     }
-
     pub fn category_hit(self, w: f32, selected: usize, index: usize) -> Option<[f32; 4]> {
         let cx = self.x + (index as f32 - selected as f32) * self.category_step;
         let rect = [cx - 27., self.category_y - 27., 54., 62.];
         (rect[0] >= 8. && rect[0] + rect[2] <= w - 8.).then_some(rect)
     }
-
     pub fn item_hit(self, bounds: [f32; 4], selected: usize, index: usize) -> Option<[f32; 4]> {
         let y = self.item_y + (index as f32 - selected as f32) * self.item_step - 6.;
-        let first = (self.category_y + 46.).max(bounds[1]);
-        let last = bounds[1] + bounds[3];
-        let bottom = self.bottom.min(last);
-        let rect = [
-            bounds[0] + 6.,
-            y,
-            (bounds[2] * if self.portrait { 0.97 } else { 0.64 }).max(48.).min(bounds[2] - 12.),
-            48.,
-        ];
-        (rect[1] >= first && rect[1] + rect[3] <= bottom).then_some(rect)
+        let top = (self.category_y + 46.).max(bounds[1]);
+        let bottom = self.bottom.min(bounds[1] + bounds[3]);
+        let left = (self.x - 28.).max(bounds[0] + 6.);
+        let right = if self.portrait {
+            bounds[0] + bounds[2] - 8.
+        } else {
+            (bounds[0] + bounds[2] - 8.).min(self.x + bounds[2] * 0.36)
+        };
+        let rect = [left, y, (right - left).max(0.), 48.];
+        (rect[1] >= top && rect[1] + rect[3] <= bottom && rect[2] >= 48.)
+            .then_some(rect)
     }
 }
 
-/// Draw a background *of a new composition*, with deep color and a quiet
-/// bottom radiance. Part 2 replaces this transitional gradient with WGSL
-/// organic light; it must never render the previous chrome/satin tiles.
-pub fn background(ui: &mut Ui<'_>, w: f32, h: f32) {
-    ui.fill(0., 0., w, h, color::hex(0x090E1C, 255));
-    let stripes = 48;
-    for i in 0..stripes {
-        let f = i as f32 / stripes as f32;
-        let y = h * (0.34 + f * 0.66);
-        let alpha = (f.powf(1.3) * 13.) as u8;
-        ui.fill(0., y, w, h / stripes as f32 + 1.,
-            color::hex(0x374C83, alpha));
-    }
+/// Original XMB-native full-screen GPU effect. The renderer handles the
+/// optical ribbons directly in WGSL; no old Graphite wallpaper is reused.
+pub fn background(ui: &mut Ui<'_>, phase_seconds: f32, detail: f32) {
+    ui.xmb_wallpaper(phase_seconds, detail);
 }
 
-#[derive(Clone, Copy)]
-enum Symbol {
-    Game,
-    Extensions,
-    Archive,
-    Light,
-    Storage,
-    Sliders,
-    Identity,
-}
-
-fn symbol_for_category(index: usize) -> Symbol {
-    match index {
-        0 => Symbol::Game,
-        1 => Symbol::Extensions,
-        2 => Symbol::Archive,
-        3 => Symbol::Light,
-        4 => Symbol::Storage,
-        5 => Symbol::Sliders,
-        _ => Symbol::Identity,
-    }
-}
-fn symbol_for_home(action: HomeAction) -> Symbol {
+fn icon_for_home(action: HomeAction) -> Icon {
     match action {
-        HomeAction::Play => Symbol::Game,
-        HomeAction::Profile | HomeAction::Skins => Symbol::Identity,
-        HomeAction::Mods => Symbol::Extensions,
-        HomeAction::Packs => Symbol::Archive,
-        HomeAction::Shaders => Symbol::Light,
-        HomeAction::Files => Symbol::Storage,
-        HomeAction::Settings | HomeAction::Appearance => Symbol::Sliders,
+        HomeAction::Play => Icon::XmbGame,
+        HomeAction::Profile | HomeAction::Skins => Icon::XmbIdentity,
+        HomeAction::Mods => Icon::XmbMods,
+        HomeAction::Packs => Icon::XmbPacks,
+        HomeAction::Shaders => Icon::XmbShaders,
+        HomeAction::Files => Icon::XmbFiles,
+        HomeAction::Settings | HomeAction::Appearance => Icon::XmbSystem,
     }
 }
 
-/// Original ultra-light XMB pictograms built directly from primitives.
-/// No previous Old School vector assets or Sony-owned icons are loaded.
-fn symbol(ui: &mut Ui<'_>, glyph: Symbol, cx: f32, cy: f32, s: f32, ink: u32) {
-    let x = cx - s * 0.5;
-    let y = cy - s * 0.5;
-    let t = (s * 0.066).max(1.);
-    match glyph {
-        Symbol::Game => {
-            // Two mirrored trigger arms and tiny thumb accents: controller silhouette.
-            ui.stroke_rounded(x + s * 0.09, y + s * 0.30, s * 0.82, s * 0.51,
-                s * 0.19, t, ink);
-            ui.fill(x + s * 0.27, y + s * 0.45, s * 0.20, t, ink);
-            ui.fill(x + s * 0.35 - t * 0.5, y + s * 0.37, t, s * 0.20, ink);
-            ui.rounded(x + s * 0.68, y + s * 0.43, t * 1.55, t * 1.55, t * 0.8, ink);
-            ui.rounded(x + s * 0.75, y + s * 0.55, t * 1.55, t * 1.55, t * 0.8, ink);
-        }
-        Symbol::Extensions => {
-            let d = s * 0.22;
-            for (col, row) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
-                ui.stroke_rounded(
-                    x + s * (0.19 + col as f32 * 0.38),
-                    y + s * (0.19 + row as f32 * 0.38),
-                    d, d, t * 1.1, t, ink,
-                );
-            }
-        }
-        Symbol::Archive => {
-            for i in 0..3 {
-                let offset = i as f32 * s * 0.115;
-                ui.stroke_rounded(x + s * 0.22 - offset * 0.32,
-                    y + s * 0.17 + offset,
-                    s * 0.58, s * 0.22,
-                    t * 0.9, t, ink);
-            }
-        }
-        Symbol::Light => {
-            ui.stroke_rounded(x + s * 0.30, y + s * 0.29, s * 0.40, s * 0.40,
-                s * 0.21, t, ink);
-            for (ax, ay, bw, bh) in [
-                (0.48, 0.04, 0.04, 0.16), (0.48, 0.80, 0.04, 0.16),
-                (0.04, 0.48, 0.16, 0.04), (0.80, 0.48, 0.16, 0.04),
-            ] {
-                ui.fill(x + s * ax, y + s * ay, s * bw, s * bh, ink);
-            }
-        }
-        Symbol::Storage => {
-            ui.stroke_rounded(x + s * 0.13, y + s * 0.30, s * 0.74, s * 0.48,
-                t, t, ink);
-            ui.fill(x + s * 0.17, y + s * 0.24, s * 0.30, t * 1.1, ink);
-        }
-        Symbol::Sliders => {
-            for (line, dot) in [(0.25, 0.34), (0.5, 0.67), (0.75, 0.44)] {
-                ui.fill(x + s * 0.15, y + s * line, s * 0.70, t, ink);
-                ui.rounded(x + s * dot - t * 0.5,
-                    y + s * line - t * 1.3, t * 2.0, t * 3.5,
-                    t, ink);
-            }
-        }
-        Symbol::Identity => {
-            ui.stroke_rounded(x + s * 0.39, y + s * 0.16, s * 0.22, s * 0.23,
-                s * 0.11, t, ink);
-            ui.stroke_rounded(x + s * 0.22, y + s * 0.57, s * 0.56, s * 0.26,
-                s * 0.13, t, ink);
-        }
+fn glyph(ui: &mut Ui<'_>, icon: Icon, cx: f32, cy: f32, size: f32, active: bool) {
+    let x = cx - size * 0.5;
+    let y = cy - size * 0.5;
+    if active {
+        // A restrained optical aureole, not a card, plate or pressable pill.
+        ui.rounded(cx - size * 0.68, cy - size * 0.68,
+            size * 1.36, size * 1.36, size * 0.68,
+            color::hex(0xAFCFFF, 15));
+        ui.icon(icon, x - size * 0.075, y - size * 0.075,
+            size * 1.15, color::hex(0x9BC9FF, 37));
     }
+    ui.icon(icon, x, y, size,
+        color::hex(if active { 0xF1F7FF } else { 0xC6D8EB },
+            if active { 250 } else { 136 }));
 }
 
-/// Real XMB horizontal category world. No background to each tab; neighbor
-/// categories continue off-screen and only the centered one owns the focus.
 #[allow(clippy::too_many_arguments)]
 pub fn shell(
     ui: &mut Ui<'_>,
@@ -242,57 +145,68 @@ pub fn shell(
     version: &str,
     mut target: impl FnMut([f32; 4], ShellAction),
 ) -> Layout {
-    let w = ui.w;
-    let h = ui.h;
-    let cross = Cross::from_screen(w, h);
+    let (w, h) = (ui.w, ui.h);
+    let c = Cross::from_screen(w, h);
     let layout = Layout::new(w, h);
-    ui.text(Face::Regular, 19., 21., 16.,
-        color::hex(0xE9ECF7, 245), "Horizon");
-    ui.text(Face::Regular, 9.5, 23., 42.,
-        color::hex(0xAABBD9, 153), version);
-    let account_width = (w * 0.35).clamp(100., 178.);
-    let account_x = w - account_width - 20.;
-    let account_name = ui.fit_text(Face::Regular, 11., account, account_width - 14.);
-    ui.text(Face::Regular, 11., account_x, 20.,
-        color::hex(0xDDE5F2, 214), &account_name);
+
+    // Deliberate console-system header: light typography, no desktop bar.
+    ui.text(Face::Regular, 17., 22., 14.,
+        color::hex(0xECF3FC, 238), "Horizon");
+    ui.text(Face::Regular, 10., 23., 42.,
+        color::hex(0x9EB6D2, 176), version);
+    let account_width = (w * 0.33).clamp(100., 190.);
+    let account_x = w - account_width - 22.;
+    let name = ui.fit_text(Face::Regular, 11., account, account_width - 14.);
+    ui.text(Face::Regular, 11., account_x, 19.,
+        color::hex(0xDDEAF8, 218), &name);
     if signed_in {
         ui.rounded(account_x - 11., 25., 5., 5., 2.5,
-            color::hex(0xB5DDC8, 226));
+            color::hex(0x9CC5B1, 228));
     }
     target([account_x - 13., 9., account_width + 13., 45.], ShellAction::Account);
-    // Access theme settings without a second app-like nav bar or chrome control.
-    target([21., 10., 105., 49.], ShellAction::Appearance);
+    target([20., 9., 104., 47.], ShellAction::Appearance);
 
     let chosen = selected.min(categories.len().saturating_sub(1));
-    for (index, (label, _legacy_icon)) in categories.iter().enumerate() {
-        let Some(hit) = cross.category_hit(w, chosen, index) else { continue; };
+    for (index, (fallback, _)) in categories.iter().enumerate() {
+        let Some(hit) = c.category_hit(w, chosen, index) else { continue; };
         let current = chosen == index;
-        let ink = color::hex(0xEEF3FF, if current { 255 } else { 143 });
-        let glyph_size = if current { 33. } else { 25. };
-        let center_x = hit[0] + hit[2] * 0.5;
-        symbol(ui, symbol_for_category(index), center_x,
-            cross.category_y, glyph_size, ink);
+        let cx = hit[0] + hit[2] * 0.5;
+        let icon = CATEGORY_ICONS.get(index).copied().unwrap_or(Icon::XmbSystem);
+        glyph(ui, icon, cx, c.category_y, if current { 39. } else { 27. }, current);
         if current {
-            let name = match index {
-                0 => "Jogo", 1 => "Mods", 2 => "Packs", 3 => "Shaders",
-                4 => "Arquivos", 5 => "Sistema", _ => "Skins",
-            };
-            let name = if categories.len() == 7 { name } else { label };
-            let size = 13.;
-            let tw = ui.measure(Face::Regular, size, name);
-            ui.text(Face::Regular, size, center_x - tw * 0.5,
-                cross.category_y + 26., color::hex(0xF0F4FF, 232), name);
-            // Light comes from under the icon; no tab background, no underline.
-            ui.rounded(center_x - 2., cross.category_y + 13., 4., 4., 2.,
-                color::hex(0xDCEAFF, 74));
+            // In the real XMB, only the focused category carries a caption.
+            let label = CATEGORY_LABELS.get(index).copied().unwrap_or(fallback);
+            let size = if c.portrait { 13. } else { 14. };
+            let name = ui.fit_text(Face::Regular, size, label,
+                if c.portrait { 115. } else { 150. });
+            let tw = ui.measure(Face::Regular, size, &name);
+            ui.text(Face::Regular, size, cx - tw * 0.5,
+                c.category_y + 30., color::hex(0xEFF6FF, 232), &name);
+            ui.rounded(cx - 1.5, c.category_y + 24., 3., 3., 1.5,
+                color::hex(0xD6EDFF, 84));
         }
         target(hit, ShellAction::Page(index));
     }
     layout
 }
 
-/// Virtualized vertical item column. The focused item occupies a stable
-/// crosshair coordinate even when navigating a long list of Home actions.
+fn context_for(action: HomeAction, view: &HomeView<'_>) -> (&'static str, &'static str, &'static str) {
+    match action {
+        HomeAction::Play => ("MINECRAFT", "JAVA EDITION 26.3",
+            if view.launching { "INICIANDO JOGO" } else if view.installed {
+                "PRONTO PARA JOGAR"
+            } else { "INSTALAÇÃO NECESSÁRIA" }),
+        HomeAction::Profile => ("SESSÃO", "PERFIL DE JOGO", "TROCAR PERFIL"),
+        HomeAction::Mods => ("EXTENSÕES", "MODS", "GERENCIAR CONTEÚDO"),
+        HomeAction::Packs => ("CONTEÚDO", "RECURSOS VISUAIS", "PACOTES INSTALADOS"),
+        HomeAction::Shaders => ("ILUMINAÇÃO", "SHADER PACKS", "PERSONALIZAR VISUAIS"),
+        HomeAction::Files => ("ARQUIVOS", "BIBLIOTECA LOCAL", "ABRIR GERENCIADOR"),
+        HomeAction::Skins => ("IDENTIDADE", "SKINS E CAPAS", "PERSONALIZAR JOGADOR"),
+        HomeAction::Settings | HomeAction::Appearance =>
+            ("SISTEMA", "CONFIGURAÇÕES", "AJUSTAR HORIZON"),
+    }
+}
+
 pub fn home(
     ui: &mut Ui<'_>,
     bounds: [f32; 4],
@@ -302,34 +216,43 @@ pub fn home(
 ) {
     let c = Cross::from_screen(ui.w, ui.h);
     let selected = selected.min(HOME_ACTIONS.len() - 1);
-    let status = if view.launching { "INICIANDO" } else if view.installed {
-        "PRONTO PARA JOGAR"
-    } else {
-        "INSTALAÇÃO NECESSÁRIA"
-    };
-    // Quiet context floats in empty space; no tile, hero, border, or card.
+    let (category, title, subtitle) = context_for(HOME_ACTIONS[selected], view);
+
+    // Context is pushed into the right-side air in landscape. Portrait uses
+    // the same cross-axis grammar but the footer carries compact context.
     if !c.portrait {
-        let context_x = (ui.w * 0.71).min(ui.w - 133.);
-        ui.text(Face::Regular, 11., context_x, c.item_y + 9.,
-            color::hex(0xA9BBD6, 190), "MINECRAFT");
-        ui.text(Face::Regular, 15., context_x, c.item_y + 32.,
-            color::hex(0xEDF2FE, 220), "JAVA 26.3");
-        ui.text(Face::Regular, 10., context_x, c.item_y + 60.,
-            color::hex(0xB3D8CA, 176), status);
+        let context_x = (ui.w * 0.745).min(ui.w - 153.);
+        let max_width = (ui.w - context_x - 15.).max(35.);
+        glyph(ui, icon_for_home(HOME_ACTIONS[selected]),
+            context_x + 31., c.item_y + 6., 56., false);
+        ui.text(Face::Regular, 9.5, context_x, c.item_y + 48.,
+            color::hex(0xB0C9E4, 166), category);
+        let title = ui.fit_text(Face::Regular, 15., title, max_width);
+        ui.text(Face::Regular, 15., context_x, c.item_y + 67.,
+            color::hex(0xE8F3FD, 224), &title);
+        let subtitle = ui.fit_text(Face::Regular, 10., subtitle, max_width);
+        ui.text(Face::Regular, 10., context_x, c.item_y + 99.,
+            color::hex(0xB8D6EE, 177), &subtitle);
     } else {
-        let status = ui.fit_text(Face::Regular, 10.5, status, bounds[2] - 12.);
-        ui.text(Face::Regular, 10.5, bounds[0] + 5., c.bottom - 29.,
-            color::hex(0xB4C8E4, 188), &status);
+        // Context belongs to the selected XMB category, not the system
+        // footer. Place it in the guaranteed gap between the horizontal
+        // category caption and the first focused vertical item. This also
+        // avoids collisions with the Android status/GitHub touch lane.
+        let x = (c.x - 28.).max(bounds[0] + 6.);
+        let width = (bounds[0] + bounds[2] - x - 8.).max(50.);
+        let status = ui.fit_text(Face::Regular, 10.5, subtitle, width);
+        ui.text(Face::Regular, 10.5, x, c.category_y + 55.,
+            color::hex(0xBDD5E8, 206), &status);
     }
 
     for (i, action) in HOME_ACTIONS.into_iter().enumerate() {
         let Some(r) = c.item_hit(bounds, selected, i) else { continue; };
-        let active = i == selected;
-        let glyph_x = r[0] + 27.;
-        let ink = color::hex(0xF5F7FF, if active { 248 } else { 132 });
-        symbol(ui, symbol_for_home(action), glyph_x,
-            r[1] + 23., if active { 27. } else { 20. }, ink);
-        let size = if active { 22. } else { 16. };
+        let chosen = i == selected;
+        let cx = c.x;
+        let cy = r[1] + 23.;
+        glyph(ui, icon_for_home(action), cx, cy,
+            if chosen { 35. } else { 25. }, chosen);
+        let size = if chosen { 21. } else { 16. };
         let label = if i == 0 && !view.installed {
             "Instalar Minecraft"
         } else if i == 0 && view.launching {
@@ -337,10 +260,16 @@ pub fn home(
         } else {
             HOME_LABELS[i]
         };
-        let fitted = ui.fit_text(Face::Regular, size,
-            label, (r[2] - 69.).max(18.));
+        let fitted = ui.fit_text(Face::Regular, size, label, (r[2] - 63.).max(20.));
+        if chosen {
+            // One-pixel spectral glow behind the selected text, no card.
+            ui.text(Face::Regular, size, r[0] + 57.5, r[1] + 9.5,
+                color::hex(0x8CB7E5, 28), &fitted);
+        }
         ui.text(Face::Regular, size, r[0] + 57.,
-            r[1] + if active { 9. } else { 12. }, ink, &fitted);
+            r[1] + if chosen { 9. } else { 12. },
+            color::hex(if chosen { 0xF4F8FF } else { 0xBFD2E4 },
+                if chosen { 249 } else { 152 }), &fitted);
         target(r, action);
     }
 }
@@ -348,42 +277,60 @@ pub fn home(
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn category_focus_moves_without_clipping_or_overlapping_touch_targets() {
-        for (w, h) in [(340., 640.), (410., 780.), (760., 410.), (900., 480.),
-            (1600., 900.)] {
-            let cross = Cross::from_screen(w, h);
-            for selected in 0..7 {
-                let rects: Vec<_> = (0..7)
-                    .filter_map(|i| cross.category_hit(w, selected, i)).collect();
-                assert!(!rects.is_empty());
-                assert!(rects.iter().all(|r| r[2] >= 48. && r[3] >= 48.));
-                assert!(rects.iter().all(|r| r[0] >= 8. && r[0] + r[2] <= w - 8.));
-                assert!(rects.windows(2).all(|p| p[0][0] + p[0][2] < p[1][0]));
-            }
-        }
-    }
-
-    #[test]
-    fn every_home_action_becomes_focusable_even_on_short_landscape() {
-        for (w, h) in [(340., 640.), (760., 410.), (1600., 900.)] {
+        for (w, h) in [(340., 640.), (410., 780.), (760., 410.),
+            (900., 480.), (1600., 900.)] {
             let c = Cross::from_screen(w, h);
-            let bounds = [20., 76., w - 40., h - 132.];
-            for selected in 0..HOME_ACTIONS.len() {
-                assert!(c.item_hit(bounds, selected, selected).is_some(),
-                    "{w}x{h}, item {selected}");
+            for selected in 0..7 {
+                let hit: Vec<_> = (0..7).filter_map(|i| c.category_hit(w, selected, i)).collect();
+                assert!(!hit.is_empty());
+                assert!(hit.iter().all(|r| r[2] >= 48. && r[3] >= 48.));
+                assert!(hit.iter().all(|r| r[0] >= 8. && r[0]+r[2] <= w-8.));
+                assert!(hit.windows(2).all(|p| p[0][0]+p[0][2] < p[1][0]));
             }
+        }
+    }
+    #[test]
+    fn focused_home_action_lines_up_with_horizontal_xmb_cross() {
+        for (w,h) in [(340.,640.),(410.,780.),(760.,410.),
+            (900.,480.),(1600.,900.)] {
+            let c=Cross::from_screen(w,h);
+            let bounds=[if c.portrait {16.} else {24.},76.,
+                w-if c.portrait {36.} else {48.},h-132.];
+            for selected in 0..HOME_ACTIONS.len() {
+                let r=c.item_hit(bounds,selected,selected).expect("selected item");
+                assert!((r[0]+28.-c.x).abs()<0.1, "axis {w}x{h}: {r:?}");
+                assert!(r[1]>=c.category_y+46.);
+                assert!(r[2]>=48. && r[0]+r[2] <= w);
+            }
+        }
+    }
+    #[test]
+    fn portrait_context_is_between_axes_and_never_in_footer_lane() {
+        for (w,h) in [(340.,640.),(410.,780.),(900.,1600.)] {
+            let c=Cross::from_screen(w,h);
+            assert!(c.portrait);
+            let caption_top=c.category_y+55.;
+            let focused_top=c.item_y-6.;
+            assert!(caption_top+16. < focused_top,
+                "{w}x{h}: caption would overlap selected row");
+            assert!(caption_top+16. < c.bottom-30.,
+                "{w}x{h}: caption would overlap footer");
         }
     }
 
     #[test]
-    fn focus_is_clamped_and_actions_remain_stable() {
-        let mut model = Navigation::default();
-        assert_eq!(model.step_home(-200), HomeAction::Play);
-        assert_eq!(model.step_home(200), HomeAction::Settings);
-        model.focus_home(HomeAction::Shaders);
-        assert_eq!(model.selected_home(), 4);
-        assert_eq!(model.selected_action(), HomeAction::Shaders);
+    fn each_home_action_is_reachable_and_uses_its_own_icon() {
+        let mut model=Navigation::default();
+        assert_eq!(model.step_home(-200),HomeAction::Play);
+        assert_eq!(model.step_home(200),HomeAction::Settings);
+        for action in HOME_ACTIONS {
+            model.focus_home(action);
+            assert_eq!(model.selected_action(),action);
+        }
+        let icons:std::collections::HashSet<_> = HOME_ACTIONS
+            .iter().copied().map(icon_for_home).collect();
+        assert_eq!(icons.len(),7);
     }
 }

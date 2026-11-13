@@ -1041,6 +1041,14 @@ impl ApplicationHandler for Launcher {
                 return;
             }
         }
+        // Motion reduced / battery saving: a static procedural wallpaper.
+        // Normal XMB: refresh the slow wave at 30Hz without forcing 60Hz idle
+        // GPU work. Liquid Glass and the running game are unaffected.
+        let xmb_wallpaper_animating = horizon_client::ui_theme::active_theme().experience
+            == horizon_client::ui_theme::ExperiencePreset::OldSchool
+            && !horizon_client::ui_theme::motion::reduced_motion()
+            && !self.catalog.config.battery_perf_mode
+            && !self.catalog.config.super_perf_mode;
         let animating = self.anim.is_active()
             || self.catalog.editing.is_some()
             || self.controller_repeat.is_some()
@@ -1062,13 +1070,15 @@ impl ApplicationHandler for Launcher {
                 .project_modal
                 .as_ref()
                 .is_some_and(|m| m.loading);
-        if (animating || working || async_changed)
+        if (animating || xmb_wallpaper_animating || working || async_changed)
             && let Some(window) = &self.window
         {
             window.request_redraw();
         }
         let frame_ms = if animating {
             16
+        } else if xmb_wallpaper_animating {
+            33
         } else if working {
             100
         } else {

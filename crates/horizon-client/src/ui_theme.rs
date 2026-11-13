@@ -95,33 +95,33 @@ pub enum Face {
     ConsoleDisplay,
 }
 
-/// Old School gets its own real font family across native launcher pages.
-/// Convert before measuring, ellipsis and glyph-cache access, so different
-/// presets never share a cached glyph under an incorrect Face key.
+/// XMB typography is a clean, restrained humanist sans with narrow visual
+/// weight. The retired Old School Bricolage family is deliberately *not* used
+/// by the remake. Use the already OFL-licensed Geist family for glyph coverage,
+/// including pt-BR, without changing Liquid Glass or diagnostics.
 fn launcher_face(face: Face, experience: ExperiencePreset) -> Face {
     if experience != ExperiencePreset::OldSchool { return face; }
     match face {
-        Face::Regular => Face::ConsoleRegular,
-        Face::Medium => Face::ConsoleMedium,
-        Face::SemiBold => Face::ConsoleSemiBold,
-        // Keep monospace diagnostics/source output legible and aligned.
+        Face::ConsoleRegular | Face::ConsoleDisplay => Face::Regular,
+        Face::ConsoleMedium => Face::Medium,
+        Face::ConsoleSemiBold => Face::SemiBold,
         _ => face,
     }
 }
 
-/// Every Old School screen shares one distinct outlined pictogram family.
-/// Resolve before atlas lookup, never by globally replacing the original
-/// icons, which remain unchanged for Liquid Glass and Standard.
+/// New XMB glyphs are original SDF-like rasterized vectors. Never route the
+/// old Bricolage-era Console icons into the new interface; leave every other
+/// preset's icon mapping entirely untouched.
 fn launcher_icon(icon: Icon, experience: ExperiencePreset) -> Icon {
     if experience != ExperiencePreset::OldSchool { return icon; }
     match icon {
-        Icon::Mods => Icon::ConsoleMods,
-        Icon::Packs => Icon::ConsolePacks,
-        Icon::Shaders => Icon::ConsoleShaders,
-        Icon::Installed | Icon::Folder => Icon::ConsoleFiles,
-        Icon::Person => Icon::ConsoleSkins,
-        Icon::Settings | Icon::Gear => Icon::ConsoleSettings,
-        Icon::Play => Icon::ConsolePlay,
+        Icon::Mods => Icon::XmbMods,
+        Icon::Packs => Icon::XmbPacks,
+        Icon::Shaders => Icon::XmbShaders,
+        Icon::Installed | Icon::Folder => Icon::XmbFiles,
+        Icon::Person => Icon::XmbIdentity,
+        Icon::Settings | Icon::Gear => Icon::XmbSystem,
+        Icon::Play | Icon::Gamepad => Icon::XmbGame,
         _ => icon,
     }
 }
@@ -193,6 +193,14 @@ pub enum Icon {
     ConsoleSkins,
     ConsoleSettings,
     ConsolePlay,
+    /// Original super-sampled pictograms of the independent Horizon XMB.
+    XmbGame,
+    XmbMods,
+    XmbPacks,
+    XmbShaders,
+    XmbFiles,
+    XmbSystem,
+    XmbIdentity,
 }
 
 struct Fonts {
@@ -293,8 +301,93 @@ fn seg_dist(px: f32, py: f32, ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
     ((px - (ax + t * dx)).powi(2) + (py - (ay + t * dy)).powi(2)).sqrt()
 }
 
+/// Signed distance for a rounded rectangle in local icon coordinates.
+/// Analytic antialiasing happens in the 4x supersampled glyph rasterizer.
+fn xmb_rounded_sdf(u: f32, v: f32, cx: f32, cy: f32,
+    half_w: f32, half_h: f32, radius: f32) -> f32 {
+    let qx = (u - cx).abs() - half_w + radius;
+    let qy = (v - cy).abs() - half_h + radius;
+    qx.max(0.).hypot(qy.max(0.)) + qx.max(qy).min(0.) - radius
+}
+
 fn icon_hit(icon: Icon, u: f32, v: f32) -> bool {
     match icon {
+        // Entirely new XMB family: thin strokes, softly sculpted geometry,
+        // carefully related silhouette widths and no third-party logo paths.
+        Icon::XmbGame => {
+            let hull = xmb_rounded_sdf(u,v,0.50,0.55,0.38,0.205,0.16);
+            let body = hull.abs() < 0.038;
+            let shoulder_l = seg_dist(u,v,0.21,0.39,0.34,0.36) < 0.038;
+            let shoulder_r = seg_dist(u,v,0.66,0.36,0.79,0.39) < 0.038;
+            let cross = seg_dist(u,v,0.28,0.52,0.40,0.52) < 0.026
+                || seg_dist(u,v,0.34,0.46,0.34,0.58) < 0.026;
+            let keys = [(0.65,0.49),(0.73,0.57)].iter().any(|(x,y)|
+                (u - *x).hypot(v - *y) < 0.037);
+            body || shoulder_l || shoulder_r || cross || keys
+        }
+        Icon::XmbMods => {
+            let orbit = (u-0.5).hypot(v-0.5);
+            let ring = (orbit-0.287).abs() < 0.030;
+            let nodes = [(0.50,0.19),(0.79,0.50),(0.50,0.81),(0.21,0.50)]
+                .iter().any(|&(x,y)| {
+                    let d=(u-x).hypot(v-y);
+                    d>=0.055 && d<=0.102
+                });
+            let center = xmb_rounded_sdf(u,v,0.50,0.50,0.12,0.12,0.025).abs()<0.035;
+            ring || nodes || center
+        }
+        Icon::XmbPacks => {
+            let top = [
+                (0.18,0.39,0.50,0.19), (0.50,0.19,0.82,0.39),
+                (0.18,0.39,0.50,0.58), (0.50,0.58,0.82,0.39),
+            ].iter().any(|&(a,b,c,d)| seg_dist(u,v,a,b,c,d)<0.032);
+            let spine = seg_dist(u,v,0.50,0.58,0.50,0.83)<0.034;
+            let walls = [
+                (0.18,0.39,0.18,0.65),(0.18,0.65,0.50,0.83),
+                (0.82,0.39,0.82,0.65),(0.50,0.83,0.82,0.65),
+            ].iter().any(|&(a,b,c,d)| seg_dist(u,v,a,b,c,d)<0.032);
+            top || spine || walls
+        }
+        Icon::XmbShaders => {
+            let (dx,dy)=(u-0.50,v-0.50);
+            let radius=dx.hypot(dy);
+            let iris=(radius-0.20).abs()<0.040;
+            let rays=[(0.5,0.08,0.5,0.21),(0.5,0.79,0.5,0.92),
+                (0.08,0.5,0.21,0.5),(0.79,0.5,0.92,0.5),
+                (0.19,0.19,0.29,0.29),(0.71,0.71,0.81,0.81),
+                (0.19,0.81,0.29,0.71),(0.71,0.29,0.81,0.19)]
+                .iter().any(|&(a,b,c,d)|seg_dist(u,v,a,b,c,d)<0.029);
+            let pupil=radius<0.058;
+            iris || rays || pupil
+        }
+        Icon::XmbFiles => {
+            let top = seg_dist(u,v,0.14,0.30,0.39,0.30)<0.035
+                || seg_dist(u,v,0.39,0.30,0.47,0.39)<0.035
+                || seg_dist(u,v,0.47,0.39,0.86,0.39)<0.035;
+            let edges=seg_dist(u,v,0.14,0.30,0.14,0.78)<0.035
+                || seg_dist(u,v,0.86,0.39,0.86,0.78)<0.035
+                || seg_dist(u,v,0.14,0.78,0.86,0.78)<0.035;
+            let inner=seg_dist(u,v,0.29,0.61,0.67,0.61)<0.022;
+            top || edges || inner
+        }
+        Icon::XmbSystem => {
+            let rad=(u-0.5).hypot(v-0.5);
+            let rings=(rad-0.254).abs()<0.031 || (rad-0.092).abs()<0.035;
+            let teeth=[(1.0,0.0),(-1.0,0.0),(0.0,1.0),(0.0,-1.0),
+                (0.7071,0.7071),(-0.7071,0.7071),
+                (0.7071,-0.7071),(-0.7071,-0.7071)]
+                .iter().any(|&(x,y)|seg_dist(u,v,0.5+x*0.306,0.5+y*0.306,
+                    0.5+x*0.400,0.5+y*0.400)<0.037);
+            rings || teeth
+        }
+        Icon::XmbIdentity => {
+            let head=(u-0.5).hypot(v-0.31);
+            let neck=seg_dist(u,v,0.43,0.52,0.43,0.61)<0.028
+                || seg_dist(u,v,0.57,0.52,0.57,0.61)<0.028;
+            let torso=((u-0.5)/0.32).powi(2)+((v-0.83)/0.25).powi(2);
+            let shoulder=(torso-1.0).abs()<0.15 && v>0.63 && v<0.86;
+            ((head-0.172).abs()<0.036) || neck || shoulder
+        }
         // Light 2010-era console icon language: common thin outline (approx.
         // 0.04 local units), generous optical padding, no filled Android blobs
         // or copied PlayStation/Xbox icon paths. Already supersampled by Cache.
@@ -1726,6 +1819,18 @@ impl<'a> Ui<'a> {
         self.text(face, size, cx - w / 2.0, y, color, text);
     }
 
+    /// Render the native XMB atmosphere on the real GPU using a single
+    /// fullscreen HUD quad. No atlas texture, CPU pixel cache or extra pass.
+    /// For all other themes this is never invoked.
+    pub fn xmb_wallpaper(&mut self, phase: f32, quality: f32) {
+        let w = self.px_x(self.w) / self.scale;
+        let h = self.px_y(self.h) / self.scale;
+        let p = [[0., 0.], [w, 0.], [w, h], [0., h]];
+        let sentinel = [[-4., 0.]; 4];
+        let parameters = [[phase.clamp(0., 10_000.), quality.clamp(0., 1.)]; 4];
+        self.batch.quad_glint(p, sentinel, parameters, 0xFFFF_FFFF);
+    }
+
     /// Filled axis-aligned rectangle in dp.
     pub fn fill(&mut self, x: f32, y: f32, w: f32, h: f32, color: u32) {
         if color >> 24 == 0 || w <= 0.0 || h <= 0.0 {
@@ -3098,15 +3203,15 @@ mod tests {
     #[test]
     fn console_icon_routing_does_not_change_other_presets() {
         let cases = [
-            (Icon::Mods, Icon::ConsoleMods),
-            (Icon::Packs, Icon::ConsolePacks),
-            (Icon::Shaders, Icon::ConsoleShaders),
-            (Icon::Installed, Icon::ConsoleFiles),
-            (Icon::Folder, Icon::ConsoleFiles),
-            (Icon::Person, Icon::ConsoleSkins),
-            (Icon::Settings, Icon::ConsoleSettings),
-            (Icon::Gear, Icon::ConsoleSettings),
-            (Icon::Play, Icon::ConsolePlay),
+            (Icon::Mods, Icon::XmbMods),
+            (Icon::Packs, Icon::XmbPacks),
+            (Icon::Shaders, Icon::XmbShaders),
+            (Icon::Installed, Icon::XmbFiles),
+            (Icon::Folder, Icon::XmbFiles),
+            (Icon::Person, Icon::XmbIdentity),
+            (Icon::Settings, Icon::XmbSystem),
+            (Icon::Gear, Icon::XmbSystem),
+            (Icon::Play, Icon::XmbGame),
         ];
         for (source, adapted) in cases {
             assert_eq!(launcher_icon(source, ExperiencePreset::OldSchool), adapted);
@@ -3118,11 +3223,11 @@ mod tests {
     #[test]
     fn console_typography_is_preset_scoped_and_preserves_monospace() {
         assert_eq!(launcher_face(Face::Regular, ExperiencePreset::OldSchool),
-            Face::ConsoleRegular);
+            Face::Regular);
         assert_eq!(launcher_face(Face::Medium, ExperiencePreset::OldSchool),
-            Face::ConsoleMedium);
-        assert_eq!(launcher_face(Face::SemiBold, ExperiencePreset::OldSchool),
-            Face::ConsoleSemiBold);
+            Face::Medium);
+        assert_eq!(launcher_face(Face::ConsoleDisplay, ExperiencePreset::OldSchool),
+            Face::Regular);
         assert_eq!(launcher_face(Face::Mono, ExperiencePreset::OldSchool), Face::Mono);
         for experience in [ExperiencePreset::LiquidGlass, ExperiencePreset::Standard] {
             assert_eq!(launcher_face(Face::Regular, experience), Face::Regular);
@@ -3139,9 +3244,9 @@ mod tests {
         {
             assert_ne!(fonts.face(face).glyph_id('A').0, 0);
         }
-        let icons = [Icon::ConsoleMods, Icon::ConsolePacks, Icon::ConsoleShaders,
-            Icon::ConsoleFiles, Icon::ConsoleSkins, Icon::ConsoleSettings,
-            Icon::ConsolePlay];
+        let icons = [Icon::XmbGame, Icon::XmbMods, Icon::XmbPacks,
+            Icon::XmbShaders, Icon::XmbFiles, Icon::XmbIdentity,
+            Icon::XmbSystem];
         let mut signatures = std::collections::HashSet::new();
         for icon in icons {
             let sample: Vec<_> = (0..24).flat_map(|y| (0..24).map(move |x|
