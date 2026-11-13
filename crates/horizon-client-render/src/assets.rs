@@ -92,6 +92,8 @@ pub struct RenderAssets {
     /// CPU CEM/ETF resources prepared for native entity rendering; vanilla stays active
     /// until a compatible entity geometry/texture renderer explicitly opts in.
     pub entity_resources: Arc<horizon_optifine::entity_resources::EntityResources>,
+    /// Geometry compiled once from CEM boxes, keyed by namespaced entity id.
+    pub cem_meshes: Arc<std::collections::BTreeMap<String, crate::cem_mesh::Mesh>>,
     pub model_placements: Vec<(horizon_core::position::BlockPos, BlockStateId)>,
     pub model_gallery: Vec<Value>,
     pub animations: Vec<crate::sprites::SpriteAnimation>,
@@ -230,6 +232,11 @@ impl RenderAssets {
         };
         // Keep pack data alive for the renderer after ParsedModels is consumed.
         let entity_resources = Arc::new(parsed.take_entity_resources());
+        let (cem_meshes, cem_warnings) = crate::cem_mesh::compile_all(&entity_resources);
+        for warning in cem_warnings.iter().take(16) {
+            log::debug!("CEM renderer: {warning}");
+        }
+        let cem_meshes = Arc::new(cem_meshes);
         let model_library = parsed.into_item_library();
         // Fluids are drawn by the fluid renderer, not block models; breaking
         // progress uses the destroy-stage overlays.
@@ -264,6 +271,7 @@ impl RenderAssets {
             model_catalog: models.catalog,
             model_library,
             entity_resources,
+            cem_meshes,
             model_placements: models.placements,
             model_gallery: models.states,
             animations: sprites.animations,
