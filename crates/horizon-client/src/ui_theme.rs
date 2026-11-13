@@ -1726,6 +1726,18 @@ impl<'a> Ui<'a> {
         self.text(face, size, cx - w / 2.0, y, color, text);
     }
 
+    /// Render the native XMB atmosphere on the real GPU using a single
+    /// fullscreen HUD quad. No atlas texture, CPU pixel cache or extra pass.
+    /// For all other themes this is never invoked.
+    pub fn xmb_wallpaper(&mut self, phase: f32, quality: f32) {
+        let w = self.px_x(self.w) / self.scale;
+        let h = self.px_y(self.h) / self.scale;
+        let p = [[0., 0.], [w, 0.], [w, h], [0., h]];
+        let sentinel = [[-4., 0.]; 4];
+        let parameters = [[phase.clamp(0., 10_000.), quality.clamp(0., 1.)]; 4];
+        self.batch.quad_glint(p, sentinel, parameters, 0xFFFF_FFFF);
+    }
+
     /// Filled axis-aligned rectangle in dp.
     pub fn fill(&mut self, x: f32, y: f32, w: f32, h: f32, color: u32) {
         if color >> 24 == 0 || w <= 0.0 || h <= 0.0 {
