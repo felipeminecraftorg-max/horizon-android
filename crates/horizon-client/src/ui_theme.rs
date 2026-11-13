@@ -88,6 +88,11 @@ pub enum Face {
     SemiBold,
     /// Counts, timestamps and the boot screen's console lines.
     Mono,
+    /// Old School-only humanist/geometric console typography; bundled OFL.
+    ConsoleRegular,
+    ConsoleMedium,
+    ConsoleSemiBold,
+    ConsoleDisplay,
 }
 
 /// Vector icons used by the Material You 3 Android launcher navigation rail,
@@ -147,10 +152,20 @@ pub enum Icon {
     FileText,
     Trash,
     Share,
+    // Distinct original 2006–2013-inspired outlined console pictograms.
+    // Use these only in the Old School shell/dashboard; keep every other
+    // preset's existing icons unchanged.
+    ConsoleMods,
+    ConsolePacks,
+    ConsoleShaders,
+    ConsoleFiles,
+    ConsoleSkins,
+    ConsoleSettings,
+    ConsolePlay,
 }
 
 struct Fonts {
-    faces: [FontRef<'static>; 4],
+    faces: [FontRef<'static>; 8],
 }
 impl Fonts {
     fn load() -> Self {
@@ -161,6 +176,10 @@ impl Fonts {
                 f(horizon_theme::fonts::GEIST_MEDIUM),
                 f(horizon_theme::fonts::GEIST_SEMIBOLD),
                 f(horizon_theme::fonts::GEIST_MONO),
+                f(horizon_theme::fonts::BRICOLAGE_REGULAR),
+                f(horizon_theme::fonts::BRICOLAGE_MEDIUM),
+                f(horizon_theme::fonts::BRICOLAGE_SEMIBOLD),
+                f(horizon_theme::fonts::BRICOLAGE_DISPLAY_BOLD),
             ],
         }
     }
@@ -245,6 +264,74 @@ fn seg_dist(px: f32, py: f32, ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
 
 fn icon_hit(icon: Icon, u: f32, v: f32) -> bool {
     match icon {
+        // Light 2010-era console icon language: common thin outline (approx.
+        // 0.04 local units), generous optical padding, no filled Android blobs
+        // or copied PlayStation/Xbox icon paths. Already supersampled by Cache.
+        Icon::ConsoleMods => {
+            [(0.23, 0.23), (0.61, 0.23), (0.23, 0.61), (0.61, 0.61)]
+                .iter().any(|&(x, y)| {
+                    let inside = (x..=x + 0.17).contains(&u)
+                        && (y..=y + 0.17).contains(&v);
+                    let inner = (x + 0.042..=x + 0.128).contains(&u)
+                        && (y + 0.042..=y + 0.128).contains(&v);
+                    inside && !inner
+                })
+                || seg_dist(u, v, 0.50, 0.40, 0.50, 0.60) < 0.024
+        }
+        Icon::ConsolePacks => {
+            [(0.29, 0.44), (0.47, 0.60), (0.64, 0.76)].iter().any(|&y| {
+                seg_dist(u, v, 0.19, y, 0.50, y - 0.15) < 0.039
+                    || seg_dist(u, v, 0.50, y - 0.15, 0.81, y) < 0.039
+                    || seg_dist(u, v, 0.19, y, 0.50, y + 0.15) < 0.039
+                    || seg_dist(u, v, 0.50, y + 0.15, 0.81, y) < 0.039
+            })
+        }
+        Icon::ConsoleShaders => {
+            let d = ((u - 0.50).powi(2) + (v - 0.50).powi(2)).sqrt();
+            (0.16..=0.22).contains(&d)
+                || [(0.50, 0.10, 0.50, 0.23),
+                    (0.50, 0.77, 0.50, 0.90),
+                    (0.10, 0.50, 0.23, 0.50),
+                    (0.77, 0.50, 0.90, 0.50),
+                    (0.20, 0.20, 0.29, 0.29),
+                    (0.71, 0.71, 0.80, 0.80),
+                    (0.20, 0.80, 0.29, 0.71),
+                    (0.71, 0.29, 0.80, 0.20)]
+                    .iter().any(|&(ax, ay, bx, by)|
+                        seg_dist(u, v, ax, ay, bx, by) <= 0.036)
+        }
+        Icon::ConsoleFiles => {
+            let tab = seg_dist(u, v, 0.15, 0.29, 0.39, 0.29) <= 0.039
+                || seg_dist(u, v, 0.39, 0.29, 0.47, 0.36) <= 0.039;
+            let top = seg_dist(u, v, 0.47, 0.36, 0.84, 0.36) <= 0.039;
+            let left = seg_dist(u, v, 0.15, 0.29, 0.15, 0.77) <= 0.039;
+            let right = seg_dist(u, v, 0.84, 0.36, 0.84, 0.77) <= 0.039;
+            let bottom = seg_dist(u, v, 0.15, 0.77, 0.84, 0.77) <= 0.039;
+            tab || top || left || right || bottom
+        }
+        Icon::ConsoleSkins => {
+            let d = ((u - 0.50).powi(2) + (v - 0.31).powi(2)).sqrt();
+            let head = (0.13..=0.195).contains(&d);
+            let shoulders = ((u - 0.50) / 0.34).powi(2)
+                + ((v - 0.90) / 0.30).powi(2);
+            head || ((0.73..=1.20).contains(&shoulders)
+                && (0.64..=0.84).contains(&v))
+        }
+        Icon::ConsoleSettings => {
+            let tracks = [0.28, 0.50, 0.72];
+            let knobs = [0.36, 0.66, 0.44];
+            (0..3).any(|i| {
+                let line = seg_dist(u, v, 0.15, tracks[i], 0.85, tracks[i]) <= 0.033;
+                let d = ((u - knobs[i]).powi(2) + (v - tracks[i]).powi(2)).sqrt();
+                (line && d > 0.11) || (0.083..=0.125).contains(&d)
+            })
+        }
+        Icon::ConsolePlay => {
+            let a = seg_dist(u, v, 0.29, 0.20, 0.78, 0.50) <= 0.045;
+            let b = seg_dist(u, v, 0.78, 0.50, 0.29, 0.80) <= 0.045;
+            let c = seg_dist(u, v, 0.29, 0.20, 0.29, 0.80) <= 0.045;
+            a || b || c
+        }
         Icon::HorizonLogo => {
             let left_bar = seg_dist(u, v, 0.22, 0.16, 0.22, 0.84) <= 0.095;
             let right_bar = seg_dist(u, v, 0.78, 0.16, 0.78, 0.84) <= 0.095;
@@ -2973,6 +3060,29 @@ pub mod motion {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn bundled_console_font_and_icon_families_are_distinct() {
+        // Separate face variants must resolve through the same glyph atlas.
+        let fonts = Fonts::load();
+        for face in [Face::ConsoleRegular, Face::ConsoleMedium,
+            Face::ConsoleSemiBold, Face::ConsoleDisplay]
+        {
+            assert_ne!(fonts.face(face).glyph_id('A').0, 0);
+        }
+        let icons = [Icon::ConsoleMods, Icon::ConsolePacks, Icon::ConsoleShaders,
+            Icon::ConsoleFiles, Icon::ConsoleSkins, Icon::ConsoleSettings,
+            Icon::ConsolePlay];
+        let mut signatures = std::collections::HashSet::new();
+        for icon in icons {
+            let sample: Vec<_> = (0..24).flat_map(|y| (0..24).map(move |x|
+                icon_hit(icon, (x as f32 + 0.5) / 24.0,
+                    (y as f32 + 0.5) / 24.0))).collect();
+            assert!(sample.iter().any(|&pixel| pixel), "{icon:?} is blank");
+            assert!(sample.iter().any(|&pixel| !pixel), "{icon:?} is filled");
+            assert!(signatures.insert(sample), "{icon:?} duplicates another icon");
+        }
+    }
+
     use super::*;
 
     #[test]
