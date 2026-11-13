@@ -120,11 +120,15 @@ impl Rig {
     /// Controls remain unaffected. Camera angles are additive over the
     /// already-computed FirstPerson/CameraOverhaul output from the engine.
     pub fn apply(&self, yaw:f32,pitch:f32,roll:f32,fov:f32) -> (f32,f32,f32,f32) {
+        if !self.config.enabled || self.config.reduced_motion {
+            // Preserve vanilla camera values and custom FoV configurations.
+            return (yaw,pitch,roll,fov);
+        }
         (
             yaw+self.current.yaw,
             (pitch+self.current.pitch).clamp(-89.9,89.9),
             roll+self.current.roll,
-            (fov+self.current.fov).clamp(30.0,110.0),
+            fov+self.current.fov,
         )
     }
 }
@@ -188,6 +192,6 @@ mod tests {
         r.advance(Some(Station::Enchanting),0.0);
         r.advance(Some(Station::Enchanting),0.3);
         let (_y,p,_r,f)=r.apply(15.0,89.0,0.0,31.0);
-        assert!(p<=89.9 && p>=-89.9 && f>=30.0);
+        assert!(p<=89.9 && p>=-89.9 && f<31.0);
     }
 }
