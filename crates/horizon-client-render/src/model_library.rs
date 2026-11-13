@@ -63,6 +63,11 @@ impl ParsedModels {
         &self.entities
     }
 
+    /// Transfer prepared CEM/ETF data to RenderAssets before item-model consumption.
+    pub fn take_entity_resources(&mut self) -> horizon_optifine::entity_resources::EntityResources {
+        std::mem::take(&mut self.entities)
+    }
+
     /// Blocks require every referenced resource, including parents. Items instead
     /// skip broken resources and use the resolver's missing-model fallback.
     pub fn block_library(&self, root: &Path, pending: Vec<String>) -> Result<ModelLibrary> {
