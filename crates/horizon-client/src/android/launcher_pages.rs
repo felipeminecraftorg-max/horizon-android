@@ -7205,6 +7205,9 @@ impl Launcher {
                 self.catalog.editing = None;
                 crate::platform::hide();
             }
+            // The context overlay actions are resolved above before normal dispatch.
+            // Exhaustive coverage protects Android Rust builds when the Action enum grows.
+            Some(Action::XmbContextChoice(_) | Action::XmbContextDismiss) => {}
             None => {}
         }
         Ok(())
