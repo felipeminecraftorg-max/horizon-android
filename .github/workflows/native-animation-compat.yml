@@ -26,6 +26,6 @@ jobs:
       - name: Test OptiFine model, ETF and animation modules
         run: cargo test --locked -p horizon-optifine
       - name: Check renderer resource-loader integration
-        run: cargo check --locked -p horizon-client --no-default-features-render
+        run: cargo check --locked -p horizon-client-render
       - name: Check playable client CEM draw integration
-        run: cargo check --locked -p horizon-client
+        run: cargo check --locked -p horizon-client --no-default-features
