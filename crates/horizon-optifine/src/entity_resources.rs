@@ -219,6 +219,40 @@ impl EntityResources {
         self.models.get(self.models_by_entity.get(entity_id)?)
     }
 
+    /// Convert a CEM root texture reference to a namespaced sprite key.
+    /// Paths resolve inside the resource-pack namespace, never as filesystem
+    /// paths. A missing, unsupported or malformed image is not substituted.
+    pub fn cem_texture_sprite(&self, entity_id: &str) -> Option<String> {
+        let jem = self.models_by_entity.get(entity_id)?;
+        let texture = self.models.get(jem)?.model.texture.as_deref()?;
+        if texture.is_empty() || texture.len() > 256
+            || texture.starts_with('/') || texture.contains('\\')
+            || texture.contains('?') || texture.contains('#') {return None;}
+        let without_ext = texture.strip_suffix(".png").unwrap_or(texture);
+        let texture = without_ext.strip_prefix("./").unwrap_or(without_ext);
+        let (namespace, texture) = match texture.split_once(':') {
+            Some((ns, path)) => (ns, path),
+            None => (jem.strip_prefix("assets/")?.split('/').next()?, texture),
+        };
+        if namespace.is_empty()
+            || !namespace.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'_'||b==b'-')
+            || texture.is_empty() || texture.contains(':')
+            || texture.split('/').any(|p|p.is_empty()||p=="."||p=="..") {return None;}
+        let root=jem.strip_prefix("assets/")?;
+        let (_,local_path)=root.split_once('/')?;
+        let parent=local_path.rsplit_once('/')?.0;
+        let sprite=if let Some(name)=texture.strip_prefix("textures/") {
+            name.to_owned()
+        } else if texture.starts_with("optifine/")
+            || texture.starts_with("mcpatcher/")
+            || texture.starts_with("entity/") {
+            texture.to_owned()
+        } else {
+            format!("{parent}/{texture}")
+        };
+        Some(format!("{namespace}:{sprite}"))
+    }
+
     /// Resolve an ETF random texture rule set using the vanilla texture identifier.
     /// Example: minecraft:textures/entity/zombie/zombie.png.
     pub fn rules_for_texture(&self, texture_id: &str) -> Option<&entity_textures::TextureRules> {
@@ -342,6 +376,27 @@ mod tests {
         assert_eq!(loaded.models.len(),1);
         assert!(loaded.warnings.len() >= 2);
         assert!(loaded.models.values().next().unwrap().animations.is_empty());
+    }
+    #[test]
+    fn resolves_cem_root_textures_from_pack_namespace() {
+        let f=Fixture::new();
+        f.write("assets/minecraft/optifine/cem/zombie.jem",
+            r#"{"texture":"zombie_variant.png","models":[{"id":"head"}]}"#);
+        f.write("assets/minecraft/optifine/cem/cow.jem",
+            r#"{"texture":"textures/entity/cow/cow.png","models":[{"id":"head"}]}"#);
+        let loaded=EntityResources::load(&f.0);
+        assert_eq!(loaded.cem_texture_sprite("minecraft:zombie"),
+            Some("minecraft:optifine/cem/zombie_variant".into()));
+        assert_eq!(loaded.cem_texture_sprite("minecraft:cow"),
+            Some("minecraft:entity/cow/cow".into()));
+    }
+    #[test]
+    fn rejects_root_texture_traversal_and_external_paths() {
+        let f=Fixture::new();
+        f.write("assets/minecraft/optifine/cem/zombie.jem",
+            r#"{"texture":"../outside.png","models":[{"id":"head"}]}"#);
+        let loaded=EntityResources::load(&f.0);
+        assert_eq!(loaded.cem_texture_sprite("minecraft:zombie"),None);
     }
     #[test]
     fn path_to_entity_id() {
