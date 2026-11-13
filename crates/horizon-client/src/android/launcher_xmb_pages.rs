@@ -66,7 +66,9 @@ fn xmb_entry(
 ) {
     const RH:f32=58.;
     if y+RH<top || y>bottom {return;}
-    let action_width=if trailing.is_some(){if w<390.{76.}else{106.}}else{0.};
+    // Reserve enough room for optional secondary actions on two distinct
+    // baselines. No full-row overlay can steal taps from Export/Delete.
+    let action_width=if trailing.is_some(){140.}else{0.};
     let left=x+4.;
     let title_x=x+51.;
     let text_w=(w-65.-action_width).max(40.);
@@ -429,20 +431,25 @@ impl Launcher {
 
         let action_y=search_y+41.;
         let open_w=if w<400.{104.}else{121.};
+        // On portrait, source selection gets its own row instead of
+        // disappearing when Import/Open Folder occupy the horizontal lane.
+        let source_second_line=matches!(page,Page::Mods|Page::Shaders)
+            && w < open_w*2.+165.;
         xmb_text_action(ui,&mut self.targets,
             [x,action_y,open_w,30.],"Abrir pasta",Action::OpenFolder(kind),false);
         xmb_text_action(ui,&mut self.targets,
             [x+open_w+5.,action_y,open_w,30.],"Importar",Action::Import(kind),false);
         if matches!(page,Page::Mods|Page::Shaders) {
-            let hx=x+w-145.;
-            if hx>x+open_w*2.+3. {
+            let hx=if source_second_line{x}else{x+w-145.};
+            if source_second_line || hx>x+open_w*2.+3. {
                 use crate::shader_catalog::Origin;
                 let current=if page==Page::Mods{self.catalog.config.mod_source}
                     else{self.catalog.config.shader_source};
                 for (index,origin) in [Origin::Horizon,Origin::Modrinth]
                     .into_iter().enumerate(){
                     xmb_text_action(ui,&mut self.targets,
-                        [hx+index as f32*74.,action_y,70.,30.],
+                        [hx+index as f32*74.,
+                            action_y+if source_second_line{34.}else{0.},70.,30.],
                         origin.source().label(),
                         if page==Page::Mods{Action::ModSource(origin)}
                             else{Action::ShaderSource(origin)},
@@ -451,7 +458,7 @@ impl Launcher {
             }
         }
 
-        let list_top=action_y+39.;
+        let list_top=action_y+if source_second_line{73.}else{39.};
         let list_bottom=h-55.;
         let row_h=59.;
 
@@ -630,12 +637,12 @@ impl Launcher {
             // Export/Delete are genuine secondary actions. Place them on a
             // distinct context ribbon reachable by touch, preserving their
             // production targets without overlaying the main action.
-            let r=[x+w-170.,y+38.,75.,18.];
+            let r=[x+w-140.,y+34.,66.,22.];
             if y>=list_top && y+58.<=bottom {
                 xmb_text_action(ui,&mut self.targets,r,"Exportar",
                     Action::ExportLocal(i),false);
                 xmb_text_action(ui,&mut self.targets,
-                    [x+w-88.,y+38.,81.,18.],"Excluir",
+                    [x+w-70.,y+34.,66.,22.],"Excluir",
                     Action::DeleteLocal(i),false);
             }
         }
