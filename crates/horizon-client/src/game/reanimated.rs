@@ -365,6 +365,43 @@ mod tests {
         assert_eq!(m.toast_states["general"].entered,0.0);
         assert_eq!(m.toast_states["music"].entered,0.2);
     }
+    fn sample_bar(slot: usize) -> Vec<GuiDraw> {
+        vec![GuiDraw::Sprite {
+            sprite:std::borrow::Cow::Borrowed("hud/hotbar_selection"),
+            x:100+20*slot as i32,y:0,w:24,h:23,region:None,
+            color:u32::MAX,blend:horizon_client::hud_layout::Blend::Textured,
+        }]
+    }
+    fn sample_x(draws: &[GuiDraw]) -> i32 {
+        match &draws[0] {
+            GuiDraw::Sprite{x,..}=>*x,
+            _=>unreachable!(),
+        }
+    }
+    #[test] fn selection_frame_moves_smoothly_and_stays_bounded() {
+        let mut animator=ReAnimated::new(Config{enabled:true,..Default::default()});
+        let mut draw=sample_bar(0);
+        animator.animate_hotbar(&mut draw,0,0.0);
+        let mut shifted=sample_bar(8);
+        animator.animate_hotbar(&mut shifted,8,0.016);
+        assert!(sample_x(&shifted)>100);
+        assert!(sample_x(&shifted)<260);
+        for frame in 2..100 {
+            let mut d=sample_bar(8);
+            animator.animate_hotbar(&mut d,8,frame as f32/60.0);
+            assert!((100..=260).contains(&sample_x(&d)));
+        }
+        let mut settled=sample_bar(8);
+        animator.animate_hotbar(&mut settled,8,2.0);
+        assert_eq!(sample_x(&settled),260);
+    }
+    #[test] fn disabled_hotbar_retains_base_position() {
+        let mut m=ReAnimated::new(Config{enabled:true,hotbar:false,..Default::default()});
+        let mut d=sample_bar(7);
+        m.animate_hotbar(&mut d,7,0.1);
+        assert_eq!(sample_x(&d),240);
+        assert_eq!(m.hotbar_position,Some(7.0));
+    }
     #[test] fn fps_independent_fade() {
         let mut a=ReAnimated::new(Config {enabled:true,..Default::default()});
         let mut b=a.clone();
