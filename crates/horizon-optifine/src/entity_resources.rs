@@ -10,6 +10,7 @@ use std::{
 
 const MAX_DOCUMENT: u64 = 1_048_576;
 const MAX_FILES: usize = 4096;
+const MAX_WARNINGS: usize = 1024;
 const MAX_DEPTH: usize = 16;
 
 /// Parsed model and compiled pose expressions. No GPU objects are allocated here.
@@ -108,6 +109,18 @@ impl PreparedModel {
         }
         Self { model, animations, unsupported_expressions }
     }
+    /// Build model-space matrices after evaluating the supported animation channels.
+    /// The result is data for a renderer, not a GPU upload or vanilla model override.
+    pub fn pose<F: Fn(&str) -> Option<f64>>(
+        &self, state: &F,
+    ) -> Result<(crate::entity_pose::Pose, Vec<String>), crate::entity_pose::PoseError> {
+        let mut pose = crate::entity_pose::Pose::from_model(&self.model)?;
+        let (samples, mut warnings) = self.sample(state);
+        warnings.extend(pose.apply_sample(&samples).into_iter()
+            .map(|(key, err)| format!("{key}: {err:?}")));
+        Ok((pose, warnings))
+    }
+
     /// Sample supported CEM animation channels using the *current* entity render state.
     /// A renderer must map channel targets to actual model parts and restore vanilla
     /// pose values on failed expressions; the result is not applied to gameplay state.
@@ -182,6 +195,11 @@ impl EntityResources {
                 }
             }
         }
+        if resources.warnings.len() > MAX_WARNINGS {
+            let discarded = resources.warnings.len() - MAX_WARNINGS;
+            resources.warnings.truncate(MAX_WARNINGS);
+            resources.warnings.push(format!("{discarded} additional compatibility warnings omitted"));
+        }
         resources
     }
 
@@ -240,6 +258,9 @@ mod tests {
         let model = loaded.models.values().next().unwrap();
         assert_eq!(model.model.parts[0].boxes[0].coords[3],8.0);
         assert_eq!(model.sample(&|name| (name=="limb_swing").then_some(0.0)).0[0].1,0.0);
+        let (pose,warnings) = model.pose(&|name| (name=="limb_swing").then_some(0.0)).unwrap();
+        assert!(warnings.is_empty());
+        assert!(pose.world_matrix("head").is_some());
     }
     #[test]
     fn broken_entries_do_not_cancel_valid_resources() {
