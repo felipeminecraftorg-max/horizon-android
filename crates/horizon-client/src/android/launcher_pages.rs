@@ -1295,8 +1295,13 @@ impl Launcher {
             self.catalog.page,
             self.catalog.settings_category,
             {
-                let target = layout.nav_rect(w, h, selected_idx, Page::ALL.len());
-                [target[0], target[1]]
+                if layout.console {
+                    let cross = horizon_client::ui_theme::launcher_xmb::Cross::from_screen(w, h);
+                    [cross.x - 27., cross.category_y - 27.]
+                } else {
+                    let target = layout.nav_rect(w, h, selected_idx, Page::ALL.len());
+                    [target[0], target[1]]
+                }
             },
             has_any_modal,
             self.catalog.sections,
@@ -2149,7 +2154,14 @@ impl Launcher {
         if let Some(index) = self.focus
             && let Some(([x, y, w, h], _)) = self.targets.get(index)
         {
-            ui.border(*x - 2.0, *y - 2.0, *w + 4.0, *h + 4.0, 12.0, my3_accent());
+            if layout.console {
+                // XMB focus belongs to the floating text/icon, not an M3 card.
+                // Optical highlight and kinetic focus arrive in part 2 / 4.
+                ui.fill(*x + 1., *y + 8., 1.5, (*h - 16.).max(0.),
+                    color::hex(0xD5E6FF, 96));
+            } else {
+                ui.border(*x - 2.0, *y - 2.0, *w + 4.0, *h + 4.0, 12.0, my3_accent());
+            }
             self.cursor = (
                 f64::from((x + w / 2.0) * ui.density),
                 f64::from((y + h / 2.0) * ui.density),
@@ -2166,14 +2178,16 @@ impl Launcher {
                     && point[1] >= rect[1]
                     && point[1] <= rect[1] + rect[3]
             }) {
-                ui.rounded(
-                    *x,
-                    *y,
-                    *w,
-                    *h,
-                    (*h * 0.42).clamp(10.0, 22.0),
-                    horizon_client::hud::rgba(255, 255, 255, 36),
-                );
+                if layout.console {
+                    ui.rounded(*x + 8., *y + 9., 28., (*h - 18.).max(1.), 14.,
+                        horizon_client::hud::rgba(227, 237, 255, 20));
+                } else {
+                    ui.rounded(
+                        *x, *y, *w, *h,
+                        (*h * 0.42).clamp(10.0, 22.0),
+                        horizon_client::hud::rgba(255, 255, 255, 36),
+                    );
+                }
             }
         }
         let press = self
@@ -2189,14 +2203,16 @@ impl Launcher {
         if let Some((action, alpha)) = feedback
             && let Some(([x, y, w, h], _)) = self.targets.iter().find(|(_, a)| *a == action)
         {
-            ui.rounded(
-                *x,
-                *y,
-                *w,
-                *h,
-                (*h * 0.42).clamp(10., 22.),
-                horizon_client::hud::rgba(255, 255, 255, alpha),
-            );
+            if layout.console {
+                ui.rounded(*x + 8., *y + 9., 28., (*h - 18.).max(1.), 14.,
+                    horizon_client::hud::rgba(227, 237, 255, alpha / 2));
+            } else {
+                ui.rounded(
+                    *x, *y, *w, *h,
+                    (*h * 0.42).clamp(10., 22.),
+                    horizon_client::hud::rgba(255, 255, 255, alpha),
+                );
+            }
         }
         crate::documents::draw_ui(&mut ui);
         if !self.anim.intro_done {
