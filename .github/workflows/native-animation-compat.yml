@@ -1,0 +1,21 @@
+name: Native animation compatibility tests
+on:
+  push:
+    branches:
+      - feature/build46-emf-etf-core
+    paths:
+      - 'crates/horizon-optifine/**'
+      - '.github/workflows/native-animation-compat.yml'
+  workflow_dispatch:
+
+jobs:
+  optifine-parsers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Test OptiFine model, ETF and animation modules
+        run: cargo test --locked -p horizon-optifine
