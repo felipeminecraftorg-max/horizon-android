@@ -23,7 +23,6 @@ jobs:
       HORIZON_TELEMETRY_URL: 'off'
       HORIZON_CAPTURE_SKIP_OPTICS: '1'
       WGPU_BACKEND: vulkan
-      VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
       LIBGL_ALWAYS_SOFTWARE: '1'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -34,7 +33,14 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -yq libasound2-dev libudev-dev libvulkan1 mesa-vulkan-drivers
           rustup show
-          test -r "$VK_ICD_FILENAMES"
+          echo "Available software Vulkan ICDs:"
+          find /usr/share/vulkan/icd.d -type f -name '*.json' -print || true
+          lvp="$(find /usr/share/vulkan/icd.d -type f -name '*lvp*.json' -print -quit 2>/dev/null)"
+          if [[ -n "$lvp" ]]; then
+            echo "VK_ICD_FILENAMES=$lvp" >> "$GITHUB_ENV"
+          else
+            echo "No Lavapipe JSON found; allowing wgpu to find a working adapter."
+          fi
       - name: Render native Old School UI
         run: |
           cargo run -p horizon-client --no-default-features --example launcher_capture -- native-captures
