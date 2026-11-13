@@ -1169,6 +1169,16 @@ pub struct HomeView<'a> {
 }
 
 
+/// Muted colored console tiles are *one* material surface: shade each
+/// accent toward deep graphite instead of stacking translucent rectangles.
+fn console_tile_tone(accent: u32) -> u32 {
+    let shade = |shift: u32, base: f32| -> u32 {
+        (((accent >> shift & 0xFF) as f32 * 0.29 + base * 0.71).round()
+            .clamp(0., 255.)) as u32
+    };
+    (shade(16, 21.) << 16) | (shade(8, 27.) << 8) | shade(0, 40.)
+}
+
 /// The Old School is a console dashboard, not a tinted copy of Liquid Glass.
 /// One strong game hero and a deliberately asymmetric, fixed-hitbox 3-row mosaic
 /// produce hierarchy without sacrificing any of the original eight actions.
@@ -1269,13 +1279,16 @@ fn home_old_school(
         let card = layout.shortcuts[i];
         let [cx, cy, cw, ch] = card;
         if cw <= 1. || ch <= 1. { continue; }
-        let radius = 9.;
-        ui.rounded(cx, cy, cw, ch, radius, color::hex(0x17202E, 231));
-        ui.rounded(cx + 1., cy + 1., cw - 2., ch - 2., radius - 1.,
-            color::hex(tint, 72));
-        // One thin ambient seam, not layered chrome and a second full border.
-        ui.fill(cx + 10., cy + 3., (cw - 20.).max(0.), 1.,
-            color::hex(tint, 129));
+        // One satin colored surface. No nested lens, thick bevel, duplicated
+        // border, or bright reflection competing with labels and touch targets.
+        ui.rounded(cx, cy, cw, ch, 9., color::hex(console_tile_tone(tint), 243));
+        ui.stroke_rounded(cx, cy, cw, ch, 9., 0.7,
+            color::hex(0xCBD5E3, 34));
+        // A slim identity rail retains each category's muted tint.
+        ui.fill(cx + 3., cy + 11., 2., (ch - 22.).max(0.),
+            color::hex(tint, 158));
+        ui.fill(cx + 12., cy + 3., (cw - 24.).max(0.), 1.,
+            color::hex(0xD4DDEB, 35));
 
         let wide = cw > ch * 1.75;
         if wide {
@@ -1903,6 +1916,19 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn console_tile_tints_remain_muted_and_individually_distinct() {
+        let tints = [0x755A83, 0x496D91, 0x907451, 0x477F8E, 0x4D8570, 0x626A83];
+        let shades: Vec<_> = tints.iter().copied().map(console_tile_tone).collect();
+        let unique: std::collections::HashSet<_> = shades.iter().copied().collect();
+        assert_eq!(unique.len(), 6);
+        for shade in shades {
+            assert!((shade >> 16 & 0xFF) <= 74);
+            assert!((shade >> 8 & 0xFF) <= 80);
+            assert!((shade & 0xFF) <= 94);
         }
     }
 
