@@ -27,3 +27,5 @@ jobs:
         run: cargo test --locked -p horizon-optifine
       - name: Check renderer resource-loader integration
         run: cargo check --locked -p horizon-client-render
+      - name: Check playable client CEM draw integration
+        run: cargo check --locked -p horizon-client
