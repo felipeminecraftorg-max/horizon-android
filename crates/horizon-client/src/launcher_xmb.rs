@@ -234,10 +234,15 @@ pub fn home(
         ui.text(Face::Regular, 10., context_x, c.item_y + 99.,
             color::hex(0xB8D6EE, 177), &subtitle);
     } else {
-        let status = ui.fit_text(Face::Regular, 10.5, subtitle,
-            (bounds[2] - 12.).max(50.));
-        ui.text(Face::Regular, 10.5, bounds[0] + 6., c.bottom + 10.,
-            color::hex(0xB4CEE5, 193), &status);
+        // Context belongs to the selected XMB category, not the system
+        // footer. Place it in the guaranteed gap between the horizontal
+        // category caption and the first focused vertical item. This also
+        // avoids collisions with the Android status/GitHub touch lane.
+        let x = (c.x - 28.).max(bounds[0] + 6.);
+        let width = (bounds[0] + bounds[2] - x - 8.).max(50.);
+        let status = ui.fit_text(Face::Regular, 10.5, subtitle, width);
+        ui.text(Face::Regular, 10.5, x, c.category_y + 55.,
+            color::hex(0xBDD5E8, 206), &status);
     }
 
     for (i, action) in HOME_ACTIONS.into_iter().enumerate() {
@@ -301,6 +306,20 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn portrait_context_is_between_axes_and_never_in_footer_lane() {
+        for (w,h) in [(340.,640.),(410.,780.),(900.,1600.)] {
+            let c=Cross::from_screen(w,h);
+            assert!(c.portrait);
+            let caption_top=c.category_y+55.;
+            let focused_top=c.item_y-6.;
+            assert!(caption_top+16. < focused_top,
+                "{w}x{h}: caption would overlap selected row");
+            assert!(caption_top+16. < c.bottom-30.,
+                "{w}x{h}: caption would overlap footer");
+        }
+    }
+
     #[test]
     fn each_home_action_is_reachable_and_uses_its_own_icon() {
         let mut model=Navigation::default();
