@@ -5,10 +5,12 @@ on:
       - feature/build46-emf-etf-core
     paths:
       - 'crates/horizon-optifine/**'
+      - 'crates/horizon-client-render/**'
       - '.github/workflows/native-animation-compat.yml'
   pull_request:
     paths:
       - 'crates/horizon-optifine/**'
+      - 'crates/horizon-client-render/**'
       - '.github/workflows/native-animation-compat.yml'
   workflow_dispatch:
 
