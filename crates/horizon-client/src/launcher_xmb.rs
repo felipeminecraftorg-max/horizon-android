@@ -410,6 +410,8 @@ mod stage4_motion_tests {
             let mut n = Navigation::default();
             n.step_home(4);
             for _ in 0..hz / 4 { n.animate(1.0 / hz as f32, false); }
+            let remainder = 0.25 - (hz / 4) as f32 / hz as f32;
+            if remainder > 0. { n.animate(remainder, false); }
             n.focus_offset().1
         }
         assert!((at_hz(60) - at_hz(120)).abs() < 0.002);
