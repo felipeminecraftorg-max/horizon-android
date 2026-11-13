@@ -6,6 +6,8 @@ use std::{collections::BTreeMap, fs, path::Path, sync::Arc};
 #[derive(Default)]
 pub struct ParsedModels {
     models: BTreeMap<String, Arc<CuboidModel>>,
+    /// Native CEM/ETF pack data; renderer integration is gated separately.
+    entities: horizon_optifine::entity_resources::EntityResources,
 }
 impl ParsedModels {
     /// Every `models/**.json` of a namespace directory, by identifier.
@@ -52,7 +54,13 @@ impl ParsedModels {
             .zip(parsed)
             .filter_map(|((id, _), model)| Some((id, model?)))
             .collect();
-        Self { models }
+        Self { models, entities: horizon_optifine::entity_resources::EntityResources::load(root) }
+    }
+
+    /// CEM/ETF data discovered from this exact merged resource-pack overlay.
+    /// Renderers must opt in before replacing vanilla geometry.
+    pub fn entity_resources(&self) -> &horizon_optifine::entity_resources::EntityResources {
+        &self.entities
     }
 
     /// Blocks require every referenced resource, including parents. Items instead
