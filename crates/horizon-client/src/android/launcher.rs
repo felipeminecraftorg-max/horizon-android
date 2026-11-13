@@ -1050,6 +1050,7 @@ impl ApplicationHandler for Launcher {
         let xmb_wallpaper_animating = horizon_client::ui_theme::active_theme().experience
             == horizon_client::ui_theme::ExperiencePreset::OldSchool
             && !horizon_client::ui_theme::motion::reduced_motion()
+            && self.catalog.config.theme.glass_effects
             && !self.catalog.config.battery_perf_mode
             && !self.catalog.config.super_perf_mode;
         let animating = self.anim.is_active()
