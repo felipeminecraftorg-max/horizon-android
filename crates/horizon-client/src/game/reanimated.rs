@@ -50,6 +50,14 @@ impl Default for ScreenMotion {
     fn default() -> Self { Self { opacity:1.0,scale:1.0 } }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct ScreenOverride {
+    pub enabled: Option<bool>,
+    pub duration_ms: Option<f32>,
+    pub easing: Option<Ease>,
+    pub scale: Option<bool>,
+}
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub enabled: bool,
@@ -61,11 +69,13 @@ pub struct Config {
     pub hotbar: bool,
     pub hotbar_speed: f32,
     pub toasts: bool,
+    pub per_screen: BTreeMap<String, ScreenOverride>,
 }
 impl Default for Config {
     fn default() -> Self {
         Self { enabled:false,reduced_motion:false,speed:1.0,
-            ease:Ease::OutCubic,scale:true,buttons:true,hotbar:true,hotbar_speed:1.0,toasts:true }
+            ease:Ease::OutCubic,scale:true,buttons:true,hotbar:true,hotbar_speed:1.0,toasts:true,
+            per_screen:BTreeMap::new() }
     }
 }
 
@@ -121,11 +131,20 @@ impl ReAnimated {
             "paused" => (PAUSE_SECONDS, Ease::OutCubic),
             _ => (SCREEN_SECONDS, self.config.ease),
         };
+        let custom=self.config.per_screen.get(screen);
+        if custom.is_some_and(|o|o.enabled==Some(false)) {
+            return ScreenMotion::default();
+        }
+        let base=custom.and_then(|o|o.duration_ms)
+            .map(|ms|ms.clamp(50.0,2000.0)/1000.0)
+            .unwrap_or(base);
+        let easing=custom.and_then(|o|o.easing).unwrap_or(easing);
+        let scale_enabled=custom.and_then(|o|o.scale).unwrap_or(self.config.scale);
         let duration=(base/self.config.speed.clamp(0.25,3.0)).max(0.06);
         let t=((now-self.entered)/duration).clamp(0.0,1.0);
         let e=easing.apply(t);
         let alpha=START_ALPHA+(1.0-START_ALPHA)*e.clamp(0.0,1.0);
-        let scale=if self.config.scale { 1.0-MAX_SCALE_INSET*(1.0-e) } else { 1.0 };
+        let scale=if scale_enabled { 1.0-MAX_SCALE_INSET*(1.0-e) } else { 1.0 };
         self.last_frame=Some(now);
         ScreenMotion { opacity:alpha,scale }
     }
@@ -328,6 +347,21 @@ mod tests {
         let mut paused=ReAnimated::new(Config{enabled:true,..Default::default()});
         paused.frame("paused",0.0);
         assert_eq!(paused.frame("paused",0.21),ScreenMotion::default());
+    }
+    #[test] fn custom_screen_profile_does_not_modify_other_screens() {
+        let mut config=Config{enabled:true,..Default::default()};
+        config.per_screen.insert("inventory".into(),ScreenOverride{
+            duration_ms:Some(80.0),easing:Some(Ease::Smooth),
+            scale:Some(false),enabled:None,
+        });
+        config.per_screen.insert("paused".into(),ScreenOverride{
+            enabled:Some(false),..Default::default()
+        });
+        let mut m=ReAnimated::new(config);
+        assert_eq!(m.frame("paused",0.0),ScreenMotion::default());
+        assert_eq!(m.frame("inventory",1.0).scale,1.0);
+        assert_eq!(m.frame("inventory",1.09),ScreenMotion::default());
+        assert_ne!(m.frame("options",2.0),ScreenMotion::default());
     }
     #[test] fn changes_screen_and_obeys_reduced_motion() {
         let mut m=ReAnimated::new(Config {enabled:true,..Default::default()});
