@@ -1122,15 +1122,26 @@ fn home_old_school(
     let poster = [x, y, poster_w, poster_h];
     // Drop the placeholder voxel image. Real GPU chrome samples the Graphite wallpaper.
     panel(ui, poster, 16., false);
-    // Satin dark content inset, lit by the current wallpaper.
-    ui.stroke_rounded(x, y, poster_w, poster_h, 16., 0.8, color::hex(0xE2E5FA, 80));
+    // The panel already draws its own border. A second outline here
+    // doubled the contour around the Old School game hero.
     ui.rounded(x + 15., y + 16., (poster_w - 30.).min(330.), 104., 12.,
         color::hex(0x0A1020, 111));
-    ui.text(Face::SemiBold, if narrow { 23. } else { 31. },
+    // The profile picker occupies the right edge. Short landscape views need
+    // a smaller heading so the title cannot run underneath that control.
+    let title_size = if narrow || poster_w < 360. { 23. } else { 31. };
+    ui.text(Face::SemiBold, title_size,
         x + 26., y + 22., color::hex(0xFFFFFF, 255), "MINECRAFT");
     ui.text(Face::Medium, 16., x + 27., y + 64., color::hex(0xE4E6F5, 243), "26.3");
     let small = if view.installed { "Ready to play" } else { "Installation required" };
-    ui.text(Face::Regular, 12.5, x + 27., y + 95., color::hex(0xFAFAFF, 236), small);
+    // At low landscape heights, the original third text row crossed the
+    // Play button. Share the version row instead of hiding status entirely.
+    let compact_status = poster_h < 190.;
+    let status_x = if compact_status { x + 93. } else { x + 27. };
+    let status_y = if compact_status { y + 64. } else { y + 95. };
+    let status = ui.fit_text(Face::Regular, 12.5, small,
+        (poster_w - if compact_status { 104. } else { 32. }).max(32.));
+    ui.text(Face::Regular, 12.5, status_x, status_y,
+        color::hex(0xFAFAFF, 236), &status);
     // A small profile selector belongs to the poster, not the utility cards.
     let profile = [x + poster_w - 119., y + 13., 105., 37.];
     panel(ui, profile, 9., false);
@@ -1180,11 +1191,10 @@ fn home_old_school(
         panel(ui, card, 12., false);
         ui.rounded(card[0] + 1., card[1] + 1., card_w - 2., card_h - 2.,
             11., color::hex(tint, 47));
-        // The narrow silver seam is a design accent, not another lens surface.
+        // A restrained tinted glint keeps each shortcut distinct without
+        // painting a second border over the existing optical chrome edge.
         ui.fill(card[0] + 12., card[1] + 3., (card_w - 24.).max(0.), 1.,
-            color::hex(0xFFFFFF, 44));
-        ui.stroke_rounded(card[0], card[1], card_w, card_h, 11., 0.7,
-            color::hex(tint, 126));
+            color::hex(tint, 110));
         let icon_size = if narrow { 23. } else { (card_h * 0.30).min(36.) };
         ui.icon(icon, card[0] + (card_w - icon_size) * 0.5,
             card[1] + (card_h * 0.23).min(35.), icon_size, color::hex(0xF5F7FF, 243));
