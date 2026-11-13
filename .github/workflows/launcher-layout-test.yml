@@ -66,10 +66,26 @@ jobs:
             sdkmanager=$(find "$ANDROID_HOME/cmdline-tools" -type f -path '*/bin/sdkmanager' | sort -V | tail -n 1)
           fi
           test -x "$sdkmanager"
-          "$sdkmanager" --sdk_root="$ANDROID_HOME" "ndk;28.2.13676358" "build-tools;35.0.0"
           rustup target add aarch64-linux-android
+          # Google occasionally returns a truncated NDK ZIP on hosted runners.
+          # Use the tested r28c first; fall back to an installed SDK NDK only
+          # for a type-check (never for release signing or a shipped APK).
+          "$sdkmanager" --sdk_root="$ANDROID_HOME" "build-tools;35.0.0"
+          if "$sdkmanager" --sdk_root="$ANDROID_HOME" "ndk;28.2.13676358"; then
+            ndk_version=28.2.13676358
+          else
+            echo "::warning::NDK r28c download failed; looking for an installed NDK to type-check Rust"
+            ndk_version=""
+            for folder in "$ANDROID_HOME"/ndk/*; do
+              if [[ -f "$folder/source.properties" ]]; then
+                ndk_version="${folder##*/}"
+              fi
+            done
+            test -n "$ndk_version"
+          fi
+          echo "HORIZON_XMB_CHECK_NDK=$ndk_version" >> "$GITHUB_ENV"
       - name: Type-check real Android ARM64 launcher with XMB integration
         run: |
           python3 tools/android_build.py --abi arm64-v8a --check --public \
             --sdk "$ANDROID_HOME" --java-home "$JAVA_HOME_17_X64" \
-            --ndk-version 28.2.13676358 --build-tools-version 35.0.0
+            --ndk-version "$HORIZON_XMB_CHECK_NDK" --build-tools-version 35.0.0
