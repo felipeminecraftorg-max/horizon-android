@@ -6015,14 +6015,11 @@ impl Game<'_> {
                 // ETF variants are optional: if a rule selects a texture not
                 // present in the opt-in atlas, draw with the vanilla sprite.
                 let vanilla_id = format!("minecraft:textures/{}.png",mob.kind.texture);
-                let variation = resources.variation_sprite(
+                let variation = self.pack.render.cem_texture_variant(
                     &vanilla_id,
-                    horizon_client::horizon_optifine::entity_textures::EntityContext {
-                        seed:u64::from(mob.id),
-                        name:mob.custom_name.as_deref(),
-                        biome:None,
-                        block_y:Some(mob.position.y.floor() as i32),
-                    },
+                    u64::from(mob.id),
+                    mob.custom_name.as_deref(),
+                    mob.position.y.floor() as i32,
                 );
                 let texture_uv = variation.as_deref().and_then(&lookup)
                     .or_else(|| lookup(&mob.kind.texture));
