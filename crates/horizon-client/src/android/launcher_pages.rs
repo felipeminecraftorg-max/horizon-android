@@ -503,6 +503,9 @@ pub(super) enum Action {
     FmCloseModal,
     /// Independent XMB file context view; never changes the file manager state.
     XmbFilesPanel(u8),
+    /// Focusable actions in the independent XMB long-press menu.
+    XmbContextChoice(u8),
+    XmbContextDismiss,
 }
 
 pub(super) fn button(
@@ -1083,7 +1086,53 @@ fn xmb_home_to_action(action: visual::HomeAction) -> Action {
     }
 }
 
+/// Only real, already implemented catalog actions are offered. The
+/// long-press overlay never performs a destructive operation by itself.
+fn xmb_context_choice(original: Action, index: u8) -> Option<Action> {
+    match (original, index) {
+        (action, 0) => Some(action),
+        (Action::FmOpenEntry(entry), 1) => Some(Action::FmToggleSelect(entry)),
+        (Action::FmOpenEntry(entry), 2) => Some(Action::FmOpenDetails(entry)),
+        (Action::ToggleLocal(entry), 1) => Some(Action::ExportLocal(entry)),
+        (Action::ToggleLocal(entry), 2) => Some(Action::DeleteLocal(entry)),
+        (Action::OpenProject(_), 1) => Some(Action::Search),
+        (Action::Page(_), 1) => Some(Action::Page(Page::Play)),
+        _ => None,
+    }
+}
+
 impl Launcher {
+    /// A unified semantic player for XMB navigation cues. It intentionally
+    /// leaves Liquid Glass and other preset sound maps untouched.
+    fn xmb_play_cue(&mut self, cue: ui_sfx::XmbCue) {
+        if self.catalog.config.theme.preset != horizon_client::ui_theme::ThemePreset::OldSchool
+            || !self.catalog.config.theme.interface_sounds
+            || self.xmb_last_sound.is_some_and(|t| t.elapsed().as_millis() < 48)
+        {
+            return;
+        }
+        let (sample, gain) = ui_sfx::navigation(cue);
+        let audio = self.audio.get_or_insert_with(|| {
+            let mut audio = horizon_client::audio::Audio::new(
+                &self.home.join(".local/horizon-client/26.3"),
+            );
+            let settings = horizon_client::settings::Settings::load(
+                &self.catalog.config.game_home(&self.home).join("options.txt"),
+            );
+            audio.master = settings.volumes[0];
+            let mut volumes = settings.volumes;
+            volumes[0] = 1.0;
+            horizon_client::settings::set_source_volumes(volumes);
+            audio
+        });
+        audio.play_embedded_ui_sfx(sample, gain);
+        self.xmb_last_sound = Some(std::time::Instant::now());
+    }
+
+    pub(super) fn xmb_play_back(&mut self) {
+        self.xmb_play_cue(ui_sfx::XmbCue::Back);
+    }
+
     /// XMB categories move as a single spatial strip. Existing catalog data
     /// and navigation handlers are reused; the old interface components are not.
     fn xmb_switch_category(&mut self, delta: isize) {
@@ -1106,6 +1155,7 @@ impl Launcher {
             self.error = None;
             self.catalog.browse(&self.home);
             self.anim.trigger_page_transition();
+            self.xmb_play_cue(ui_sfx::XmbCue::CategoryFocus);
         }
         self.pending_focus = Some(Action::Page(page));
         self.focus = None;
@@ -1115,7 +1165,11 @@ impl Launcher {
     }
 
     pub(super) fn xmb_step_home(&mut self, delta: i32) {
+        let old = self.xmb.selected_home();
         let action = self.xmb.step_home(delta);
+        if self.xmb.selected_home() != old {
+            self.xmb_play_cue(ui_sfx::XmbCue::ItemFocus);
+        }
         self.pending_focus = Some(xmb_home_to_action(action));
         self.focus = None;
         if let Some(window) = &self.window {
@@ -1139,6 +1193,7 @@ impl Launcher {
         horizon_client::ui_theme::active_theme().experience
             == horizon_client::ui_theme::ExperiencePreset::OldSchool
             && !self.login.visible
+            && self.xmb_context.is_none()
             && self.chooser.is_none()
             && !self.exit_confirmation
             && !self.status_details
