@@ -120,9 +120,9 @@ fn walk(part: &Part, size:[f32;2], mesh:&mut Mesh) -> Result<(),MeshError> {
 
 impl Mesh {
     pub fn compile(model: &Model) -> Result<Self,MeshError> {
-        if model.texture.is_some() {
-            return Err(MeshError::Unsupported("custom root texture"));
-        }
+        // Root textures are now resolved by the entity resource registry and
+        // atlas on the game side. Per-part textures still require multi-material
+        // geometry, so those are conservatively unsupported.
         let mut mesh=Self::default();
         let size=model.texture_size.unwrap_or([64.0,32.0]);
         for part in &model.parts { walk(part,size,&mut mesh)?; }
