@@ -89,7 +89,7 @@ fn xmb_entry(
         list_targets.push((r,main));
     }
     if let Some((text,act))=trailing {
-        let r=[x+w-action_width,y+12.,action_width-4.,34.];
+        let r=[x+w-action_width,y+5.,action_width-4.,28.];
         xmb_text_action(ui,targets,r,text,act,selected);
         if let Some(hit)=ui.clip_rect(r){list_targets.push((hit,act));}
     }
@@ -431,108 +431,122 @@ impl Launcher {
     fn draw_xmb_file_manager(
         &mut self,ui:&mut Ui<'_>,x:f32,w:f32,h:f32,top:f32,
     ){
-        let compact=w<450.;
-        // A small command strip stays functional without replicating the
-        // Material toolbar. Secondary file operations follow below.
-        let nav_y=top;
-        let main=[
-            ("Voltar",Action::FmBack),("Avançar",Action::FmForward),
-            ("Subir",Action::FmUp),("Importar",Action::FmImportHere),
-            ("+ Pasta",Action::FmOpenNewFolder),
+        // Never display a dense 8+ button toolbar. A console-style menu
+        // has one "location" list, one "commands" list and one file list;
+        // they all use the same physical vertical space and retain actions.
+        let compact=h<550.;
+        let cy=top;
+        let actions=[
+            ("Arquivos",Action::XmbFilesPanel(0),self.xmb_files_panel==0),
+            ("Pastas",Action::XmbFilesPanel(1),self.xmb_files_panel==1),
+            ("Ações",Action::XmbFilesPanel(2),self.xmb_files_panel==2),
         ];
-        let gap=3.;
-        let cell=(w-gap*4.)/5.;
-        for (i,(label,action)) in main.into_iter().enumerate(){
+        let cw=(w-10.)/3.;
+        for (i,(label,act,on)) in actions.into_iter().enumerate(){
             xmb_text_action(ui,&mut self.targets,
-                [x+i as f32*(cell+gap),nav_y,cell,32.],
-                label,action,i==3);
+                [x+i as f32*(cw+5.),cy,cw,33.],label,act,on);
         }
-
-        // Profile-root selector: text-based named locations.
-        let root_y=nav_y+38.;
-        let roots=crate::document_store::FM_ROOT_DIRS;
-        let max_roots_per_line=if compact{4}else{8};
-        let root_h=30.;
-        for (i,(rel,label)) in roots.iter().enumerate(){
-            let col=i%max_roots_per_line;
-            let row=i/max_roots_per_line;
-            let n=max_roots_per_line as f32;
-            let cw=(w-4.*(n-1.))/n;
-            xmb_text_action(ui,&mut self.targets,
-                [x+col as f32*(cw+4.),root_y+row as f32*root_h,cw,28.],
-                label,Action::FmNavigateRoot(rel),
-                self.catalog.fm_current_dir==*rel);
-        }
-        let rows=roots.len().div_ceil(max_roots_per_line);
-        let command_y=root_y+rows as f32*root_h+4.;
-        let cmds=[
-            ("Tudo",Action::FmSelectAll),("Limpar",Action::FmClearSelection),
-            ("Copiar",Action::FmCopy),("Mover",Action::FmCut),
-            ("Colar",Action::FmPaste),("Renomear",Action::FmOpenRenameSelected),
-            ("Exportar",Action::FmExportSelected),
-            ("Excluir",Action::FmRequestDeleteSelected),
-        ];
-        let cmds_per_line=if compact{4}else{8};
-        let cmd_lines=cmds.len().div_ceil(cmds_per_line);
-        let width=(w-4.*(cmds_per_line as f32-1.))/cmds_per_line as f32;
-        for (i,(label,action)) in cmds.into_iter().enumerate() {
-            xmb_text_action(ui,&mut self.targets,
-                [x+(i%cmds_per_line)as f32*(width+4.),
-                    command_y+(i/cmds_per_line)as f32*29.,width,27.],
-                label,action,false);
-        }
-        let crumbs_y=command_y+cmd_lines as f32*29.+2.;
-        let path=if self.catalog.fm_current_dir.is_empty() {
-            format!("PERFIL {} / RAIZ",self.catalog.config.profile+1)
-        } else {
-            format!("PERFIL {} / {}",self.catalog.config.profile+1,
-                self.catalog.fm_current_dir)
-        };
-        let fitted=ui.fit_text(Face::Regular,11.,&path,(w-20.).max(20.));
-        ui.text(Face::Regular,11.,x+5.,crumbs_y,ink(MUTED,164),&fitted);
-        if let Some(r)=ui.clip_rect([x,crumbs_y,w,22.]) {
-            self.targets.push((r,Action::FmBreadcrumb(0)));
-        }
-
-        let list_top=crumbs_y+27.;
-        let bottom=h-53.;
-        let row_h=59.;
-        let max_scroll=(self.catalog.fm_entries.len() as f32*row_h
-            -(bottom-list_top)).max(0.);
-        self.catalog.scroll=self.catalog.scroll.clamp(0.,max_scroll);
-        self.list_view=Some([list_top,bottom,max_scroll]);
-        ui.set_clip(Some([x,list_top,w,(bottom-list_top).max(1.)]));
-        for (i,entry) in self.catalog.fm_entries.iter().enumerate(){
-            let y=list_top+i as f32*row_h-self.catalog.scroll;
-            let icon=if entry.is_dir{Icon::XmbFiles}
-                else if entry.name.ends_with(".hmod")||entry.name.ends_with(".jar"){
-                    Icon::XmbMods
-                }else if entry.name.ends_with(".zip"){Icon::XmbPacks}
-                else if entry.name.ends_with(".hshader"){Icon::XmbShaders}
-                else{Icon::FileText};
-            let selected=self.catalog.fm_selected.contains(&entry.rel_path);
-            let subtitle=if entry.is_dir {
-                format!("PASTA · {} itens",entry.size_bytes)
-            } else {
-                format!("{} · {}",
-                    entry.kind_label,
-                    crate::catalog::format_file_size(entry.size_bytes))
-            };
-            xmb_entry(ui,&mut self.targets,&mut self.list_targets,
-                x,y,w,&entry.name,&subtitle,icon,Action::FmOpenEntry(i),
-                Some(("Detalhes",Action::FmOpenDetails(i))),
-                selected,list_top,bottom);
-            // A separate left-edge selection checkbox, consistent with XMB.
-            let check=[x+1.,y+11.,37.,37.];
-            if let Some(r)=ui.clip_rect(check){
-                self.targets.push((r,Action::FmToggleSelect(i)));
-                self.list_targets.push((r,Action::FmToggleSelect(i)));
+        let list_top=cy+if compact{39.}else{47.};
+        let bottom=h-50.;
+        let row_h=58.;
+        match self.xmb_files_panel {
+            1=>{
+                let roots=crate::document_store::FM_ROOT_DIRS;
+                let max=(roots.len() as f32*row_h-(bottom-list_top)).max(0.);
+                self.catalog.scroll=self.catalog.scroll.clamp(0.,max);
+                self.list_view=Some([list_top,bottom,max]);
+                ui.set_clip(Some([x,list_top,w,(bottom-list_top).max(1.)]));
+                for (i,(rel,label)) in roots.iter().enumerate(){
+                    let y=list_top+i as f32*row_h-self.catalog.scroll;
+                    let active=self.catalog.fm_current_dir==*rel;
+                    xmb_entry(ui,&mut self.targets,&mut self.list_targets,
+                        x,y,w,label,
+                        if active{"LOCAL ATUAL"}else{"ABRIR DIRETÓRIO"},
+                        Icon::XmbFiles,Action::FmNavigateRoot(rel),None,
+                        active,list_top,bottom);
+                }
+                ui.set_clip(None);
+            }
+            2=>{
+                let selected=self.catalog.fm_selected.len();
+                let clip=self.catalog.fm_clipboard.as_ref().map_or(0,|(a,_)|a.len());
+                let actions=[
+                    ("Voltar","Diretório anterior",Icon::ArrowLeft,Action::FmBack),
+                    ("Avançar","Diretório seguinte",Icon::ArrowRight,Action::FmForward),
+                    ("Subir","Pasta superior",Icon::XmbFiles,Action::FmUp),
+                    ("Importar","Adicionar arquivos do Android",Icon::XmbFiles,
+                        Action::FmImportHere),
+                    ("Nova pasta","Criar diretório",Icon::XmbFiles,Action::FmOpenNewFolder),
+                    ("Selecionar tudo","Selecionar arquivos",Icon::Check,Action::FmSelectAll),
+                    ("Limpar seleção","Desmarcar arquivos",Icon::Close,Action::FmClearSelection),
+                    ("Copiar","Copiar arquivos selecionados",Icon::Copy,Action::FmCopy),
+                    ("Recortar","Mover arquivos selecionados",Icon::ArrowRight,Action::FmCut),
+                    ("Colar","Colar do clipboard",Icon::Copy,Action::FmPaste),
+                    ("Renomear","Renomear item selecionado",Icon::Pencil,
+                        Action::FmOpenRenameSelected),
+                    ("Exportar","Exportar seleção",Icon::Share,Action::FmExportSelected),
+                    ("Excluir","Excluir seleção com confirmação",Icon::Trash,
+                        Action::FmRequestDeleteSelected),
+                ];
+                let max=(actions.len() as f32*row_h-(bottom-list_top)).max(0.);
+                self.catalog.scroll=self.catalog.scroll.clamp(0.,max);
+                self.list_view=Some([list_top,bottom,max]);
+                ui.set_clip(Some([x,list_top,w,(bottom-list_top).max(1.)]));
+                for (i,(title,sub,glyph,act)) in actions.into_iter().enumerate(){
+                    let subtitle=if i==7||i==8||i==10||i==11||i==12{
+                        if selected==0{"SEM ARQUIVOS SELECIONADOS"}else{sub}
+                    }else if i==9 && clip==0 {
+                        "ÁREA DE TRANSFERÊNCIA VAZIA"
+                    }else{sub};
+                    xmb_entry(ui,&mut self.targets,&mut self.list_targets,
+                        x,list_top+i as f32*row_h-self.catalog.scroll,w,
+                        title,subtitle,glyph,act,None,false,list_top,bottom);
+                }
+                ui.set_clip(None);
+            }
+            _=>{
+                let count=self.catalog.fm_entries.len();
+                let max=(count as f32*row_h-(bottom-list_top)).max(0.);
+                self.catalog.scroll=self.catalog.scroll.clamp(0.,max);
+                self.list_view=Some([list_top,bottom,max]);
+                ui.set_clip(Some([x,list_top,w,(bottom-list_top).max(1.)]));
+                for (i,entry) in self.catalog.fm_entries.iter().enumerate(){
+                    let y=list_top+i as f32*row_h-self.catalog.scroll;
+                    let icon=if entry.is_dir{Icon::XmbFiles}
+                        else if entry.name.ends_with(".hmod")
+                            ||entry.name.ends_with(".jar"){Icon::XmbMods}
+                        else if entry.name.ends_with(".zip"){Icon::XmbPacks}
+                        else if entry.name.ends_with(".hshader"){Icon::XmbShaders}
+                        else{Icon::FileText};
+                    let selected=self.catalog.fm_selected.contains(&entry.rel_path);
+                    let subtitle=if entry.is_dir {
+                        format!("PASTA · {} itens",entry.size_bytes)
+                    }else{
+                        format!("{} · {}",entry.kind_label,
+                            crate::catalog::format_file_size(entry.size_bytes))
+                    };
+                    xmb_entry(ui,&mut self.targets,&mut self.list_targets,
+                        x,y,w,&entry.name,&subtitle,icon,Action::FmOpenEntry(i),
+                        Some(("Detalhes",Action::FmOpenDetails(i))),
+                        selected,list_top,bottom);
+                    // Selection is a separate left-edge touch surface. It
+                    // cannot overlap Details on the right.
+                    let mark=[x,y+10.,38.,36.];
+                    if let Some(hit)=ui.clip_rect(mark){
+                        self.targets.push((hit,Action::FmToggleSelect(i)));
+                        self.list_targets.push((hit,Action::FmToggleSelect(i)));
+                    }
+                }
+                ui.set_clip(None);
+                let rel=if self.catalog.fm_current_dir.is_empty(){"PERFIL / RAIZ"}
+                    else{"PERFIL / DIRETÓRIO"};
+                ui.text(Face::Regular,9.5,x+4.,list_top-14.,ink(MUTED,154),rel);
+                if count==0{
+                    ui.text(Face::Regular,12.5,x+3.,list_top+14.,
+                        ink(MUTED,188),"Nenhum arquivo nesta pasta.");
+                }
             }
         }
-        ui.set_clip(None);
-        if self.catalog.fm_entries.is_empty(){
-            ui.text(Face::Regular,12.5,x+4.,list_top+12.,
-                ink(MUTED,181),"Esta pasta está vazia.");
-        }
     }
+
 }
