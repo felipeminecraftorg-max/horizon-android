@@ -902,7 +902,7 @@ fn shell_console(
     let aw = (w * 0.22).clamp(138., 196.);
     let account_r = [w - aw - 66., 13., aw, 39.];
     ui.rounded(account_r[0], account_r[1], aw, 39., 9., color::hex(0xECF3FF, 27));
-    ui.stroke_rounded(account_r[0], account_r[1], aw, 39., 9., 0.9, color::hex(0xFFFFFF, 85));
+    ui.stroke_rounded(account_r[0], account_r[1], aw, 39., 9., 0.8, color::hex(0xFFFFFF, 53));
     ui.avatar_head_2d(account_r[0] + 6., 19., 27., account);
     if signed_in {
         ui.rounded(account_r[0] + 29., 40., 5., 5., 2.5, th.success);
@@ -915,14 +915,16 @@ fn shell_console(
     target(settings, ShellAction::Appearance);
     ui.fill(24., 117., w - 48., 1., color::hex(0xD4D8EB, 72));
 
-    // A physically animated lens follows the selected console tab. The
-    // underlying hitboxes remain fixed, so focus and touch never lag.
+    // XMB-inspired focus is an understated channel highlight, not a
+    // second chrome push button behind every selected category.
+    // Its spring follows visual focus only; hitboxes never move.
     if !items.is_empty() {
         let step = (w - 48.) / items.len() as f32;
         let fx = focus_x.clamp(24., w - 24. - step);
-        panel(ui, [fx + 10., 76., (step - 20.).max(22.), 34.], 12., false);
-        ui.fill(fx + step * 0.28, 114., step * 0.44, 1.4,
-            color::hex(0xEEF2FF, 208));
+        ui.rounded(fx + 8., 77., (step - 16.).max(25.), 33., 7.,
+            color::hex(0xAFC3D8, 22));
+        ui.fill(fx + step * 0.24, 115., step * 0.52, 1.5,
+            color::hex(0xD7E9FF, 226));
     }
     for (i, (label, _icon)) in items.iter().enumerate() {
         let tab = layout.nav_rect(w, h, i, items.len());
