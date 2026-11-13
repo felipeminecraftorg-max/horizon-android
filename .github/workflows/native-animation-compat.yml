@@ -6,6 +6,10 @@ on:
     paths:
       - 'crates/horizon-optifine/**'
       - '.github/workflows/native-animation-compat.yml'
+  pull_request:
+    paths:
+      - 'crates/horizon-optifine/**'
+      - '.github/workflows/native-animation-compat.yml'
   workflow_dispatch:
 
 jobs:
