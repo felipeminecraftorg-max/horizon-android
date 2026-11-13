@@ -7,7 +7,7 @@
 use super::*;
 use crate::catalog::{InstalledFilter, InstalledSubTab, Page, SettingsCategory};
 use horizon_client::content_files::Kind;
-use horizon_client::ui_theme::{launcher_xmb::Cross, ExperiencePreset};
+use horizon_client::ui_theme::launcher_xmb::Cross;
 
 const WHITE: u32 = 0xEAF2FF;
 const MUTED: u32 = 0xA8C6DF;
@@ -322,9 +322,9 @@ impl Launcher {
         self.list_targets.clear();
         self.list_view=None;
         ui.fill(0.,0.,w,h,ink(0x030A15,206));
-        let x=if h>w{22.}else{(w*.20).max(33.)};
+        let x=if h>w{22.}else{(w*0.20).max(33.)};
         let width=(w-x-25.).min(620.);
-        let mut y=if h>w{(h*.22).max(50.)}else{72.};
+        let mut y=if h>w{(h*0.22).max(50.)}else{72.};
         if let Some(ime_y)=ime_top {
             y=y.min((ime_y-195.).max(8.));
         }
@@ -343,10 +343,10 @@ impl Launcher {
                 let names=ui.fit_text(Face::Regular,11.,&names,width);
                 ui.text(Face::Regular,11.,x,y+68.,ink(WHITE,204),&names);
                 xmb_text_action(ui,&mut self.targets,
-                    [x,y+113.,width*.47,43.],"Cancelar",
+                    [x,y+113.,width*0.47,43.],"Cancelar",
                     Action::FmCloseModal,false);
                 xmb_text_action(ui,&mut self.targets,
-                    [x+width*.50,y+113.,width*.49,43.],
+                    [x+width*0.50,y+113.,width*0.49,43.],
                     "Excluir arquivos",Action::FmConfirmDelete,true);
             }
             crate::catalog::FmModal::Rename{target_rel}=>{
@@ -359,10 +359,10 @@ impl Launcher {
                     Action::Field("fm_rename"),
                     self.catalog.editing==Some("fm_rename"));
                 xmb_text_action(ui,&mut self.targets,
-                    [x,y+128.,width*.47,40.],"Cancelar",
+                    [x,y+128.,width*0.47,40.],"Cancelar",
                     Action::FmCloseModal,false);
                 xmb_text_action(ui,&mut self.targets,
-                    [x+width*.50,y+128.,width*.49,40.],"Salvar",
+                    [x+width*0.50,y+128.,width*0.49,40.],"Salvar",
                     Action::FmSubmitRename,true);
             }
             crate::catalog::FmModal::NewFolder=>{
@@ -376,10 +376,10 @@ impl Launcher {
                     Action::Field("fm_new_folder"),
                     self.catalog.editing==Some("fm_new_folder"));
                 xmb_text_action(ui,&mut self.targets,
-                    [x,y+130.,width*.47,40.],"Cancelar",
+                    [x,y+130.,width*0.47,40.],"Cancelar",
                     Action::FmCloseModal,false);
                 xmb_text_action(ui,&mut self.targets,
-                    [x+width*.50,y+130.,width*.49,40.],"Criar pasta",
+                    [x+width*0.50,y+130.,width*0.49,40.],"Criar pasta",
                     Action::FmSubmitNewFolder,true);
             }
             crate::catalog::FmModal::Details(details)=>{
