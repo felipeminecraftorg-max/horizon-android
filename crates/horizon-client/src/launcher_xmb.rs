@@ -252,8 +252,9 @@ pub fn shell(
         color::hex(0xAABBD9, 153), version);
     let account_width = (w * 0.35).clamp(100., 178.);
     let account_x = w - account_width - 20.;
+    let account_name = ui.fit_text(Face::Regular, 11., account, account_width - 14.);
     ui.text(Face::Regular, 11., account_x, 20.,
-        color::hex(0xDDE5F2, 214), &ui.fit_text(Face::Regular, 11., account, account_width - 14.));
+        color::hex(0xDDE5F2, 214), &account_name);
     if signed_in {
         ui.rounded(account_x - 11., 25., 5., 5., 2.5,
             color::hex(0xB5DDC8, 226));
@@ -316,9 +317,9 @@ pub fn home(
         ui.text(Face::Regular, 10., context_x, c.item_y + 60.,
             color::hex(0xB3D8CA, 176), status);
     } else {
+        let status = ui.fit_text(Face::Regular, 10.5, status, bounds[2] - 12.);
         ui.text(Face::Regular, 10.5, bounds[0] + 5., c.bottom - 29.,
-            color::hex(0xB4C8E4, 188),
-            &ui.fit_text(Face::Regular, 10.5, status, bounds[2] - 12.));
+            color::hex(0xB4C8E4, 188), &status);
     }
 
     for (i, action) in HOME_ACTIONS.into_iter().enumerate() {
