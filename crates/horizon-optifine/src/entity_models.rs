@@ -57,7 +57,7 @@ fn number(v: &Value) -> Result<f32, Error> {
 }
 fn safe_jpm(path: &str) -> bool {
     path.len() <= 256 && path.ends_with(".jpm") && !path.starts_with('/')
-        && !path.contains(['\\', ':'])
+        && !path.contains('\\') && !path.contains(':')
         && path.split('/').all(|s| !s.is_empty() && s != "." && s != "..")
 }
 #[derive(Default)]
