@@ -47,7 +47,14 @@ at startup. For example:
     "enabled": true,
     "speed": 1.0,
     "buttons": true,
-    "reduced_motion": false
+    "hotbar": true,
+    "hotbar_speed": 1.0,
+    "toasts": true,
+    "reduced_motion": false,
+    "per_screen": {
+      "inventory": {"duration_ms": 450, "easing": "out_back"},
+      "options": {"duration_ms": 350, "easing": "out_cubic"}
+    }
   },
   "cinematic": {
     "enabled": true,
@@ -57,6 +64,13 @@ at startup. For example:
   }
 }
 ```
+
+The `hotbar` animation smoothly interpolates the drawn selection frame
+between slots while inventory state remains unchanged. The `toasts` option
+applies independent fades and small slide-ins to HUD, tutorial, resource-pack
+and music notification layers. `per_screen` overrides accept validated screen
+IDs, duration 50–2000 ms, `enabled`, `scale`, and easing
+(`smooth`, `out_cubic`, `out_quart`, `out_back`), with at most 128 entries.
 
 This file is **not** loaded from a multiplayer resource pack and does not
 enable EMF/ETF CEM rendering; that still uses the separate, default-off CEM
