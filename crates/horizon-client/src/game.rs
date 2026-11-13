@@ -218,6 +218,7 @@ mod native_recipes;
 mod native_server;
 mod native_shaders;
 mod native_visuals;
+mod native_animation_settings;
 mod native_world_read;
 mod natural_spawning;
 mod nautili;
@@ -18591,6 +18592,7 @@ impl<'a> Game<'a> {
         prepared: Option<GameCpuResources>,
     ) -> Result<Self> {
         let root = options.resources.clone();
+        let native_preview = native_animation_settings::PreviewSettings::load(&root);
         let registry = pack.assets.registry;
         // Until a world is opened the streamer is idle.
         let mut streaming = Streaming::new(
@@ -18724,20 +18726,27 @@ impl<'a> Game<'a> {
             debug: false,
             screen: Screen::Playing,
             reanimated: reanimated::ReAnimated::new(reanimated::Config {
-                enabled: std::env::var("HORIZON_REANIMATED_PREVIEW").is_ok_and(|v|v == "1")
+                enabled: native_preview.reanimated.enabled
+                    || std::env::var("HORIZON_REANIMATED_PREVIEW").is_ok_and(|v|v == "1")
                     || std::fs::read_to_string(root.join("horizon-reanimated-preview.flag"))
                         .is_ok_and(|v|v.trim() == "enabled"),
+                speed: native_preview.reanimated.speed,
+                reduced_motion: native_preview.reanimated.reduced_motion,
+                buttons: native_preview.reanimated.buttons,
                 // Touch hitboxes remain aligned during the fade.
                 scale: !cfg!(target_os = "android"),
                 ..Default::default()
             }),
             cinematic_rig: cinematic_interactions::Rig::new(
                 cinematic_interactions::Config {
-                    enabled: std::env::var("HORIZON_CINEMATIC_PREVIEW").is_ok_and(|v|v == "1")
+                    enabled: native_preview.cinematic.enabled
+                        || std::env::var("HORIZON_CINEMATIC_PREVIEW").is_ok_and(|v|v == "1")
                         || std::fs::read_to_string(
                             root.join("horizon-cinematic-preview.flag")
                         ).is_ok_and(|v|v.trim() == "enabled"),
-                    ..Default::default()
+                    speed: native_preview.cinematic.speed,
+                    roll_strength: native_preview.cinematic.roll_strength,
+                    reduced_motion: native_preview.cinematic.reduced_motion,
                 },
             ),
             window: None,
