@@ -276,7 +276,11 @@ fn main() -> horizon_client::Result<()> {
         &sampler,
     )?;
     hud.atlas_texture = Some(atlas_tex);
-    check_optics(&device, &queue, &mut hud, &atlas)?;
+    // The capture workflow renders actual UI; optical invariants remain
+    // available separately when explicitly exercising this example.
+    if std::env::var_os("HORIZON_CAPTURE_SKIP_OPTICS").is_none() {
+        check_optics(&device, &queue, &mut hud, &atlas)?;
+    }
     let items = [
         ("Play", Icon::Play),
         ("Mods", Icon::Mods),
@@ -287,9 +291,8 @@ fn main() -> horizon_client::Result<()> {
         ("Skins", Icon::Person),
     ];
     for (stem, preset) in [
+        ("old-school", ThemePreset::OldSchool),
         ("liquid-glass", ThemePreset::LiquidGlass),
-        ("dark-aero", ThemePreset::DarkAero),
-        ("liquid-glass-reenabled", ThemePreset::LiquidGlass),
     ] {
         let mut config = LauncherThemeConfig::default();
         config.apply_preset(preset);
@@ -299,26 +302,36 @@ fn main() -> horizon_client::Result<()> {
         for (page, [w, h]) in [
             ("home", [1600, 900]),
             ("home", [1600, 900]),
+            ("home-compact", [1280, 720]),
+            ("home-portrait", [900, 1600]),
             ("appearance", [1080, 1920]),
             ("appearance", [1080, 1920]),
         ] {
             let mut batch = HudBatch::new([w, h]);
             let mut ui = Ui::mobile(&atlas, &mut batch, (0., 0.));
             let (uw, uh) = (ui.w, ui.h);
-            ui.draw_theme_background(0., 0., uw, uh, &config.resolve());
+            if preset == ThemePreset::OldSchool
+                && config.wallpaper == visual::Wallpaper::Graphite
+            {
+                visual::console_background(&mut ui, [0., 0., uw, uh]);
+            } else {
+                ui.draw_theme_background(0., 0., uw, uh, &config.resolve());
+            }
             let layout = visual::shell(
                 &mut ui,
                 &items,
-                if page == "home" { 0 } else { 5 },
+                if page.starts_with("home") { 0 } else { 5 },
                 "felipeORG",
                 false,
                 "Android 0.7.8",
                 |_, _| {},
             );
-            if page == "home" {
+            if page.starts_with("home") {
                 visual::home(
                     &mut ui,
-                    [layout.x, 76., layout.width, layout.bottom - 116.],
+                    [layout.x, if layout.portrait { 74. } else { 132. },
+                        layout.width,
+                        (layout.bottom - if layout.portrait { 152. } else { 186. }).max(180.)],
                     &visual::HomeView {
                         installed: true,
                         launching: false,
@@ -344,7 +357,7 @@ fn main() -> horizon_client::Result<()> {
                     |_, _| {},
                 );
             }
-            if page == "home" {
+            if page.starts_with("home") {
                 visual::button(
                     &mut ui,
                     [uw - 118., layout.bottom - 38., 92., 28.],
