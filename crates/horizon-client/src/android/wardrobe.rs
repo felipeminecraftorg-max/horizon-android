@@ -581,6 +581,160 @@ impl Wardrobe {
         true
     }
 
+    /// Independent XMB wardrobe: native 3D character preview floats in the
+    /// atmospheric space; every cloud, local-library and camera action routes
+    /// to the existing implementation without inheriting the Material cards.
+    fn draw_xmb(
+        &mut self,ui:&mut Ui,targets:&mut Vec<([f32;4],Action)>,
+        scroll:f32,x:f32,w:f32,top:f32,
+    ) {
+        use horizon_client::ui_theme::{Icon,color};
+        let ink=|rgb:u32,a:u8|color::hex(rgb,a);
+        let wide=ui.w>ui.h&&w>560.;
+        let h=ui.h;
+        ui.text(Face::Regular,10.,x+3.,top,ink(0x9DC1DC,162),
+            "HORIZON / IDENTIDADE");
+        ui.text(Face::Medium,18.,x+3.,top+15.,ink(0xECF5FF,245),
+            if self.capes{"Capas"}else{"Skins"});
+        let tab_y=top+42.;
+        let kinds=[
+            ("Skins",false,!self.capes),("Capas",true,self.capes),
+        ];
+        for(i,(label,cape,active))in kinds.into_iter().enumerate(){
+            let r=[x+i as f32*89.,tab_y,84.,32.];
+            if active {
+                ui.fill(r[0]+3.,r[1]+r[3]-3.,r[2]-6.,1.,
+                    ink(0xC5E9FF,180));
+            }
+            ui.text(Face::Regular,12.5,r[0]+10.,r[1]+8.,
+                ink(0xE5F2FF,if active{246}else{158}),label);
+            if let Some(hit)=ui.clip_rect(r){targets.push((hit,Action::WardrobeKind(cape)));}
+        }
+
+        let selection=self.library.selections.get(&self.key).cloned().unwrap_or_default();
+        let selected_id=if self.capes {
+            selection.cape.as_deref()
+        }else{
+            selection.skin.as_deref()
+        };
+
+        let preview_w=if wide{(w*0.36).clamp(172.,272.)}
+            else{w.min(350.)};
+        let preview_x=if wide{x+w-preview_w}else{x+(w-preview_w)*0.5};
+        let preview_y=if wide{top+60.}else{top+88.};
+        let preview_h=if wide{(h-preview_y-65.).clamp(120.,264.)}
+            else{(h*0.22).clamp(113.,175.)};
+        self.rect=[preview_x,preview_y,preview_w,preview_h];
+        // A tiny silver floor reflection. No outline/backplate around the
+        // avatar, so the model really appears suspended in the XMB.
+        ui.rounded(preview_x+preview_w*0.31,preview_y+preview_h-19.,
+            preview_w*0.38,4.,2.,ink(0x80B9E4,35));
+        let scale=(preview_w/160.).min((preview_h-13.)/200.).max(0.1);
+        let ox=preview_x+(preview_w-160.*scale)*0.5;
+        let oy=preview_y+(preview_h-200.*scale)*0.5-4.;
+        if self.bitmap.is_empty(){
+            let text=if self.default_worker.is_some(){"Carregando aparência..."}
+                else{"Aparência indisponível offline"};
+            ui.centered_fit(Face::Regular,11.,
+                [preview_x+5.,preview_y+preview_h*0.38,preview_w-10.,31.],
+                ink(0xB6CDE1,175),text);
+        }
+        for ([bx,by,bw,bh],col) in &self.bitmap {
+            ui.fill(ox+bx*scale,oy+by*scale,
+                (bw*scale).max(0.8),(bh*scale).max(0.7),*col);
+        }
+
+        // Two compact text commands for camera orbit, and model/cape toggles.
+        // The touch drag region is still self.rect, so 3D orbit/zoom work.
+        let cam_y=preview_y+preview_h-30.;
+        let cam_actions=[("←",Action::WardrobeRotate(-1)),
+            ("→",Action::WardrobeRotate(1)),
+            ("+",Action::WardrobeZoom(true)),
+            ("−",Action::WardrobeZoom(false))];
+        let cmd_w=30.;
+        let cmd_x=preview_x+(preview_w-4.*cmd_w-3.*7.)*0.5;
+        for (i,(label,act)) in cam_actions.into_iter().enumerate(){
+            let r=[cmd_x+i as f32*(cmd_w+7.),cam_y,cmd_w,28.];
+            ui.centered_fit(Face::Regular,15.,r,ink(0xE1F0FF,205),label);
+            if let Some(hit)=ui.clip_rect(r){targets.push((hit,act));}
+        }
+
+        let menu_x=x+3.;
+        let menu_w=if wide{(w-preview_w-22.).max(120.)}else{w-6.};
+        let menu_top=if wide{tab_y+45.}else{preview_y+preview_h+11.};
+        let menu_actions=[
+            (if self.capes{"Importar capa PNG"}else{"Importar skin PNG"},
+                Action::WardrobeImport),
+            ("Usar perfil da nuvem",Action::WardrobeUseCloud),
+            ("Sincronizar com conta",Action::WardrobeCloud),
+            ("Enviar à nuvem",Action::WardrobeUpload),
+            (if self.capes{"Mostrar / ocultar capa"}else{"Modelo clássico / fino"},
+                if self.capes{Action::WardrobeHideCape}else{Action::WardrobeModel}),
+        ];
+        // Scrolling moves the meaningful gallery and action rows as a single
+        // column. No actions disappear behind an opaque preview card.
+        let row_h=46.;
+        let cloud_count=if self.capes&&self.provider.is_some(){
+            self.cache.snapshot.capes.len()
+        }else{0};
+        let local_count=self.library.entries.iter()
+            .filter(|e|e.kind==self.kind()).count();
+        let count=menu_actions.len()+cloud_count+local_count;
+        let bottom=h-47.;
+        let max_scroll=(count as f32*row_h-(bottom-menu_top)).max(0.);
+        let scroll=scroll.clamp(0.,max_scroll);
+        self.view=[menu_top,bottom,max_scroll];
+        ui.set_clip(Some([menu_x,menu_top,menu_w,(bottom-menu_top).max(1.)]));
+        let draw_row=|ui:&mut Ui,targets:&mut Vec<([f32;4],Action)>,
+                     i:usize,label:&str,subtitle:&str,
+                     action:Action,active:bool|{
+            let y=menu_top+i as f32*row_h-scroll;
+            if y+row_h<menu_top||y>bottom{return;}
+            let r=[menu_x,y,menu_w,row_h-1.];
+            if active{
+                ui.fill(menu_x+2.,y+9.,2.,row_h-17.,ink(0xD5ECFF,188));
+            }
+            let fit=ui.fit_text(Face::Medium,13.5,label,(menu_w-18.).max(40.));
+            ui.text(Face::Medium,13.5,menu_x+10.,y+4.,
+                ink(0xEBF4FF,if active{250}else{218}),&fit);
+            let sub=ui.fit_text(Face::Regular,9.7,subtitle,
+                (menu_w-18.).max(30.));
+            ui.text(Face::Regular,9.7,menu_x+10.,y+26.,
+                ink(0xA9C8E2,158),&sub);
+            ui.fill(menu_x+10.,y+row_h-1.,menu_w-18.,0.8,
+                ink(0x9CC8E6,23));
+            if let Some(hit)=ui.clip_rect(r){targets.push((hit,action));}
+        };
+        for(i,(label,action))in menu_actions.into_iter().enumerate(){
+            let subtitle=match i{
+                0=>"Abrir seletor de arquivos do Android",
+                1=>"Aplicar a aparência da conta",
+                2=>"Consultar Microsoft/Xbox",
+                3=>"Enviar aparência selecionada",
+                _=>"Alterar visualização do personagem",
+            };
+            draw_row(ui,targets,i,label,subtitle,action,false);
+        }
+        let mut offset=menu_actions.len();
+        if cloud_count>0{
+            for (index,cape) in self.cache.snapshot.capes.iter().enumerate(){
+                draw_row(ui,targets,offset,&cape.title,
+                    if cape.active{"CAPA EQUIPADA"}else{"ATIVAR CAPA DA NUVEM"},
+                    Action::WardrobeActivateCape(index),cape.active);
+                offset+=1;
+            }
+        }
+        for (index,entry) in self.library.entries.iter().enumerate(){
+            if entry.kind != self.kind(){continue;}
+            let active=selected_id==Some(entry.id.as_str());
+            draw_row(ui,targets,offset,&entry.title,
+                if active{"APARÊNCIA ATIVA"}else{"APLICAR APARÊNCIA LOCAL"},
+                Action::WardrobeSelect(index),active);
+            offset+=1;
+        }
+        ui.set_clip(None);
+    }
+
     pub fn draw(
         &mut self,
         ui: &mut Ui,
@@ -591,6 +745,10 @@ impl Wardrobe {
         top: f32,
     ) {
         use horizon_client::ui_theme::{Icon, active_theme, motion};
+        if active_theme().experience
+            == horizon_client::ui_theme::ExperiencePreset::OldSchool {
+            return self.draw_xmb(ui, targets, scroll, x, w, top);
+        }
         let theme = active_theme();
         let now = std::time::Instant::now();
         let tab_t = motion::ease_out_cubic(motion::progress(self.tab_changed_at, now, 0.20));

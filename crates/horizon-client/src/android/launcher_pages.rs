@@ -1,6 +1,8 @@
 use super::*;
 #[path = "launcher_sfx.rs"]
 mod ui_sfx;
+#[path = "launcher_xmb_pages.rs"]
+mod xmb_pages;
 use crate::catalog::SettingsCategory;
 use horizon_client::ui_theme::launcher_visual as visual;
 use horizon_client::{
@@ -499,6 +501,8 @@ pub(super) enum Action {
     FmExportSingle(usize),
     FmExportSelected,
     FmCloseModal,
+    /// Independent XMB file context view; never changes the file manager state.
+    XmbFilesPanel(u8),
 }
 
 pub(super) fn button(
@@ -511,11 +515,22 @@ pub(super) fn button(
 ) {
     let [x, y, w, h] = rect;
     let experience = horizon_client::ui_theme::active_theme().experience;
-    let radius = if experience == horizon_client::ui_theme::ExperiencePreset::OldSchool {
-        (h * 0.27).clamp(8., 14.)
-    } else {
-        h * 0.5
-    };
+    if experience == horizon_client::ui_theme::ExperiencePreset::OldSchool {
+        // A true PS3-like contextual text command. No more Material, satin,
+        // chrome, filled pill, border or dashboard shortcut plate.
+        if accent {
+            ui.fill(x + 4., y + h - 3., (w - 8.).max(0.), 1.1,
+                color::hex(0xD8EFFF, 152));
+        }
+        let size = if w < 85. { 11. } else { 12.5 };
+        let fitted = ui.fit_text(Face::Regular, size, label, (w - 10.).max(10.));
+        ui.centered_fit(Face::Regular, size, [x + 3., y, (w - 6.).max(8.), h],
+            color::hex(if accent { 0xE6F5FF } else { 0xBDD2E8 },
+                if accent { 242 } else { 197 }), &fitted);
+        if let Some(hit) = ui.clip_rect(rect) { targets.push((hit, action)); }
+        return;
+    }
+    let radius = h * 0.5;
     visual::panel(ui, rect, radius, accent);
     let padding = (w * 0.10).clamp(8.0, 14.0);
     let font = if w < 90.0 {
@@ -567,7 +582,16 @@ fn toggle(
         if on { my3_accent() } else { my3_muted() },
         if on { "Enabled" } else { "Off" },
     );
-    visual::component_switch(ui, x + w - 52., y + (h - 28.) * 0.5, on);
+    if horizon_client::ui_theme::active_theme().experience
+        == horizon_client::ui_theme::ExperiencePreset::OldSchool {
+        ui.text(Face::Regular, 11.5, x + w - 46., y + (h - 18.) * 0.5,
+            color::hex(0xDAEEFF, if on { 245 } else { 125 }),
+            if on { "ON" } else { "OFF" });
+        ui.fill(x + w - 60., y + h - 7., 2., 2.,
+            color::hex(0xD9EDFF, if on { 215 } else { 60 }));
+    } else {
+        visual::component_switch(ui, x + w - 52., y + (h - 28.) * 0.5, on);
+    }
     if let Some(c) = ui.clip_rect([x, y, w, h]) {
         targets.push((c, action));
     }
@@ -588,6 +612,12 @@ fn draw_setting_card(
 ) {
     let experience = horizon_client::ui_theme::active_theme().experience;
     let console = experience == horizon_client::ui_theme::ExperiencePreset::OldSchool;
+    if console {
+        xmb_pages::xmb_setting_row(
+            ui, targets, list_targets, x, y, w, h, title, subtitle, right_control,
+        );
+        return;
+    }
     if let SettingControl::SectionHeader(badge, icon) = right_control {
         if console {
             visual::panel(ui, [x, y + 6.0, w, h - 10.0], 10.0, true);
@@ -1278,7 +1308,13 @@ impl Launcher {
                 || self.catalog.config.super_perf_mode;
             let phase = if reduced { 0. } else { self.anim.intro_elapsed };
             let detail = if reduced { 0.38 } else { 1. };
-            horizon_client::ui_theme::launcher_xmb::background(&mut ui, phase, detail);
+            if self.catalog.config.theme.glass_effects {
+                horizon_client::ui_theme::launcher_xmb::background(&mut ui, phase, detail);
+            } else {
+                // The actual "atmospheric effects" switch remains functional:
+                // no shader dispatch or legacy wallpaper when disabled.
+                ui.fill(0., 0., w, h, color::hex(0x080E1D, 255));
+            }
         } else {
             ui.draw_theme_background(0.0, 0.0, w, h, &active_th);
         }
@@ -1492,6 +1528,14 @@ impl Launcher {
                     },
                 );
             }
+        } else if layout.console && page.is_catalog() {
+            // Entirely independent XMB menu: no M3 project cards, pills or
+            // repeated app-header layout. Original actions remain functional.
+            self.draw_xmb_catalog(
+                &mut ui, page, content_x, content_w, h, slide_y,
+            );
+        } else if layout.console && page == Page::Installed {
+            self.draw_xmb_installed(&mut ui, content_x, content_w, h, slide_y);
         } else if page == Page::Skins {
             self.wardrobe.draw(
                 &mut ui,
@@ -1499,7 +1543,10 @@ impl Launcher {
                 self.catalog.scroll,
                 content_x,
                 content_w,
-                if layout.console && !layout.portrait { 130.0 + slide_y } else { 62.0 + slide_y },
+                if layout.console {
+                    horizon_client::ui_theme::launcher_xmb::Cross::from_screen(w,h)
+                        .category_y + 51. + slide_y
+                } else { 62.0 + slide_y },
             );
             self.list_view = Some(self.wardrobe.view);
             self.catalog.scroll = self.catalog.scroll.min(self.wardrobe.view[2]);
@@ -1917,7 +1964,10 @@ impl Launcher {
             let offset = if layout.console && !layout.portrait { 67.0 } else { 0.0 };
             self.draw_installed(&mut ui, content_x, content_w, h, compact, slide_y + offset);
         } else {
-            let offset = if layout.console && !layout.portrait { 67.0 } else { 0.0 };
+            let offset = if layout.console {
+                let cross = horizon_client::ui_theme::launcher_xmb::Cross::from_screen(w, h);
+                cross.category_y + 48. - 60.
+            } else { 0.0 };
             self.draw_settings_page(
                 &mut ui, content_x, content_w, h, compact, slide_y + offset, ime_top_dp,
             );
@@ -3010,6 +3060,10 @@ impl Launcher {
     /// - Create New Folder with `Ui::text_field` (`FmModal::NewFolder`)
     /// - View File Details with metadata & read-only text preview (`FmModal::Details`)
     fn draw_fm_modal(&mut self, ui: &mut Ui, w: f32, h: f32, ime_top_dp: Option<f32>) {
+        if horizon_client::ui_theme::active_theme().experience
+            == horizon_client::ui_theme::ExperiencePreset::OldSchool {
+            return self.draw_xmb_file_modal(ui,w,h,ime_top_dp);
+        }
         let Some(modal) = self.catalog.fm_modal.clone() else {
             return;
         };
@@ -3305,6 +3359,10 @@ impl Launcher {
     /// Material You 3 Project Detail Dialog showing Modrinth PFP, Description,
     /// Gallery Screenshots, and selectable Versions to Download.
     fn draw_project_modal(&mut self, ui: &mut Ui, w: f32, h: f32) {
+        if horizon_client::ui_theme::active_theme().experience
+            == horizon_client::ui_theme::ExperiencePreset::OldSchool {
+            return self.draw_xmb_project_modal(ui,w,h);
+        }
         // The install label asks the catalog about the project the modal is showing, so work it out
         // before the modal is borrowed mutably for drawing.
         let Some(install_label) = self.catalog.project_modal.as_ref().map(|modal| {
@@ -3838,6 +3896,13 @@ impl Launcher {
         ime_top_dp: Option<f32>,
     ) {
         let cat = self.catalog.settings_category;
+        if cat == SettingsCategory::Overview
+            && horizon_client::ui_theme::active_theme().experience
+                == horizon_client::ui_theme::ExperiencePreset::OldSchool
+        {
+            self.draw_xmb_settings_overview(ui, content_x, content_w, h, slide_y);
+            return;
+        }
         if cat == SettingsCategory::Overview {
             ui.text(
                 Face::SemiBold,
@@ -5590,6 +5655,10 @@ impl Launcher {
             Some(Action::ConfirmExit) => {
                 events.exit();
             }
+            Some(Action::XmbFilesPanel(panel)) => {
+                self.xmb_files_panel = panel.min(2);
+                self.catalog.scroll = 0.;
+            }
             Some(Action::SettingsCat(cat)) => {
                 self.catalog.page = Page::Settings;
                 self.catalog.editing = None;
@@ -6778,6 +6847,10 @@ impl Launcher {
                 }
             }
             Some(Action::FmNavigateRoot(rel)) => {
+                // Selecting a contextual root returns to the actual files;
+                // otherwise the new XMB location list would stay onscreen.
+                self.xmb_files_panel = 0;
+                self.catalog.scroll = 0.;
                 self.catalog.fm_navigate(&self.home, (*rel).to_owned());
             }
             Some(Action::FmBreadcrumb(depth)) => {

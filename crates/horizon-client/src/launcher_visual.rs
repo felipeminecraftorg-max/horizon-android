@@ -1419,6 +1419,11 @@ pub fn appearance_screen(
     scroll: f32,
     mut target: impl FnMut([f32; 4], AppearanceAction),
 ) -> [f32; 3] {
+    if active_theme().experience == ExperiencePreset::OldSchool {
+        return super::launcher_xmb::appearance(
+            ui, x, w, bottom, slide, cfg, reduced, scroll, target,
+        );
+    }
     let back = [x, 72. + slide, 96., 44.];
     button(ui, back, "Back", Some(Icon::ArrowLeft), false);
     target(back, AppearanceAction::Back);

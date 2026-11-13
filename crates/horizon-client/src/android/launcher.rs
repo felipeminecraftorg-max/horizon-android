@@ -57,6 +57,8 @@ pub(super) struct Launcher {
     pub(super) anim: pages::AnimState,
     /// Independent XMB state, never shared with Liquid Glass.
     pub(super) xmb: horizon_client::ui_theme::launcher_xmb::Navigation,
+    /// 0: files, 1: named locations, 2: file commands. XMB only.
+    xmb_files_panel: u8,
     pub(super) control_editor: Option<horizon_client::touch::TouchControls>,
     worker: Option<mpsc::Receiver<std::result::Result<(), String>>>,
     error: Option<String>,
@@ -241,6 +243,7 @@ impl Launcher {
             install_transfer: Default::default(),
             anim: Default::default(),
             xmb: Default::default(),
+            xmb_files_panel: 0,
             control_editor: None,
             worker: None,
             error: None,
@@ -1047,6 +1050,7 @@ impl ApplicationHandler for Launcher {
         let xmb_wallpaper_animating = horizon_client::ui_theme::active_theme().experience
             == horizon_client::ui_theme::ExperiencePreset::OldSchool
             && !horizon_client::ui_theme::motion::reduced_motion()
+            && self.catalog.config.theme.glass_effects
             && !self.catalog.config.battery_perf_mode
             && !self.catalog.config.super_perf_mode;
         let animating = self.anim.is_active()
