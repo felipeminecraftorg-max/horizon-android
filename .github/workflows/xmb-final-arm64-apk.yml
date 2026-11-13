@@ -105,7 +105,10 @@ jobs:
             'install_note': 'Separate dev app. Previous dev app signed by a different key may need to be removed.'
           }, indent=2)+'\n')
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
-            out.write(f'### XMB final test build\n\nAPK: \`{name}\`\nSHA256: \`{digest}\`\n\n**Not production signed.** Separate test app; Android physical device not tested.\n')
+            out.write("### XMB final test build\\n\\n")
+            out.write(f"APK: {name}\\n")
+            out.write(f"SHA256: {digest}\\n\\n")
+            out.write("Not production signed. Separate test app; Android physical device not tested.\\n")
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
