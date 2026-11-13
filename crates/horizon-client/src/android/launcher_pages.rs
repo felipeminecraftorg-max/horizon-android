@@ -1166,12 +1166,16 @@ impl Launcher {
         };
         let (w, h) = (ui.w, ui.h);
         let active_th = horizon_client::ui_theme::active_theme();
-        ui.draw_theme_background(0.0, 0.0, w, h, &active_th);
         if active_th.experience == horizon_client::ui_theme::ExperiencePreset::OldSchool
-            && w > h && w >= 620. {
-            // Mild amethyst tint over the Graphite PS3-style background ribbons.
-            // It doesn't change the preserved Dark Aero wallpaper.
-            ui.fill(0., 0., w, h, color::hex(0x211730, 43));
+            && active_th.wallpaper == visual::Wallpaper::Graphite
+            && w > h && w >= 620.
+        {
+            // Only Old School's default Graphite dashboard gets the new muted
+            // console waves. Dark Aero, Liquid Glass and deliberately selected
+            // alternative wallpapers retain their original rendering.
+            visual::console_background(&mut ui, [0., 0., w, h]);
+        } else {
+            ui.draw_theme_background(0.0, 0.0, w, h, &active_th);
         }
 
         // The same native shell is used in portrait, landscape and capture fixtures.
