@@ -5992,7 +5992,53 @@ impl Game<'_> {
                 Vec::new()
             };
             let body = out.len();
-            let render = if layers_only {
+            // Experimental CEM rendering stays opt-in while GPU texture variants,
+            // per-mob CEM pose parity and complete EMF support are still in progress.
+            // Only try simple non-player models and fall back to vanilla if their
+            // resource, pose, or atlas is unavailable. FirstPerson stays untouched.
+            static CEM_PREVIEW: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+            let cem_enabled = *CEM_PREVIEW.get_or_init(|| {
+                std::env::var("HORIZON_CEM_PREVIEW").is_ok_and(|v| v == "1")
+            });
+            let cem_body = if cem_enabled && !layers_only && !is_player
+                && matches!(mob.kind.id.as_str(), "minecraft:zombie" | "minecraft:creeper")
+            {
+                let resources = &self.pack.render.entity_resources;
+                let compiled = &self.pack.render.cem_meshes;
+                match (resources.model_for_entity(&mob.kind.id), compiled.get(&mob.kind.id),
+                    lookup(&mob.kind.texture))
+                {
+                    (Some(model),Some(mesh),Some(uv)) => {
+                        let lerp = alpha as f32;
+                        let variables = |name:&str| -> Option<f64> {
+                            Some(f64::from(match name {
+                                "age" => mob.age as f32 + lerp,
+                                "limb_swing" | "limb_swing_pos" => mob.limb_position,
+                                "limb_speed" => mob.previous_limb_speed
+                                    + (mob.limb_speed - mob.previous_limb_speed) * lerp,
+                                "head_yaw" => (mob.previous_head_yaw
+                                    + (mob.head_yaw-mob.previous_head_yaw)*lerp).to_radians(),
+                                "head_pitch" => (mob.previous_head_pitch
+                                    + (mob.head_pitch-mob.previous_head_pitch)*lerp).to_radians(),
+                                "is_baby" => if mob.is_baby() {1.0} else {0.0},
+                                "is_in_water" => if mob.fluids.in_water {1.0} else {0.0},
+                                _ => return None,
+                            }))
+                        };
+                        match model.pose(&variables) {
+                            Ok((pose, errors)) if errors.is_empty() => {
+                                let base = horizon_client::mobs::render::base_transform(
+                                    mob, alpha as f32, camera
+                                );
+                                mesh.draw(&pose, base, uv, packed, out)
+                            }
+                            _ => false,
+                        }
+                    },
+                    _ => false,
+                }
+            } else { false };
+            let render = if layers_only || cem_body {
                 horizon_client::mobs::render::render_layers
             } else {
                 horizon_client::mobs::render::render_with
