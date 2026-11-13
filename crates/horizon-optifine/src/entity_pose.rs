@@ -49,7 +49,7 @@ impl Pose {
         self.by_name.insert(id.into(), i);
         self.nodes.push(Node {
             id: id.into(), parent, pivot: Vec3::from_array(part.translation),
-            rotation: Vec3::from_array(part.rotation).to_radians(),
+            rotation: Vec3::from_array(part.rotation.map(f32::to_radians)),
             scale: Vec3::ONE, visible: true, world: Mat4::IDENTITY,
         });
         for child in &part.children { self.push_part(child, Some(i))?; }
