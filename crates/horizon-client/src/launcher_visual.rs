@@ -3,6 +3,9 @@
 //! Dark Aero retains its cached wallpaper material. Neither reads pixels to the CPU.
 use super::{ExperiencePreset, Face, Icon, LauncherThemeConfig, ThemePreset, Ui, active_theme, color};
 use std::{cell::RefCell, collections::HashMap};
+#[path = "launcher_console_dashboard.rs"]
+mod console_layout;
+use console_layout::ConsoleDashboardLayout;
 
 pub fn default_effects() -> bool {
     true
@@ -306,6 +309,67 @@ fn scene(ui: &mut Ui<'_>, r: [f32; 4], corner: f32, sunset: bool) {
         band(y + h - (i as f32 + 1.) * dh, dh, inset);
     }
     band(y + corner, (h - 2. * corner).max(0.), 0.);
+}
+
+// A dedicated XMB-inspired backdrop for Old School. The existing Graphite
+// wallpaper is intentionally NOT modified: Dark Aero still relies on it.
+// Pixels are generated once and uploaded to the native atlas; there is no
+// per-frame CPU redraw, animation texture upload or external console asset.
+fn console_paper_pixel(u: f32, v: f32) -> [u8; 4] {
+    let lateral = (u - 0.48).abs();
+    let soft_light = (-((u - 0.68) / 0.46).powi(2)
+        - ((v - 0.58) / 0.55).powi(2)).exp() * 10.0;
+    let wave_a = 0.68 + 0.11 * (u * 4.15 + 0.28).sin() + 0.06 * (u - 0.5);
+    let wave_b = 0.81 + 0.075 * (u * 5.1 - 0.6).sin() - 0.025 * u;
+    // Wide diffuse ribbons provide atmosphere without bright, cutting
+    // diagonal lines through the control labels.
+    let broad_a = (-((v - wave_a) / 0.13).powi(2)).exp() * 18.0;
+    let broad_b = (-((v - wave_b) / 0.09).powi(2)).exp() * 11.0;
+    let satin_edge = (-((v - wave_a - 0.016) / 0.024).powi(2)).exp() * 6.0;
+    let fade = (1.0 - lateral * 0.30).clamp(0.68, 1.0);
+    let light = (soft_light + broad_a + broad_b + satin_edge) * fade;
+    [
+        (8.0 + light * 0.73).clamp(0.0, 255.0) as u8,
+        (12.0 + light * 0.85).clamp(0.0, 255.0) as u8,
+        (22.0 + light * 1.05).clamp(0.0, 255.0) as u8,
+        255,
+    ]
+}
+
+thread_local! {
+    static CONSOLE_PAPER: RefCell<Option<Vec<u8>>> = const { RefCell::new(None) };
+}
+
+/// Draw the Old School console's private, low-glare background.
+/// Keep Liquid Glass and user-selected alternate wallpapers untouched.
+pub fn console_background(ui: &mut Ui<'_>, r: [f32; 4]) {
+    CONSOLE_PAPER.with(|paper| {
+        let mut paper = paper.borrow_mut();
+        let pixels = paper.get_or_insert_with(|| {
+            let mut pixels = Vec::with_capacity((TEX_W * TEX_H * 4) as usize);
+            for y in 0..TEX_H {
+                for x in 0..TEX_W {
+                    pixels.extend(console_paper_pixel(
+                        x as f32 / TEX_W as f32,
+                        y as f32 / TEX_H as f32,
+                    ));
+                }
+            }
+            pixels
+        });
+        if let Some(t) = super::with_cache(ui.atlas, |cache| {
+            cache.image(ui.atlas, "launcher-wallpaper:oldschool-console-v2",
+                TEX_W, TEX_H, pixels)
+        }) {
+            let [x, y, w, h] = r;
+            ui.emit_clipped_uv(
+                ui.px_x(x), ui.px_y(y), ui.px_x(x + w), ui.px_y(y + h),
+                t.u0, t.v0, t.u1, t.v1, u32::MAX,
+            );
+        } else {
+            ui.fill(r[0], r[1], r[2], r[3], color::hex(0x080C16, 255));
+        }
+    });
 }
 
 pub fn background(ui: &mut Ui<'_>, r: [f32; 4], paper: Wallpaper) {
@@ -899,7 +963,7 @@ fn shell_console(
     let aw = (w * 0.22).clamp(138., 196.);
     let account_r = [w - aw - 66., 13., aw, 39.];
     ui.rounded(account_r[0], account_r[1], aw, 39., 9., color::hex(0xECF3FF, 27));
-    ui.stroke_rounded(account_r[0], account_r[1], aw, 39., 9., 0.9, color::hex(0xFFFFFF, 85));
+    ui.stroke_rounded(account_r[0], account_r[1], aw, 39., 9., 0.8, color::hex(0xFFFFFF, 53));
     ui.avatar_head_2d(account_r[0] + 6., 19., 27., account);
     if signed_in {
         ui.rounded(account_r[0] + 29., 40., 5., 5., 2.5, th.success);
@@ -912,14 +976,16 @@ fn shell_console(
     target(settings, ShellAction::Appearance);
     ui.fill(24., 117., w - 48., 1., color::hex(0xD4D8EB, 72));
 
-    // A physically animated lens follows the selected console tab. The
-    // underlying hitboxes remain fixed, so focus and touch never lag.
+    // XMB-inspired focus is an understated channel highlight, not a
+    // second chrome push button behind every selected category.
+    // Its spring follows visual focus only; hitboxes never move.
     if !items.is_empty() {
         let step = (w - 48.) / items.len() as f32;
         let fx = focus_x.clamp(24., w - 24. - step);
-        panel(ui, [fx + 10., 76., (step - 20.).max(22.), 34.], 12., false);
-        ui.fill(fx + step * 0.28, 114., step * 0.44, 1.4,
-            color::hex(0xEEF2FF, 208));
+        ui.rounded(fx + 8., 77., (step - 16.).max(25.), 33., 7.,
+            color::hex(0xAFC3D8, 22));
+        ui.fill(fx + step * 0.24, 115., step * 0.52, 1.5,
+            color::hex(0xD7E9FF, 226));
     }
     for (i, (label, _icon)) in items.iter().enumerate() {
         let tab = layout.nav_rect(w, h, i, items.len());
@@ -1103,105 +1169,148 @@ pub struct HomeView<'a> {
 }
 
 
-/// Old School has its own functional composition, not merely different colors.
-/// A console-like two-panel dashboard keeps the same actions/profile data while
-/// giving focus to the selected installation and a separate systems channel.
+/// Muted colored console tiles are *one* material surface: shade each
+/// accent toward deep graphite instead of stacking translucent rectangles.
+fn console_tile_tone(accent: u32) -> u32 {
+    let shade = |shift: u32, base: f32| -> u32 {
+        (((accent >> shift & 0xFF) as f32 * 0.29 + base * 0.71).round()
+            .clamp(0., 255.)) as u32
+    };
+    (shade(16, 21.) << 16) | (shade(8, 27.) << 8) | shade(0, 40.)
+}
+
+/// The Old School is a console dashboard, not a tinted copy of Liquid Glass.
+/// One strong game hero and a deliberately asymmetric, fixed-hitbox 3-row mosaic
+/// produce hierarchy without sacrificing any of the original eight actions.
 fn home_old_school(
     ui: &mut Ui<'_>,
     rect: [f32; 4],
     view: &HomeView<'_>,
     mut target: impl FnMut([f32; 4], HomeAction),
 ) {
-    let [x, y, w, h] = rect;
-    let th = active_theme();
-    let narrow = w < 430.;
-    // Genuine console tile dashboard: game cover occupies the left half and
-    // the functional shortcuts form a 3x2 grid, not cards below a modern hero.
-    let poster_w = if narrow { w } else { w * 0.505 };
-    let poster_h = if narrow { (h * 0.49).max(173.) } else { h };
-    let poster = [x, y, poster_w, poster_h];
-    // Drop the placeholder voxel image. Real GPU chrome samples the Graphite wallpaper.
-    panel(ui, poster, 16., false);
-    // The panel already draws its own border. A second outline here
-    // doubled the contour around the Old School game hero.
-    ui.rounded(x + 15., y + 16., (poster_w - 30.).min(330.), 104., 12.,
-        color::hex(0x0A1020, 111));
-    // The profile picker occupies the right edge. Short landscape views need
-    // a smaller heading so the title cannot run underneath that control.
-    let title_size = if narrow || poster_w < 360. { 23. } else { 31. };
-    ui.text(Face::SemiBold, title_size,
-        x + 26., y + 22., color::hex(0xFFFFFF, 255), "MINECRAFT");
-    ui.text(Face::Medium, 16., x + 27., y + 64., color::hex(0xE4E6F5, 243), "26.3");
-    let small = if view.installed { "Ready to play" } else { "Installation required" };
-    // At low landscape heights, the original third text row crossed the
-    // Play button. Share the version row instead of hiding status entirely.
-    let compact_status = poster_h < 190.;
-    let status_x = if compact_status { x + 93. } else { x + 27. };
-    let status_y = if compact_status { y + 64. } else { y + 95. };
-    let status = ui.fit_text(Face::Regular, 12.5, small,
-        (poster_w - if compact_status { 104. } else { 32. }).max(32.));
-    ui.text(Face::Regular, 12.5, status_x, status_y,
-        color::hex(0xFAFAFF, 236), &status);
-    // A small profile selector belongs to the poster, not the utility cards.
-    let profile = [x + poster_w - 119., y + 13., 105., 37.];
-    panel(ui, profile, 9., false);
-    ui.text(Face::Medium, 11., profile[0] + 9., profile[1] + 11.,
-        color::hex(0xF2F6FF, 245), &format!("Profile {}", view.profile + 1));
-    target(profile, HomeAction::Profile);
+    let [_, _, w, h] = rect;
+    if w <= 0. || h <= 0. { return; }
+    let layout = ConsoleDashboardLayout::new(rect);
+    let [hx, hy, hw, hh] = layout.hero;
 
-    let play = [x + 12., y + poster_h - 67., poster_w - 24., 54.];
-    panel(ui, play, 13., true);
-    ui.rounded(play[0] + 1., play[1] + 1., play[2] - 2., play[3] - 2.,
-        12., color::hex(0x587B61, 48));
-    // Cool satin edge: dark-chrome surface stays faithful to the user's V7 material.
-    ui.fill(play[0] + 12., play[1] + 3., play[2] - 24., 1.,
-        color::hex(0xE9F1FA, 102));
-    ui.icon(Icon::Play, play[0] + 19., play[1] + 14., 27., color::hex(0xFFFFFF, 255));
-    let label = if view.launching { "Getting ready..." } else if view.installed {
+    // Quiet editorial hero: a single opaque/satin layer prevents wallpaper
+    // ribbons and previously drawn labels from passing through body text.
+    ui.rounded(hx, hy, hw, hh, 16., color::hex(0x111A2A, 230));
+    ui.stroke_rounded(hx, hy, hw, hh, 16., 0.8, color::hex(0xC8D4E7, 65));
+    ui.fill(hx + 21., hy + 15., (hw - 42.).max(0.), 1.,
+        color::hex(0xBBCDE4, 43));
+
+    ui.text(Face::Medium, 10., hx + 22., hy + 20.,
+        color::hex(0xA6B7CB, 205), "GAME LIBRARY / 01");
+    let heading_size = if hw < 390. { 27. } else { 32. };
+    let heading = ui.fit_text(Face::SemiBold, heading_size, "MINECRAFT", hw - 43.);
+    ui.text(Face::SemiBold, heading_size, hx + 22., hy + 43.,
+        color::hex(0xF2F5FC, 255), &heading);
+
+    let ready = if view.installed { "Ready to play" } else { "Installation required" };
+    if hh < 192. {
+        // Portrait and short landscape: fit the complete state on one line,
+        // keeping a safe gap above Play and Profile.
+        let status = format!("26.3  /  {ready}");
+        let status = ui.fit_text(Face::Medium, 12., &status, hw - 44.);
+        ui.text(Face::Medium, 12., hx + 23., hy + 88.,
+            color::hex(0xC3D1E0, 237), &status);
+    } else {
+        ui.text(Face::Medium, 15., hx + 23., hy + 89.,
+            color::hex(0xDAE3EE, 245), "JAVA EDITION 26.3");
+        ui.fill(hx + 23., hy + 117., 5., 5.,
+            color::hex(if view.installed { 0x92D2AB } else { 0xD9AA78 }, 238));
+        ui.text(Face::Regular, 12., hx + 38., hy + 111.,
+            color::hex(0xB8C7D7, 231), ready);
+        if hh > 265. {
+            let renderer = ui.fit_text(Face::Regular, 10., view.renderer, hw - 50.);
+            ui.text(Face::Regular, 10., hx + 23., hy + 149.,
+                color::hex(0x91A2B8, 183), &renderer);
+        }
+    }
+
+    // Fixed footer dock. The primary action is never covered by a floating
+    // profile chip; both are sizeable, independent and always clickable.
+    let play = [hx + 14., hy + hh - 62., hw - 155., 48.];
+    let profile = [hx + hw - 124., hy + hh - 62., 110., 48.];
+    ui.fill(hx + 14., play[1] - 10., (hw - 28.).max(0.), 1.,
+        color::hex(0xA8B8CD, 42));
+
+    ui.rounded(play[0], play[1], play[2], play[3], 10.,
+        color::hex(0x426853, 242));
+    ui.fill(play[0] + 11., play[1] + 3., (play[2] - 22.).max(0.), 1.,
+        color::hex(0xC8F5D8, 100));
+    ui.icon(Icon::Play, play[0] + 13., play[1] + 12., 24.,
+        color::hex(0xF5FFF9, 255));
+    let label = if view.launching { "Starting..." } else if view.installed {
         "Play Minecraft"
-    } else { "Install Minecraft" };
-    let fitted = ui.fit_text(Face::Medium, 22., label, poster_w - 66.);
-    ui.text(Face::Medium, 22., play[0] + 57., play[1] + 15.,
-        color::hex(0xFFFFFF, 255), &fitted);
+    } else {
+        "Install Minecraft"
+    };
+    let label = ui.fit_text(Face::Medium, if hw < 370. { 14. } else { 17. },
+        label, (play[2] - 50.).max(0.));
+    ui.text(Face::Medium, if hw < 370. { 14. } else { 17. },
+        play[0] + 44., play[1] + 14.,
+        color::hex(0xF6FFF8, 255), &label);
     if !view.launching { target(play, HomeAction::Play); }
 
-    let gap = 7.;
-    let cols = if narrow { 2 } else { 3 };
-    let tx = if narrow { x } else { x + poster_w + 10. };
-    let ty = if narrow { y + poster_h + gap } else { y };
-    let available = if narrow { w } else { w - poster_w - 10. };
-    let card_w = (available - gap * (cols - 1) as f32) / cols as f32;
-    let card_h = if narrow { ((h - poster_h - 3. * gap) / 3.).max(39.) }
-        else { (h - gap) * 0.5 };
-    // A tint is a small *translucent* reflection in the chrome, not a solid
-    // Xbox-style painted tile. Maintain bright typography over each finish.
+    ui.rounded(profile[0], profile[1], profile[2], profile[3], 10.,
+        color::hex(0x263248, 240));
+    let profile_name = ui.fit_text(Face::Medium, 11.,
+        &format!("Profile {}", view.profile + 1), profile[2] - 27.);
+    ui.text(Face::Medium, 11., profile[0] + 11., profile[1] + 16.,
+        color::hex(0xE4EBF6, 242), &profile_name);
+    ui.icon(Icon::ChevronDown, profile[0] + profile[2] - 19.,
+        profile[1] + 16., 12., color::hex(0xBBC9DC, 238));
+    target(profile, HomeAction::Profile);
+
+    // Xbox-like varied tile spans without Xbox artwork or branding.
+    // Wide tiles read horizontally; compact tiles use icon-over-label.
+    // All six existing destinations retain exactly the same actions.
     let shortcuts = [
-        ("Mods", Icon::Mods, HomeAction::Mods, 0x986C9A_u32),
-        ("Packs", Icon::Packs, HomeAction::Packs, 0x537DB2_u32),
-        ("Shaders", Icon::Shaders, HomeAction::Shaders, 0xB18A57_u32),
-        ("My files", Icon::Folder, HomeAction::Files, 0x5A8DA2_u32),
-        ("Skins", Icon::Person, HomeAction::Skins, 0x619B7A_u32),
-        ("Settings", Icon::Gear, HomeAction::Settings, 0x777E9A_u32),
+        ("Mods", Icon::Mods, HomeAction::Mods, 0x755A83_u32, "EXTENSIONS"),
+        ("Packs", Icon::Packs, HomeAction::Packs, 0x496D91_u32, "ASSETS"),
+        ("Shaders", Icon::Shaders, HomeAction::Shaders, 0x907451_u32, "VISUALS"),
+        ("My files", Icon::Folder, HomeAction::Files, 0x477F8E_u32, "STORAGE"),
+        ("Skins", Icon::Person, HomeAction::Skins, 0x4D8570_u32, "IDENTITY"),
+        ("Settings", Icon::Gear, HomeAction::Settings, 0x626A83_u32, "SYSTEM"),
     ];
-    for (i, (name, icon, action, tint)) in shortcuts.into_iter().enumerate() {
-        let row = (i / cols) as f32;
-        let col = (i % cols) as f32;
-        let card = [tx + col * (card_w + gap), ty + row * (card_h + gap), card_w, card_h];
-        if card[1] + card[3] > y + h + 1. { continue; }
-        panel(ui, card, 12., false);
-        ui.rounded(card[0] + 1., card[1] + 1., card_w - 2., card_h - 2.,
-            11., color::hex(tint, 47));
-        // A restrained tinted glint keeps each shortcut distinct without
-        // painting a second border over the existing optical chrome edge.
-        ui.fill(card[0] + 12., card[1] + 3., (card_w - 24.).max(0.), 1.,
-            color::hex(tint, 110));
-        let icon_size = if narrow { 23. } else { (card_h * 0.30).min(36.) };
-        ui.icon(icon, card[0] + (card_w - icon_size) * 0.5,
-            card[1] + (card_h * 0.23).min(35.), icon_size, color::hex(0xF5F7FF, 243));
-        let font = if narrow { 13. } else { 16. };
-        ui.centered_fit(Face::Medium, font,
-            [card[0] + 4., card[1] + card_h - if narrow { 26. } else { 38. }, card_w - 8., 29.],
-            color::hex(0xF4F5FB, 255), name);
+    for (i, (name, icon, action, tint, descriptor)) in shortcuts.into_iter().enumerate() {
+        let card = layout.shortcuts[i];
+        let [cx, cy, cw, ch] = card;
+        if cw <= 1. || ch <= 1. { continue; }
+        // One satin colored surface. No nested lens, thick bevel, duplicated
+        // border, or bright reflection competing with labels and touch targets.
+        ui.rounded(cx, cy, cw, ch, 9., color::hex(console_tile_tone(tint), 243));
+        ui.stroke_rounded(cx, cy, cw, ch, 9., 0.7,
+            color::hex(0xCBD5E3, 34));
+        // A slim identity rail retains each category's muted tint.
+        ui.fill(cx + 3., cy + 11., 2., (ch - 22.).max(0.),
+            color::hex(tint, 158));
+        ui.fill(cx + 12., cy + 3., (cw - 24.).max(0.), 1.,
+            color::hex(0xD4DDEB, 35));
+
+        let wide = cw > ch * 1.75;
+        if wide {
+            let caption = ui.fit_text(Face::Medium, 9., descriptor, (cw - 68.).max(30.));
+            ui.text(Face::Medium, 9., cx + 15., cy + 12.,
+                color::hex(0xBCC8D8, 206), &caption);
+            let fitted = ui.fit_text(Face::SemiBold, 17., name, (cw - 71.).max(30.));
+            ui.text(Face::SemiBold, 17., cx + 15., cy + ch - 34.,
+                color::hex(0xF2F6FD, 251), &fitted);
+            ui.icon(icon, cx + cw - 48., cy + (ch - 30.) * 0.5,
+                30., color::hex(0xEDF2FC, 241));
+        } else {
+            let icon_size = (ch * 0.35).clamp(18., 28.);
+            ui.icon(icon, cx + (cw - icon_size) * 0.5,
+                cy + (ch * 0.15), icon_size,
+                color::hex(0xF2F6FD, 245));
+            let fitted = ui.fit_text(Face::Medium, if cw < 98. { 11. } else { 13. },
+                name, (cw - 10.).max(24.));
+            ui.centered_fit(Face::Medium, if cw < 98. { 11. } else { 13. },
+                [cx + 5., cy + ch - 23., cw - 10., 17.],
+                color::hex(0xF2F5FB, 253), &fitted);
+        }
         target(card, action);
     }
 }
@@ -1807,6 +1916,63 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn console_tile_tints_remain_muted_and_individually_distinct() {
+        let tints = [0x755A83, 0x496D91, 0x907451, 0x477F8E, 0x4D8570, 0x626A83];
+        let shades: Vec<_> = tints.iter().copied().map(console_tile_tone).collect();
+        let unique: std::collections::HashSet<_> = shades.iter().copied().collect();
+        assert_eq!(unique.len(), 6);
+        for shade in shades {
+            assert!((shade >> 16 & 0xFF) <= 74);
+            assert!((shade >> 8 & 0xFF) <= 80);
+            assert!((shade & 0xFF) <= 94);
+        }
+    }
+
+    #[test]
+    fn old_school_private_backdrop_has_no_hot_white_streaks() {
+        // Old School's procedural wallpaper must stay muted even at
+        // wave intersections; Graphite and Liquid Glass remain unchanged.
+        for y in 0..48 {
+            for x in 0..64 {
+                let px = console_paper_pixel(x as f32 / 63., y as f32 / 47.);
+                assert!(px[0] < 70 && px[1] < 70 && px[2] < 90,
+                    "console wallpaper unexpectedly bright: {px:?}");
+                assert_eq!(px[3], 255);
+            }
+        }
+    }
+
+    #[test]
+    fn old_school_console_mosaic_uses_asymmetric_tiles_without_overlaps() {
+        // Test the actual Play area after header/footer reservations.
+        for bounds in [
+            [24., 130., 712., 202.], [24., 130., 852., 272.],
+            [16., 76., 308., 440.], [16., 76., 378., 580.],
+        ] {
+            let layout = ConsoleDashboardLayout::new(bounds);
+            let mut all = vec![layout.hero];
+            all.extend(layout.shortcuts);
+            let [x, y, w, h] = bounds;
+            for (i, r) in all.iter().enumerate() {
+                assert!(r[2] > 0. && r[3] >= 44., "{bounds:?} undersized: {r:?}");
+                assert!(r[0] >= x - 0.01 && r[1] >= y - 0.01
+                    && r[0] + r[2] <= x + w + 0.01
+                    && r[1] + r[3] <= y + h + 0.01,
+                    "{bounds:?} out of range: {r:?}");
+                for other in all.iter().take(i) {
+                    assert!(r[0] >= other[0] + other[2]
+                        || other[0] >= r[0] + r[2]
+                        || r[1] >= other[1] + other[3]
+                        || other[1] >= r[1] + r[3],
+                        "{bounds:?} overlaps: {r:?} and {other:?}");
+                }
+            }
+            assert!(layout.shortcuts[0][2] > layout.shortcuts[1][2]);
+            assert!(layout.shortcuts[3][2] > layout.shortcuts[2][2]);
         }
     }
 
