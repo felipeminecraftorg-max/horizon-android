@@ -1830,41 +1830,65 @@ impl Launcher {
             || (self.catalog.downloading.is_some() && self.catalog.busy());
         if !in_progress_dialog {
             let status = self.error.as_deref().unwrap_or(&self.catalog.status);
-            if !status.is_empty()
-                && (page == Page::Play
-                    || (page == Page::Settings
-                        && self.catalog.settings_category == SettingsCategory::Overview))
-            {
-                button(
-                    &mut ui,
-                    &mut self.targets,
-                    [
-                        content_x,
-                        h - 40.,
-                        (content_w - 116.).clamp(100., 260.),
-                        32.,
-                    ],
-                    if self.error.is_some() {
-                        "View error report"
-                    } else {
-                        "Status & session report"
-                    },
-                    Action::StatusDetails(true),
-                    false,
-                );
-            }
-            if page == Page::Play
+            let has_utilities = page == Page::Play
                 || (page == Page::Settings
-                    && self.catalog.settings_category == SettingsCategory::Overview)
-            {
-                button(
-                    &mut ui,
-                    &mut self.targets,
-                    [w - 118.0, h - 38.0, 92.0, 28.0],
-                    "GitHub",
-                    Action::Repository,
-                    false,
-                );
+                    && self.catalog.settings_category == SettingsCategory::Overview);
+            if has_utilities && layout.console && !layout.portrait && page == Page::Play {
+                // The console Home has a quiet, continuous system footer.
+                // Keep full touch rectangles but avoid detached floating
+                // chrome buttons competing with the hero and quick access.
+                ui.fill(content_x, h - 52., content_w, 1.,
+                    color::hex(0xC3D2E4, 46));
+                if !status.is_empty() {
+                    let report = [content_x, h - 49., (content_w - 150.).clamp(140., 290.), 42.];
+                    let name = if self.error.is_some() {
+                        "VIEW ERROR REPORT"
+                    } else {
+                        "STATUS & SESSION REPORT"
+                    };
+                    ui.text(Face::Medium, 11., report[0] + 8., report[1] + 14.,
+                        if self.error.is_some() {
+                            color::hex(0xE8A8A4, 237)
+                        } else {
+                            color::hex(0xB9C7DA, 216)
+                        }, name);
+                    if let Some(hit) = ui.clip_rect(report) {
+                        self.targets.push((hit, Action::StatusDetails(true)));
+                    }
+                }
+                let repository = [w - 141., h - 49., 117., 42.];
+                ui.text(Face::Medium, 11., repository[0] + 32., repository[1] + 14.,
+                    color::hex(0xB9C7DA, 216), "GITHUB");
+                if let Some(hit) = ui.clip_rect(repository) {
+                    self.targets.push((hit, Action::Repository));
+                }
+            } else {
+                // Standard and Liquid Glass retain their existing footer
+                // widgets, including Settings overview and error reporting.
+                if !status.is_empty() && has_utilities {
+                    button(
+                        &mut ui,
+                        &mut self.targets,
+                        [content_x, h - 40., (content_w - 116.).clamp(100., 260.), 32.],
+                        if self.error.is_some() {
+                            "View error report"
+                        } else {
+                            "Status & session report"
+                        },
+                        Action::StatusDetails(true),
+                        false,
+                    );
+                }
+                if has_utilities {
+                    button(
+                        &mut ui,
+                        &mut self.targets,
+                        [w - 118.0, h - 38.0, 92.0, 28.0],
+                        "GitHub",
+                        Action::Repository,
+                        false,
+                    );
+                }
             }
         }
 
