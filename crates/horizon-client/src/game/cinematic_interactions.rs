@@ -4,7 +4,7 @@
 //! remapping, server sync, hands and camera Mixins. This initial native
 //! implementation covers their presentation camera transitions without
 //! changing inventory transactions, network packets, game state or input.
-use std::f32::consts::PI;
+use super::{Game, Screen, stations};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Station {
@@ -128,6 +128,28 @@ impl Rig {
         )
     }
 }
+impl Game<'_> {
+    /// Identify workstation scenes from the same state that renders the
+    /// inventory screen. No server packets, block edits, or click interception.
+    pub(super) fn cinematic_station(&self) -> Option<Station> {
+        if !self.camera_type.first_person() || self.title.is_some()
+            || self.screen != Screen::Inventory { return None; }
+        if self.craft_table.is_some() { return Some(Station::Crafting); }
+        let kind=self.station.as_ref()?.kind;
+        Some(match kind {
+            stations::Kind::Enchanting => Station::Enchanting,
+            stations::Kind::Anvil => Station::Anvil,
+            stations::Kind::Grindstone => Station::Grindstone,
+            stations::Kind::Smithing => Station::Smithing,
+            stations::Kind::Stonecutter => Station::Stonecutter,
+            stations::Kind::Merchant => Station::Other,
+            stations::Kind::Beacon => Station::Beacon,
+            stations::Kind::Cartography => Station::Cartography,
+            stations::Kind::Loom => Station::Loom,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
