@@ -50,7 +50,7 @@ impl Default for ScreenMotion {
     fn default() -> Self { Self { opacity:1.0,scale:1.0 } }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct ScreenOverride {
     pub enabled: Option<bool>,
     pub duration_ms: Option<f32>,
