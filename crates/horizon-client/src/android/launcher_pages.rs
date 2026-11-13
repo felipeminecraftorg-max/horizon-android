@@ -1084,7 +1084,7 @@ impl Launcher {
         }
     }
 
-    fn xmb_step_home(&mut self, delta: i32) {
+    pub(super) fn xmb_step_home(&mut self, delta: i32) {
         let action = self.xmb.step_home(delta);
         self.pending_focus = Some(xmb_home_to_action(action));
         self.focus = None;
@@ -1105,7 +1105,7 @@ impl Launcher {
         self.activate(events)
     }
 
-    fn xmb_navigation_available(&self) -> bool {
+    pub(super) fn xmb_navigation_available(&self) -> bool {
         horizon_client::ui_theme::active_theme().experience
             == horizon_client::ui_theme::ExperiencePreset::OldSchool
             && !self.login.visible
