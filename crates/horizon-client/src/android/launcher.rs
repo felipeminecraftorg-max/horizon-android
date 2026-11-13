@@ -445,6 +445,16 @@ impl Launcher {
                 };
             self.catalog.scroll = 0.0;
             self.anim.trigger_page_transition();
+        } else if self.catalog.page != Page::Play
+            && self.catalog.editing.is_none()
+            && horizon_client::ui_theme::active_theme().experience
+                == horizon_client::ui_theme::ExperiencePreset::OldSchool
+        {
+            // XMB circle/back climbs to the Game axis before asking to exit.
+            self.catalog.page = Page::Play;
+            self.catalog.scroll = 0.;
+            self.catalog.browse(&self.home);
+            self.anim.trigger_page_transition();
         } else if self.catalog.editing.take().is_none() {
             self.exit_confirmation = true;
         }
@@ -453,6 +463,13 @@ impl Launcher {
         self.targets.clear();
         self.list_targets.clear();
         self.drag = None;
+        if !self.exit_confirmation
+            && self.catalog.page == Page::Play
+            && horizon_client::ui_theme::active_theme().experience
+                == horizon_client::ui_theme::ExperiencePreset::OldSchool
+        {
+            self.xmb_step_home(0);
+        }
         if let Err(error) = self.catalog.config.save(&self.home) {
             self.fail(error);
         }
@@ -824,7 +841,7 @@ impl ApplicationHandler for Launcher {
                         winit::keyboard::Key::Named(winit::keyboard::NamedKey::Enter)
                     )
                 {
-                    self.activate(events)
+                    self.xmb_confirm_selected(events)
                 } else {
                     self.type_key(event);
                     Ok(())
@@ -1111,18 +1128,22 @@ impl Launcher {
                     self.controller_repeat = Some((b, now, false));
                 }
             } else if b == Button::South {
-                self.activate(events)?;
+                self.xmb_confirm_selected(events)?;
             } else if b == Button::East {
-                crate::platform::hide();
-                self.catalog.editing = None;
-                if self.chooser.take().is_none() {
-                    if self.login.visible {
-                        self.login.visible = false;
-                    } else {
-                        self.catalog.page = Page::Play;
+                if self.xmb_navigation_available() {
+                    self.request_back();
+                } else {
+                    crate::platform::hide();
+                    self.catalog.editing = None;
+                    if self.chooser.take().is_none() {
+                        if self.login.visible {
+                            self.login.visible = false;
+                        } else {
+                            self.catalog.page = Page::Play;
+                        }
                     }
+                    self.focus = None;
                 }
-                self.focus = None;
             }
         }
         Ok(())
