@@ -1093,6 +1093,18 @@ impl Launcher {
         }
     }
 
+    /// Keyboard and controller confirmation always acts on the item visibly
+    /// selected in the XMB Home column, including the very first A/Enter press.
+    pub(super) fn xmb_confirm_selected(
+        &mut self, events: &ActiveEventLoop,
+    ) -> Result<()> {
+        if self.xmb_navigation_available() && self.catalog.page == Page::Play {
+            let wanted = xmb_home_to_action(self.xmb.selected_action());
+            self.focus = self.targets.iter().rposition(|(_, action)| *action == wanted);
+        }
+        self.activate(events)
+    }
+
     fn xmb_navigation_available(&self) -> bool {
         horizon_client::ui_theme::active_theme().experience
             == horizon_client::ui_theme::ExperiencePreset::OldSchool
@@ -1103,6 +1115,8 @@ impl Launcher {
             && !self.diagnostics_modal_open
             && self.catalog.project_modal.is_none()
             && self.catalog.fm_modal.is_none()
+            && self.catalog.editing.is_none()
+            && self.control_editor.is_none()
     }
 
     pub(super) fn pointer_action(&self) -> Option<Action> {
@@ -7207,9 +7221,14 @@ impl Launcher {
                     self.apply_slider_fraction(action, frac);
                 } else {
                     let density_f64 = density as f64;
+                    let xmb_allowed = self.xmb_navigation_available();
                     if let Some(drag) = &mut self.drag {
                         let delta = drag.update(t.location.x, t.location.y, density_f64);
-                        if drag.moved {
+                        let dx = (t.location.x - drag.origin_x()).abs();
+                        let dy = (t.location.y - drag.origin_y()).abs();
+                        let horizontal_xmb_swipe = xmb_allowed
+                            && dx >= 18. * density_f64 && dx > dy * 1.3;
+                        if drag.moved && !horizontal_xmb_swipe {
                             if let Some(chooser) = &mut self.chooser {
                                 chooser.scroll = (chooser.scroll + delta).max(0.0);
                             } else if let Some(modal) = &mut self.catalog.project_modal {
@@ -7236,24 +7255,54 @@ impl Launcher {
                     {
                         let dx = px - start.origin_x() as f32 / density;
                         let dy = py - start.origin_y() as f32 / density;
-                        if dx.abs() > 38. && dx.abs() > dy.abs() * 1.3 {
-                            self.taps.cancel();
-                            self.xmb_switch_category(if dx < 0. { 1 } else { -1 });
-                            return Ok(());
-                        }
-                        if self.catalog.page == Page::Play
-                            && dy.abs() > 38.
-                            && dy.abs() > dx.abs() * 1.3
-                        {
-                            self.taps.cancel();
-                            let magnitude = ((dy.abs() / 66.).round() as i32).clamp(1, 3);
-                            self.xmb_step_home(if dy < 0. { magnitude } else { -magnitude });
-                            return Ok(());
+                        let swipe = super::gesture::xmb_swipe(
+                            dx, dy, self.catalog.page == Page::Play,
+                        );
+                        match swipe {
+                            Some(super::gesture::XmbSwipe::Category(delta)) => {
+                                self.taps.cancel();
+                                self.xmb_switch_category(delta);
+                                return Ok(());
+                            }
+                            Some(super::gesture::XmbSwipe::Item(delta)) => {
+                                self.taps.cancel();
+                                self.xmb_step_home(delta);
+                                return Ok(());
+                            }
+                            None => {}
                         }
                     }
                     let moved = drag.is_none_or(|drag| drag.moved);
                     let target = self.pointer_action();
                     if self.taps.finish(t.id, target, moved) {
+                        if self.xmb_navigation_available() && self.catalog.page == Page::Play {
+                            let size = self.renderer.as_ref().map(|r| (
+                                r.config.width as f32 / density,
+                                r.config.height as f32 / density,
+                            ));
+                            if let Some((width, height)) = size {
+                                let cross = horizon_client::ui_theme::launcher_xmb::Cross::from_screen(
+                                    width, height,
+                                );
+                                if py >= cross.category_y + 46.
+                                    && let Some(action) = target
+                                    && let Some((index, _)) = horizon_client::ui_theme::launcher_xmb::HOME_ACTIONS
+                                        .iter().enumerate()
+                                        .find(|(_, item)| xmb_home_to_action(**item) == action)
+                                    && index != self.xmb.selected_home()
+                                {
+                                    // First tap focuses a neighboring XMB row;
+                                    // second tap/confirm activates it. A category
+                                    // tap never changes Home selection.
+                                    self.xmb.focus_home(
+                                        horizon_client::ui_theme::launcher_xmb::HOME_ACTIONS[index],
+                                    );
+                                    self.pending_focus = Some(action);
+                                    self.focus = None;
+                                    return Ok(());
+                                }
+                            }
+                        }
                         self.activate(events)?;
                     }
                 }
