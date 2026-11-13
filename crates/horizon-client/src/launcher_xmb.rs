@@ -33,20 +33,83 @@ const CATEGORY_ICONS: [Icon; 7] = [
 #[derive(Clone, Debug, Default)]
 pub struct Navigation {
     selected_home: usize,
+    // Optics move independently from stable, immediately correct touch targets.
+    item_trail: f32,
+    item_velocity: f32,
+    category_trail: f32,
+    category_velocity: f32,
 }
 impl Navigation {
     pub fn selected_home(&self) -> usize { self.selected_home }
     pub fn step_home(&mut self, delta: i32) -> HomeAction {
+        let before = self.selected_home;
         self.selected_home = self.selected_home.saturating_add_signed(delta as isize)
             .min(HOME_ACTIONS.len() - 1);
+        self.item_trail = (self.item_trail + before as f32 - self.selected_home as f32)
+            .clamp(-4., 4.);
         HOME_ACTIONS[self.selected_home]
     }
     pub fn focus_home(&mut self, action: HomeAction) {
         if let Some(index) = HOME_ACTIONS.iter().position(|item| *item == action) {
+            self.item_trail = (self.item_trail + self.selected_home as f32 - index as f32)
+                .clamp(-4., 4.);
             self.selected_home = index;
         }
     }
+    pub fn move_category(&mut self, step: isize) {
+        self.category_trail = (self.category_trail - step as f32).clamp(-3., 3.);
+    }
     pub fn selected_action(&self) -> HomeAction { HOME_ACTIONS[self.selected_home] }
+    pub fn focus_offset(&self) -> (f32, f32) {
+        (self.category_trail, self.item_trail)
+    }
+    pub fn motion_active(&self) -> bool {
+        self.item_trail.abs() > 0.012 || self.item_velocity.abs() > 0.05
+            || self.category_trail.abs() > 0.012 || self.category_velocity.abs() > 0.05
+    }
+    /// Exact critically damped spring integration gives the same motion at
+    /// 60, 90, 120 Hz and respects reduced-motion immediately.
+    pub fn animate(&mut self, dt: f32, reduced_motion: bool) {
+        if reduced_motion {
+            self.item_trail = 0.;
+            self.item_velocity = 0.;
+            self.category_trail = 0.;
+            self.category_velocity = 0.;
+            return;
+        }
+        let dt = if dt.is_finite() { dt.clamp(0., 0.08) } else { 0. };
+        fn spring(x: &mut f32, v: &mut f32, dt: f32) {
+            const OMEGA: f32 = 17.;
+            let change = (*v + OMEGA * *x) * dt;
+            let decay = (-OMEGA * dt).exp();
+            let old_x = *x;
+            *x = (*x + change) * decay;
+            *v = (*v - OMEGA * (*v + OMEGA * old_x) * dt) * decay;
+            if x.abs() < 0.001 && v.abs() < 0.01 {
+                *x = 0.;
+                *v = 0.;
+            }
+        }
+        spring(&mut self.item_trail, &mut self.item_velocity, dt);
+        spring(&mut self.category_trail, &mut self.category_velocity, dt);
+    }
+}
+
+/// Light-only focus trails, never moving input rectangles or reproducing old
+/// chrome cards. Intended to be drawn over the native XMB after each frame.
+pub fn focus_trails(ui: &mut Ui<'_>, navigation: &Navigation, home: bool) {
+    let c = Cross::from_screen(ui.w, ui.h);
+    let (category, item) = navigation.focus_offset();
+    if category.abs() > 0.01 {
+        let x = c.x + category * c.category_step;
+        ui.rounded(x - 18., c.category_y + 32., 36., 1.6, 0.8,
+            color::hex(0xC8EAFF, ((category.abs() / 3.).min(1.) * 105.) as u8));
+    }
+    if home && item.abs() > 0.01 {
+        let y = c.item_y + item * c.item_step;
+        ui.rounded(c.x + 43., y - 13., 1.8, 26., 1.,
+            color::hex(0xB8E5FF, ((item.abs() / 4.).min(1.) * 173.) as u8));
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -336,6 +399,33 @@ pub fn appearance(
     }
     ui.set_clip(None);
     [start,end,max_scroll]
+}
+
+#[cfg(test)]
+mod stage4_motion_tests {
+    use super::*;
+    #[test]
+    fn visual_focus_tracks_exactly_across_display_refresh_rates() {
+        fn at_hz(hz: u32) -> f32 {
+            let mut n = Navigation::default();
+            n.step_home(4);
+            for _ in 0..hz / 4 { n.animate(1.0 / hz as f32, false); }
+            let remainder = 0.25 - (hz / 4) as f32 / hz as f32;
+            if remainder > 0. { n.animate(remainder, false); }
+            n.focus_offset().1
+        }
+        assert!((at_hz(60) - at_hz(120)).abs() < 0.002);
+        assert!((at_hz(90) - at_hz(120)).abs() < 0.002);
+    }
+    #[test]
+    fn reduced_motion_resets_both_axes_and_keeps_selection() {
+        let mut n = Navigation::default();
+        n.step_home(3);
+        n.move_category(1);
+        n.animate(0.01, true);
+        assert_eq!(n.selected_home(), 3);
+        assert_eq!(n.focus_offset(), (0., 0.));
+    }
 }
 
 #[cfg(test)]

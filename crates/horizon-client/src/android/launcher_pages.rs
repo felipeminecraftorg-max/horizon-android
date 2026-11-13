@@ -503,6 +503,9 @@ pub(super) enum Action {
     FmCloseModal,
     /// Independent XMB file context view; never changes the file manager state.
     XmbFilesPanel(u8),
+    /// Focusable actions in the independent XMB long-press menu.
+    XmbContextChoice(u8),
+    XmbContextDismiss,
 }
 
 pub(super) fn button(
@@ -1083,7 +1086,53 @@ fn xmb_home_to_action(action: visual::HomeAction) -> Action {
     }
 }
 
+/// Only real, already implemented catalog actions are offered. The
+/// long-press overlay never performs a destructive operation by itself.
+fn xmb_context_choice(original: Action, index: u8) -> Option<Action> {
+    match (original, index) {
+        (action, 0) => Some(action),
+        (Action::FmOpenEntry(entry), 1) => Some(Action::FmToggleSelect(entry)),
+        (Action::FmOpenEntry(entry), 2) => Some(Action::FmOpenDetails(entry)),
+        (Action::ToggleLocal(entry), 1) => Some(Action::ExportLocal(entry)),
+        (Action::ToggleLocal(entry), 2) => Some(Action::DeleteLocal(entry)),
+        (Action::OpenProject(_), 1) => Some(Action::Search),
+        (Action::Page(_), 1) => Some(Action::Page(Page::Play)),
+        _ => None,
+    }
+}
+
 impl Launcher {
+    /// A unified semantic player for XMB navigation cues. It intentionally
+    /// leaves Liquid Glass and other preset sound maps untouched.
+    fn xmb_play_cue(&mut self, cue: ui_sfx::XmbCue) {
+        if self.catalog.config.theme.preset != horizon_client::ui_theme::ThemePreset::OldSchool
+            || !self.catalog.config.theme.interface_sounds
+            || self.xmb_last_sound.is_some_and(|t| t.elapsed().as_millis() < 48)
+        {
+            return;
+        }
+        let (sample, gain) = ui_sfx::navigation(cue);
+        let audio = self.audio.get_or_insert_with(|| {
+            let mut audio = horizon_client::audio::Audio::new(
+                &self.home.join(".local/horizon-client/26.3"),
+            );
+            let settings = horizon_client::settings::Settings::load(
+                &self.catalog.config.game_home(&self.home).join("options.txt"),
+            );
+            audio.master = settings.volumes[0];
+            let mut volumes = settings.volumes;
+            volumes[0] = 1.0;
+            horizon_client::settings::set_source_volumes(volumes);
+            audio
+        });
+        audio.play_embedded_ui_sfx(sample, gain);
+        self.xmb_last_sound = Some(std::time::Instant::now());
+    }
+
+    pub(super) fn xmb_play_back(&mut self) {
+        self.xmb_play_cue(ui_sfx::XmbCue::Back);
+    }
+
     /// XMB categories move as a single spatial strip. Existing catalog data
     /// and navigation handlers are reused; the old interface components are not.
     fn xmb_switch_category(&mut self, delta: isize) {
@@ -1091,6 +1140,7 @@ impl Launcher {
         let next = current.saturating_add_signed(delta).min(Page::ALL.len() - 1);
         let page = Page::ALL[next];
         if page != self.catalog.page {
+            self.xmb.move_category(next as isize - current as isize);
             if page == Page::Skins {
                 self.wardrobe.open(
                     &self.catalog.config.name,
@@ -1106,6 +1156,7 @@ impl Launcher {
             self.error = None;
             self.catalog.browse(&self.home);
             self.anim.trigger_page_transition();
+            self.xmb_play_cue(ui_sfx::XmbCue::CategoryFocus);
         }
         self.pending_focus = Some(Action::Page(page));
         self.focus = None;
@@ -1115,7 +1166,11 @@ impl Launcher {
     }
 
     pub(super) fn xmb_step_home(&mut self, delta: i32) {
+        let old = self.xmb.selected_home();
         let action = self.xmb.step_home(delta);
+        if self.xmb.selected_home() != old {
+            self.xmb_play_cue(ui_sfx::XmbCue::ItemFocus);
+        }
         self.pending_focus = Some(xmb_home_to_action(action));
         self.focus = None;
         if let Some(window) = &self.window {
@@ -1139,6 +1194,7 @@ impl Launcher {
         horizon_client::ui_theme::active_theme().experience
             == horizon_client::ui_theme::ExperiencePreset::OldSchool
             && !self.login.visible
+            && self.xmb_context.is_none()
             && self.chooser.is_none()
             && !self.exit_confirmation
             && !self.status_details
@@ -1331,7 +1387,8 @@ impl Launcher {
             || self.login.visible
             || self.exit_confirmation
             || self.diagnostics_modal_open
-            || self.status_details;
+            || self.status_details
+            || self.xmb_context.is_some();
         self.anim.step(
             self.catalog.page,
             self.catalog.settings_category,
@@ -1347,6 +1404,10 @@ impl Launcher {
             has_any_modal,
             self.catalog.sections,
         );
+        if layout.console {
+            self.xmb.animate(self.anim.frame_dt,
+                horizon_client::ui_theme::motion::reduced_motion());
+        }
         let account_name = self
             .login
             .profile
@@ -2191,6 +2252,65 @@ impl Launcher {
                 Action::ConfirmExit,
                 true,
             );
+        }
+        if layout.console {
+            horizon_client::ui_theme::launcher_xmb::focus_trails(
+                &mut ui, &self.xmb, page == Page::Play,
+            );
+        }
+
+        // The context list is a native XMB sheet, not a Material dialog.
+        // A long press never executes its action. The backdrop captures taps
+        // behind the menu; all visible commands use normal Action dispatch.
+        if let Some((original, anchor)) = self.xmb_context {
+            self.targets.clear();
+            self.list_targets.clear();
+            self.list_view = None;
+            ui.fill(0., 0., w, h, color::hex(0x040B18, 184));
+            if let Some(hit) = ui.clip_rect([0., 0., w, h]) {
+                self.targets.push((hit, Action::XmbContextDismiss));
+            }
+            let choices: Vec<(&str, u8)> = (0..3_u8).filter_map(|i| {
+                xmb_context_choice(original, i).map(|_| {
+                    let label = match (original, i) {
+                        (Action::FmOpenEntry(_), 0) => "Abrir arquivo",
+                        (Action::FmOpenEntry(_), 1) => "Selecionar",
+                        (Action::FmOpenEntry(_), 2) => "Detalhes",
+                        (Action::ToggleLocal(_), 0) => "Ativar / desativar",
+                        (Action::ToggleLocal(_), 1) => "Exportar",
+                        (Action::ToggleLocal(_), 2) => "Excluir (confirmar)",
+                        (Action::OpenProject(_), 0) => "Abrir detalhes",
+                        (Action::OpenProject(_), 1) => "Pesquisar",
+                        (Action::Page(_), 1) => "Voltar ao início",
+                        _ => "Abrir",
+                    };
+                    (label, i)
+                })
+            }).collect();
+            let mw = (w - 36.).min(328.).max(180.);
+            let mh = 55. + choices.len() as f32 * 47. + 37.;
+            let mx = (anchor[0] - mw * 0.18).clamp(16., (w - mw - 16.).max(16.));
+            let my = (anchor[1] - 26.).clamp(16., (h - mh - 16.).max(16.));
+            ui.fill(mx, my, mw, mh, color::hex(0x101A2F, 249));
+            ui.fill(mx, my, 2., mh, color::hex(0xA8D4F9, 194));
+            ui.text(Face::Regular, 12., mx + 19., my + 16.,
+                color::hex(0xB6D1EC, 218), "OPÇÕES");
+            for (i, (label, choice)) in choices.iter().enumerate() {
+                let ry = my + 48. + i as f32 * 47.;
+                ui.fill(mx + 18., ry + 44., mw - 36., 0.8,
+                    color::hex(0x9DCAE8, 42));
+                ui.text(Face::Medium, 14.2, mx + 22., ry + 12.,
+                    color::hex(0xE7F3FF, 235), label);
+                if let Some(hit) = ui.clip_rect([mx + 10., ry, mw - 20., 47.]) {
+                    self.targets.push((hit, Action::XmbContextChoice(*choice)));
+                }
+            }
+            let cancel = [mx + 13., my + mh - 34., mw - 26., 32.];
+            ui.text(Face::Regular, 11., cancel[0] + 9., cancel[1] + 7.,
+                color::hex(0xA3BED6, 207), "Cancelar / Voltar");
+            if let Some(hit) = ui.clip_rect(cancel) {
+                self.targets.push((hit, Action::XmbContextDismiss));
+            }
         }
         if let Some(action) = self.pending_focus.take() {
             // Home item actions may also exist in the category strip
@@ -5579,7 +5699,7 @@ impl Launcher {
             ],
             |([x, y, w, h], _)| [x + w / 2.0, y + h / 2.0],
         );
-        let action = self
+        let mut action = self
             .targets
             .iter()
             .rev()
@@ -5587,6 +5707,16 @@ impl Launcher {
                 (*x..*x + *w).contains(&p[0]) && (*y..*y + *h).contains(&p[1])
             })
             .map(|(_, a)| *a);
+        if action == Some(Action::XmbContextDismiss) {
+            self.xmb_context = None;
+            self.xmb_play_back();
+            return Ok(());
+        }
+        if let Some(Action::XmbContextChoice(index)) = action {
+            action = self.xmb_context.take()
+                .and_then(|(original, _)| xmb_context_choice(original, index));
+            if action.is_none() { return Ok(()); }
+        }
         if crate::documents::busy() {
             return Ok(());
         }
@@ -7075,6 +7205,9 @@ impl Launcher {
                 self.catalog.editing = None;
                 crate::platform::hide();
             }
+            // The context overlay actions are resolved above before normal dispatch.
+            // Exhaustive coverage protects Android Rust builds when the Action enum grows.
+            Some(Action::XmbContextChoice(_) | Action::XmbContextDismiss) => {}
             None => {}
         }
         Ok(())
@@ -7344,13 +7477,29 @@ impl Launcher {
                 } else {
                     let drag = self.drag.take();
                     if self.xmb_navigation_available()
+                        && let Some(ref press) = drag
+                        && !press.moved
+                        && press.held_for(std::time::Duration::from_millis(540))
+                        && let Some(target) = self.taps.pressed()
+                        && self.pointer_action() == Some(target)
+                    {
+                        // Long press opens options only; never fires the target.
+                        self.taps.cancel();
+                        self.xmb_context = Some((target, [px, py]));
+                        self.xmb_play_cue(ui_sfx::XmbCue::ContextOpen);
+                        self.pending_focus = Some(Action::XmbContextChoice(0));
+                        return Ok(());
+                    }
+                    if self.xmb_navigation_available()
                         && let Some(ref start) = drag
                         && start.moved
                     {
                         let dx = px - start.origin_x() as f32 / density;
                         let dy = py - start.origin_y() as f32 / density;
-                        let swipe = super::gesture::xmb_swipe(
-                            dx, dy, self.catalog.page == Page::Play,
+                        let swipe = super::gesture::xmb_swipe_kinetic(
+                            dx, dy, start.elapsed_seconds(),
+                            self.catalog.page == Page::Play,
+                            horizon_client::ui_theme::motion::reduced_motion(),
                         );
                         match swipe {
                             Some(super::gesture::XmbSwipe::Category(delta)) => {

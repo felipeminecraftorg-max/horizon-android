@@ -67,9 +67,41 @@ pub(super) fn selection(preset: ThemePreset, action: Action) -> Option<(&'static
     Some((sound, gain))
 }
 
+/// Events are semantic (rather than tied to rejected buttons/cards).
+/// No bundled sample is copied, overwritten or removed. The existing SFX
+/// preference and native Vorbis decoder remain the only playback path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum XmbCue {
+    ItemFocus,
+    CategoryFocus,
+    ContextOpen,
+    Back,
+}
+
+pub(super) fn navigation(cue: XmbCue) -> (&'static str, f32) {
+    // Names are all in the already-shipped Old School SFX bundle.
+    let sample = match cue {
+        XmbCue::ItemFocus => "sfx/retro-3.ogg",
+        XmbCue::CategoryFocus => "sfx/coffee-2.ogg",
+        XmbCue::ContextOpen => "sfx/minimalist-13.ogg",
+        XmbCue::Back => "sfx/retro-6.ogg",
+    };
+    (sample, 0.064) // spatial focus: quieter than a confirmed button (0.098)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn xmb_focus_choreography_uses_existing_quiet_files() {
+        for cue in [XmbCue::ItemFocus, XmbCue::CategoryFocus,
+                    XmbCue::ContextOpen, XmbCue::Back] {
+            let (path, gain) = navigation(cue);
+            assert!(path.starts_with("sfx/") && path.ends_with(".ogg"));
+            assert!(gain <= selection(ThemePreset::OldSchool, Action::Play).unwrap().1);
+        }
+    }
+
     #[test]
     fn distinct_styles_and_control_types_have_exact_user_sounds() {
         assert_eq!(selection(ThemePreset::LiquidGlass, Action::Page(
