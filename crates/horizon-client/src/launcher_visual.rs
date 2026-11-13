@@ -3,9 +3,6 @@
 //! Dark Aero retains its cached wallpaper material. Neither reads pixels to the CPU.
 use super::{ExperiencePreset, Face, Icon, LauncherThemeConfig, ThemePreset, Ui, active_theme, color};
 use std::{cell::RefCell, collections::HashMap};
-#[path = "launcher_console_dashboard.rs"]
-mod console_layout;
-use console_layout::ConsoleDashboardLayout;
 
 pub fn default_effects() -> bool {
     true
@@ -940,76 +937,6 @@ impl Layout {
 }
 
 
-/// Late-2000s console interface: no sidebar, no oversized rounded capsules.
-/// Tabs form a real horizontal navigation row; home supplies a tile dashboard.
-#[allow(clippy::too_many_arguments)]
-fn shell_console(
-    ui: &mut Ui<'_>,
-    items: &[(&str, Icon)],
-    selected: usize,
-    account: &str,
-    signed_in: bool,
-    version: &str,
-    focus_x: f32,
-    mut target: impl FnMut([f32; 4], ShellAction),
-) -> Layout {
-    let th = active_theme();
-    let (w, h) = (ui.w, ui.h);
-    let layout = Layout::new(w, h);
-    ui.horizon_logo(24., 15., 30.);
-    ui.text(Face::ConsoleDisplay, 20., 62., 12., th.text_primary, "Horizon");
-    ui.text(Face::Regular, 9.5, 62., 38., th.text_muted, version);
-
-    let aw = (w * 0.22).clamp(138., 196.);
-    let account_r = [w - aw - 66., 13., aw, 39.];
-    ui.rounded(account_r[0], account_r[1], aw, 39., 9., color::hex(0xECF3FF, 27));
-    ui.stroke_rounded(account_r[0], account_r[1], aw, 39., 9., 0.8, color::hex(0xFFFFFF, 53));
-    ui.avatar_head_2d(account_r[0] + 6., 19., 27., account);
-    if signed_in {
-        ui.rounded(account_r[0] + 29., 40., 5., 5., 2.5, th.success);
-    }
-    let name = ui.fit_text(Face::Medium, 12., account, aw - 51.);
-    ui.text(Face::Medium, 12., account_r[0] + 42., 24., th.text_primary, &name);
-    target(account_r, ShellAction::Account);
-    let settings = [w - 53., 13., 38., 39.];
-    ui.icon(Icon::Gear, settings[0] + 10., settings[1] + 9., 19., th.text_primary);
-    target(settings, ShellAction::Appearance);
-    ui.fill(24., 117., w - 48., 1., color::hex(0xD4D8EB, 72));
-
-    // XMB-inspired focus is an understated channel highlight, not a
-    // second chrome push button behind every selected category.
-    // Its spring follows visual focus only; hitboxes never move.
-    if !items.is_empty() {
-        let step = (w - 48.) / items.len() as f32;
-        let fx = focus_x.clamp(24., w - 24. - step);
-        ui.rounded(fx + 8., 77., (step - 16.).max(25.), 33., 7.,
-            color::hex(0xAFC3D8, 22));
-        ui.fill(fx + step * 0.24, 115., step * 0.52, 1.5,
-            color::hex(0xD7E9FF, 226));
-    }
-    for (i, (label, icon)) in items.iter().enumerate() {
-        let tab = layout.nav_rect(w, h, i, items.len());
-        let chosen = i == selected;
-        let foreground = if chosen { th.text_primary } else { th.text_muted };
-        // XMB-like two-level channel: small original outline glyph above
-        // a restrained label. Every icon routes through the Old School set
-        // while hit-testing keeps the existing 44dp control rectangle.
-        ui.icon(*icon, tab[0] + (tab[2] - 17.) * 0.5,
-            tab[1] + 2., 17., foreground);
-        let fitted = ui.fit_text(Face::ConsoleMedium, 10.5, label, tab[2] - 12.);
-        let tw = ui.measure(Face::ConsoleMedium, 10.5, &fitted);
-        ui.text(
-            Face::ConsoleMedium, 10.5,
-            tab[0] + (tab[2] - tw) * 0.5,
-            tab[1] + 23.,
-            foreground,
-            &fitted,
-        );
-        target(tab, ShellAction::Page(i));
-    }
-    layout
-}
-
 /// Header and adaptive navigation shared by the app and the native captures.
 /// Backward-compatible non-animated entry, used by the standalone UI harness.
 #[allow(clippy::too_many_arguments)]
@@ -1045,8 +972,10 @@ pub fn shell_animated(
     let th = active_theme();
     let (w, h) = (ui.w, ui.h);
     let layout = Layout::new(w, h);
-    if layout.console && !layout.portrait {
-        return shell_console(ui, items, selected, account, signed_in, version, focus[0], target);
+    if layout.console {
+        return super::launcher_xmb::shell(
+            ui, items, selected, account, signed_in, version, target,
+        );
     }
     ui.horizon_logo(18., 17., 31.);
     ui.text(Face::SemiBold, 17., 58., 13., th.text_primary, "Horizon");
@@ -1175,152 +1104,6 @@ pub struct HomeView<'a> {
 }
 
 
-/// Muted colored console tiles are *one* material surface: shade each
-/// accent toward deep graphite instead of stacking translucent rectangles.
-fn console_tile_tone(accent: u32) -> u32 {
-    let shade = |shift: u32, base: f32| -> u32 {
-        (((accent >> shift & 0xFF) as f32 * 0.29 + base * 0.71).round()
-            .clamp(0., 255.)) as u32
-    };
-    (shade(16, 21.) << 16) | (shade(8, 27.) << 8) | shade(0, 40.)
-}
-
-/// The Old School is a console dashboard, not a tinted copy of Liquid Glass.
-/// One strong game hero and a deliberately asymmetric, fixed-hitbox 3-row mosaic
-/// produce hierarchy without sacrificing any of the original eight actions.
-fn home_old_school(
-    ui: &mut Ui<'_>,
-    rect: [f32; 4],
-    view: &HomeView<'_>,
-    mut target: impl FnMut([f32; 4], HomeAction),
-) {
-    let [_, _, w, h] = rect;
-    if w <= 0. || h <= 0. { return; }
-    let layout = ConsoleDashboardLayout::new(rect);
-    let [hx, hy, hw, hh] = layout.hero;
-
-    // Quiet editorial hero: a single opaque/satin layer prevents wallpaper
-    // ribbons and previously drawn labels from passing through body text.
-    ui.rounded(hx, hy, hw, hh, 16., color::hex(0x111A2A, 230));
-    ui.stroke_rounded(hx, hy, hw, hh, 16., 0.8, color::hex(0xC8D4E7, 65));
-    ui.fill(hx + 21., hy + 15., (hw - 42.).max(0.), 1.,
-        color::hex(0xBBCDE4, 43));
-
-    ui.text(Face::Medium, 10., hx + 22., hy + 20.,
-        color::hex(0xA6B7CB, 205), "GAME LIBRARY / 01");
-    let heading_size = if hw < 390. { 27. } else { 32. };
-    let heading = ui.fit_text(Face::ConsoleDisplay, heading_size, "MINECRAFT", hw - 43.);
-    ui.text(Face::ConsoleDisplay, heading_size, hx + 22., hy + 43.,
-        color::hex(0xF2F5FC, 255), &heading);
-
-    let ready = if view.installed { "Ready to play" } else { "Installation required" };
-    if hh < 192. {
-        // Portrait and short landscape: fit the complete state on one line,
-        // keeping a safe gap above Play and Profile.
-        let status = format!("26.3  /  {ready}");
-        let status = ui.fit_text(Face::Medium, 12., &status, hw - 44.);
-        ui.text(Face::Medium, 12., hx + 23., hy + 88.,
-            color::hex(0xC3D1E0, 237), &status);
-    } else {
-        ui.text(Face::Medium, 15., hx + 23., hy + 89.,
-            color::hex(0xDAE3EE, 245), "JAVA EDITION 26.3");
-        ui.fill(hx + 23., hy + 117., 5., 5.,
-            color::hex(if view.installed { 0x92D2AB } else { 0xD9AA78 }, 238));
-        ui.text(Face::Regular, 12., hx + 38., hy + 111.,
-            color::hex(0xB8C7D7, 231), ready);
-        if hh > 265. {
-            let renderer = ui.fit_text(Face::Regular, 10., view.renderer, hw - 50.);
-            ui.text(Face::Regular, 10., hx + 23., hy + 149.,
-                color::hex(0x91A2B8, 183), &renderer);
-        }
-    }
-
-    // Fixed footer dock. The primary action is never covered by a floating
-    // profile chip; both are sizeable, independent and always clickable.
-    let play = [hx + 14., hy + hh - 62., hw - 155., 48.];
-    let profile = [hx + hw - 124., hy + hh - 62., 110., 48.];
-    ui.fill(hx + 14., play[1] - 10., (hw - 28.).max(0.), 1.,
-        color::hex(0xA8B8CD, 42));
-
-    ui.rounded(play[0], play[1], play[2], play[3], 10.,
-        color::hex(0x426853, 242));
-    ui.fill(play[0] + 11., play[1] + 3., (play[2] - 22.).max(0.), 1.,
-        color::hex(0xC8F5D8, 100));
-    ui.icon(Icon::Play, play[0] + 13., play[1] + 12., 24.,
-        color::hex(0xF5FFF9, 255));
-    let label = if view.launching { "Starting..." } else if view.installed {
-        "Play Minecraft"
-    } else {
-        "Install Minecraft"
-    };
-    let label = ui.fit_text(Face::Medium, if hw < 370. { 14. } else { 17. },
-        label, (play[2] - 50.).max(0.));
-    ui.text(Face::Medium, if hw < 370. { 14. } else { 17. },
-        play[0] + 44., play[1] + 14.,
-        color::hex(0xF6FFF8, 255), &label);
-    if !view.launching { target(play, HomeAction::Play); }
-
-    ui.rounded(profile[0], profile[1], profile[2], profile[3], 10.,
-        color::hex(0x263248, 240));
-    let profile_name = ui.fit_text(Face::Medium, 11.,
-        &format!("Profile {}", view.profile + 1), profile[2] - 27.);
-    ui.text(Face::Medium, 11., profile[0] + 11., profile[1] + 16.,
-        color::hex(0xE4EBF6, 242), &profile_name);
-    ui.icon(Icon::ChevronDown, profile[0] + profile[2] - 19.,
-        profile[1] + 16., 12., color::hex(0xBBC9DC, 238));
-    target(profile, HomeAction::Profile);
-
-    // Xbox-like varied tile spans without Xbox artwork or branding.
-    // Wide tiles read horizontally; compact tiles use icon-over-label.
-    // All six existing destinations retain exactly the same actions.
-    let shortcuts = [
-        ("Mods", Icon::Mods, HomeAction::Mods, 0x755A83_u32, "EXTENSIONS"),
-        ("Packs", Icon::Packs, HomeAction::Packs, 0x496D91_u32, "ASSETS"),
-        ("Shaders", Icon::Shaders, HomeAction::Shaders, 0x907451_u32, "VISUALS"),
-        ("My files", Icon::Folder, HomeAction::Files, 0x477F8E_u32, "STORAGE"),
-        ("Skins", Icon::Person, HomeAction::Skins, 0x4D8570_u32, "IDENTITY"),
-        ("Settings", Icon::Gear, HomeAction::Settings, 0x626A83_u32, "SYSTEM"),
-    ];
-    for (i, (name, icon, action, tint, descriptor)) in shortcuts.into_iter().enumerate() {
-        let card = layout.shortcuts[i];
-        let [cx, cy, cw, ch] = card;
-        if cw <= 1. || ch <= 1. { continue; }
-        // One satin colored surface. No nested lens, thick bevel, duplicated
-        // border, or bright reflection competing with labels and touch targets.
-        ui.rounded(cx, cy, cw, ch, 9., color::hex(console_tile_tone(tint), 243));
-        ui.stroke_rounded(cx, cy, cw, ch, 9., 0.7,
-            color::hex(0xCBD5E3, 34));
-        // A slim identity rail retains each category's muted tint.
-        ui.fill(cx + 3., cy + 11., 2., (ch - 22.).max(0.),
-            color::hex(tint, 158));
-        ui.fill(cx + 12., cy + 3., (cw - 24.).max(0.), 1.,
-            color::hex(0xD4DDEB, 35));
-
-        let wide = cw > ch * 1.75;
-        if wide {
-            let caption = ui.fit_text(Face::Medium, 9., descriptor, (cw - 68.).max(30.));
-            ui.text(Face::Medium, 9., cx + 15., cy + 12.,
-                color::hex(0xBCC8D8, 206), &caption);
-            let fitted = ui.fit_text(Face::SemiBold, 17., name, (cw - 71.).max(30.));
-            ui.text(Face::SemiBold, 17., cx + 15., cy + ch - 34.,
-                color::hex(0xF2F6FD, 251), &fitted);
-            ui.icon(icon, cx + cw - 48., cy + (ch - 30.) * 0.5,
-                30., color::hex(0xEDF2FC, 241));
-        } else {
-            let icon_size = (ch * 0.35).clamp(18., 28.);
-            ui.icon(icon, cx + (cw - icon_size) * 0.5,
-                cy + (ch * 0.15), icon_size,
-                color::hex(0xF2F6FD, 245));
-            let fitted = ui.fit_text(Face::Medium, if cw < 98. { 11. } else { 13. },
-                name, (cw - 10.).max(24.));
-            ui.centered_fit(Face::Medium, if cw < 98. { 11. } else { 13. },
-                [cx + 5., cy + ch - 23., cw - 10., 17.],
-                color::hex(0xF2F5FB, 253), &fitted);
-        }
-        target(card, action);
-    }
-}
-
 /// Clean modern Liquid Glass: a single wide image and six simple translucent
 /// shortcuts, with real refracting surfaces only where there are controls.
 fn home_liquid(
@@ -1425,7 +1208,7 @@ pub fn home(
     let [x, y, w, h] = rect;
     let th = active_theme();
     if th.experience == ExperiencePreset::OldSchool {
-        return home_old_school(ui, rect, view, target);
+        return super::launcher_xmb::home(ui, rect, view, 0, target);
     }
     if th.experience == ExperiencePreset::LiquidGlass && w >= 620. {
         return home_liquid(ui, rect, view, target);
@@ -1591,6 +1374,22 @@ pub fn home(
         let r = [x, qy + 164., w, 52.];
         button(ui, r, "Personalize launcher", Some(Icon::Gear), false);
         target(r, HomeAction::Appearance);
+    }
+}
+
+/// The real Android launcher passes persistent XMB focus from its own state.
+/// Liquid Glass and all other presets keep their exact existing Home path.
+pub fn home_with_focus(
+    ui: &mut Ui<'_>,
+    rect: [f32; 4],
+    view: &HomeView<'_>,
+    focused_item: usize,
+    target: impl FnMut([f32; 4], HomeAction),
+) {
+    if active_theme().experience == ExperiencePreset::OldSchool {
+        super::launcher_xmb::home(ui, rect, view, focused_item, target);
+    } else {
+        home(ui, rect, view, target);
     }
 }
 
@@ -1926,110 +1725,6 @@ mod tests {
     }
 
     #[test]
-    fn console_tile_tints_remain_muted_and_individually_distinct() {
-        let tints = [0x755A83, 0x496D91, 0x907451, 0x477F8E, 0x4D8570, 0x626A83];
-        let shades: Vec<_> = tints.iter().copied().map(console_tile_tone).collect();
-        let unique: std::collections::HashSet<_> = shades.iter().copied().collect();
-        assert_eq!(unique.len(), 6);
-        for shade in shades {
-            assert!((shade >> 16 & 0xFF) <= 74);
-            assert!((shade >> 8 & 0xFF) <= 80);
-            assert!((shade & 0xFF) <= 94);
-        }
-    }
-
-    #[test]
-    fn old_school_private_backdrop_has_no_hot_white_streaks() {
-        // Old School's procedural wallpaper must stay muted even at
-        // wave intersections; Graphite and Liquid Glass remain unchanged.
-        for y in 0..48 {
-            for x in 0..64 {
-                let px = console_paper_pixel(x as f32 / 63., y as f32 / 47.);
-                assert!(px[0] < 70 && px[1] < 70 && px[2] < 90,
-                    "console wallpaper unexpectedly bright: {px:?}");
-                assert_eq!(px[3], 255);
-            }
-        }
-    }
-
-    #[test]
-    fn old_school_console_mosaic_uses_asymmetric_tiles_without_overlaps() {
-        // Test the actual Play area after header/footer reservations.
-        for bounds in [
-            [24., 130., 712., 202.], [24., 130., 852., 272.],
-            [16., 76., 308., 440.], [16., 76., 378., 580.],
-        ] {
-            let layout = ConsoleDashboardLayout::new(bounds);
-            let mut all = vec![layout.hero];
-            all.extend(layout.shortcuts);
-            let [x, y, w, h] = bounds;
-            for (i, r) in all.iter().enumerate() {
-                assert!(r[2] > 0. && r[3] >= 44., "{bounds:?} undersized: {r:?}");
-                assert!(r[0] >= x - 0.01 && r[1] >= y - 0.01
-                    && r[0] + r[2] <= x + w + 0.01
-                    && r[1] + r[3] <= y + h + 0.01,
-                    "{bounds:?} out of range: {r:?}");
-                for other in all.iter().take(i) {
-                    assert!(r[0] >= other[0] + other[2]
-                        || other[0] >= r[0] + r[2]
-                        || r[1] >= other[1] + other[3]
-                        || other[1] >= r[1] + r[3],
-                        "{bounds:?} overlaps: {r:?} and {other:?}");
-                }
-            }
-            assert!(layout.shortcuts[0][2] > layout.shortcuts[1][2]);
-            assert!(layout.shortcuts[3][2] > layout.shortcuts[2][2]);
-        }
-    }
-
-    #[test]
-    fn both_landscape_mockups_keep_all_six_tiles_and_disjoint_hitboxes() {
-        for preset in [ThemePreset::OldSchool, ThemePreset::LiquidGlass] {
-            let mut cfg = LauncherThemeConfig::default();
-            cfg.apply_preset(preset);
-            set_active_for_test(&cfg);
-            for (width, height) in [(760., 410.), (900., 480.)] {
-                let layout = Layout::new(width, height);
-                let y = if layout.console { 130. } else { 76. };
-                let reserved = if layout.console { 35. } else { 40. };
-                let bounds = [layout.x, y, layout.width, height - y - reserved];
-                let atlas = HudAtlas::boot();
-                let mut batch = HudBatch::new([width as u32, height as u32]);
-                let mut ui = Ui::new(&atlas, &mut batch, (0., 0.));
-                let mut actions = Vec::new();
-                home(
-                    &mut ui,
-                    bounds,
-                    &HomeView { installed: true, launching: false, profile: 0,
-                        renderer: "Vulkan / compatibility" },
-                    |r, action| actions.push((r, action)),
-                );
-                assert!(actions.len() >= 8, "{preset:?} {width}x{height}");
-                for wanted in [
-                    HomeAction::Play, HomeAction::Profile, HomeAction::Mods,
-                    HomeAction::Packs, HomeAction::Shaders, HomeAction::Files,
-                    HomeAction::Settings, HomeAction::Skins,
-                ] {
-                    assert!(actions.iter().any(|(_, action)| *action == wanted),
-                        "{preset:?} {width}x{height} {wanted:?}");
-                }
-                for (i, (r, _)) in actions.iter().enumerate() {
-                    assert!(r[0] >= bounds[0] && r[1] >= bounds[1]);
-                    assert!(r[0] + r[2] <= bounds[0] + bounds[2] + 0.1);
-                    assert!(r[1] + r[3] <= bounds[1] + bounds[3] + 0.1);
-                    for (other, _) in actions.iter().take(i) {
-                        assert!(r[0] >= other[0] + other[2]
-                            || other[0] >= r[0] + r[2]
-                            || r[1] >= other[1] + other[3]
-                            || other[1] >= r[1] + r[3],
-                            "overlap {preset:?} {width}x{height}: {r:?} and {other:?}");
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
     fn reference_experiences_have_independent_navigation_and_hero_art() {
         let mut cfg = LauncherThemeConfig::default();
         cfg.apply_preset(ThemePreset::LiquidGlass);
@@ -2053,57 +1748,45 @@ mod tests {
     }
 
     #[test]
-    fn old_school_changes_real_layout_without_losing_home_actions() {
+    fn old_school_xmb_home_tracks_each_focus_without_cards_or_missing_actions() {
         let mut cfg = LauncherThemeConfig::default();
         cfg.apply_preset(ThemePreset::OldSchool);
-        assert_eq!(cfg.resolve().experience, ExperiencePreset::OldSchool);
-        assert_eq!(cfg.resolve().material, Material::Aero);
-        assert_eq!(cfg.resolve().wallpaper, Wallpaper::Graphite);
         set_active_for_test(&cfg);
-        for (w, h) in [(340., 640.), (900., 480.)] {
+        for (w, h) in [(340., 640.), (760., 410.), (900., 480.)] {
             let layout = Layout::new(w, h);
             assert!(layout.console);
-            let atlas = HudAtlas::boot();
-            let mut batch = HudBatch::new([w as u32, h as u32]);
-            let mut ui = Ui::new(&atlas, &mut batch, (0., 0.));
-            let mut actions = Vec::new();
-            home(
-                &mut ui,
-                [layout.x, 76., layout.width, layout.bottom - 116.],
-                &HomeView {
-                    installed: true,
-                    launching: false,
-                    profile: 0,
-                    renderer: "Vulkan / compatibility",
-                },
-                |r, a| actions.push((r, a)),
-            );
-            for required in [
-                HomeAction::Play,
-                HomeAction::Profile,
-                HomeAction::Mods,
-                HomeAction::Packs,
-                HomeAction::Shaders,
-                HomeAction::Files,
-            ] {
-                assert!(actions.iter().any(|(_, actual)| *actual == required), "{w}x{h}: {required:?}");
-            }
-            for (i, (r, _)) in actions.iter().enumerate() {
-                assert!(r[0] >= layout.x && r[0] + r[2] <= ui.w);
-                assert!(r[1] >= 76. && r[1] + r[3] <= layout.bottom);
-                for (o, _) in actions.iter().take(i) {
-                    assert!(
-                        r[0] >= o[0] + o[2] || o[0] >= r[0] + r[2] ||
-                        r[1] >= o[1] + o[3] || o[1] >= r[1] + r[3],
-                        "{w}x{h}: action overlap {r:?} / {o:?}"
-                    );
+            let cross = super::super::launcher_xmb::Cross::from_screen(w, h);
+            assert!(cross.item_y > cross.category_y);
+            let mut saw = std::collections::HashSet::new();
+            for index in 0..super::super::launcher_xmb::HOME_ACTIONS.len() {
+                let atlas = HudAtlas::boot();
+                let mut batch = HudBatch::new([w as u32, h as u32]);
+                let mut ui = Ui::new(&atlas, &mut batch, (0., 0.));
+                let mut actions = Vec::new();
+                home_with_focus(
+                    &mut ui,
+                    [layout.x, 76., layout.width, layout.bottom - 116.],
+                    &HomeView {
+                        installed: true, launching: false, profile: 0,
+                        renderer: "Vulkan / compatibility",
+                    },
+                    index, |r, a| actions.push((r, a)),
+                );
+                let wanted = super::super::launcher_xmb::HOME_ACTIONS[index];
+                assert!(actions.iter().any(|(_, a)| *a == wanted),
+                    "{w}x{h}, focused item {index}");
+                saw.insert(index);
+                for (i, (r, _)) in actions.iter().enumerate() {
+                    assert!(r[0] >= layout.x && r[0] + r[2] <= ui.w);
+                    assert!(r[1] >= 76. && r[1] + r[3] <= layout.bottom);
+                    for (o, _) in actions.iter().take(i) {
+                        assert!(r[1] >= o[1] + o[3] || o[1] >= r[1] + r[3],
+                            "overlap {w}x{h}: {r:?} / {o:?}");
+                    }
                 }
             }
+            assert_eq!(saw.len(), 8);
         }
-        cfg.apply_preset(ThemePreset::LiquidGlass);
-        set_active_for_test(&cfg);
-        assert_eq!(cfg.resolve().experience, ExperiencePreset::LiquidGlass);
-        assert!(!Layout::new(900., 480.).console);
     }
 
     #[test]
