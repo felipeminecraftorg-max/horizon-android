@@ -1,7 +1,7 @@
 //! Bounded parser for OptiFine CEM JEM/JPM definitions.
 //! Rendering and posing are separate integrations: parsing never executes code.
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 const LIMIT: usize = 1_048_576;
 const PART_LIMIT: usize = 512;
@@ -17,7 +17,9 @@ pub enum Error {
 pub struct BoxModel {
     pub coords: [f32; 6],
     pub uv: Option<[f32; 2]>,
+    pub face_uv: BTreeMap<String,[f32; 4]>,
     pub expand: f32,
+    pub expand_axes: Option<[f32; 3]>, 
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -26,6 +28,10 @@ pub struct Part {
     pub id: String,
     pub translation: [f32; 3],
     pub rotation: [f32; 3],
+    pub inverted_axes: String,
+    pub mirrored_uv: String,
+    pub texture: Option<String>,
+    pub texture_size: Option<[f32; 2]>,
     pub boxes: Vec<BoxModel>,
     pub children: Vec<Part>,
     pub animation: Vec<(String, String)>,
@@ -86,6 +92,15 @@ fn part<F: FnMut(&str) -> Option<String>>(
     if name.len() > 128 || id.len() > 128 { return Err(Error::Invalid("part name too long")); }
     let translation = get("translate").map(vector).transpose()?.unwrap_or([0.0; 3]);
     let rotation = get("rotate").map(vector).transpose()?.unwrap_or([0.0; 3]);
+    let inverted_axes = get("invertAxis").and_then(Value::as_str).unwrap_or("").to_owned();
+    let mirrored_uv = get("mirrorTexture").and_then(Value::as_str).unwrap_or("").to_owned();
+    if inverted_axes.len() > 3 || !inverted_axes.chars().all(|c| "xyz".contains(c)) ||
+        mirrored_uv.len() > 2 || !mirrored_uv.chars().all(|c| "uv".contains(c)) {
+        return Err(Error::Invalid("invalid axis modifiers"));
+    }
+    let texture = get("texture").map(|v| v.as_str().map(str::to_owned)
+        .ok_or(Error::Invalid("part texture"))).transpose()?;
+    let texture_size = get("textureSize").map(vector).transpose()?;
     let boxes_json = get("boxes").and_then(Value::as_array).cloned().unwrap_or_default();
     count.boxes += boxes_json.len();
     if count.boxes > BOX_LIMIT { return Err(Error::TooManyBoxes); }
@@ -94,7 +109,17 @@ fn part<F: FnMut(&str) -> Option<String>>(
         let coords = vector::<6>(b.get("coordinates").ok_or(Error::Invalid("box coordinates missing"))?)?;
         let uv = b.get("textureOffset").map(vector::<2>).transpose()?;
         let expand = b.get("sizeAdd").map(number).transpose()?.unwrap_or(0.0);
-        boxes.push(BoxModel { coords, uv, expand });
+        let expand_axes = b.get("sizesAdd").map(vector).transpose()?;
+        let mut face_uv = BTreeMap::new();
+        for face in ["Down","Up","North","South","West","East","Front","Back","Left","Right"] {
+            if let Some(rect) = b.get(format!("uv{face}")) {
+                face_uv.insert(face.to_ascii_lowercase(), vector::<4>(rect)?);
+            }
+        }
+        if uv.is_some() && !face_uv.is_empty() {
+            return Err(Error::Invalid("mixed box and face UV"));
+        }
+        boxes.push(BoxModel { coords, uv, face_uv, expand, expand_axes });
     }
     let mut animation = Vec::new();
     if let Some(groups) = get("animations") {
@@ -110,11 +135,15 @@ fn part<F: FnMut(&str) -> Option<String>>(
         }
     }
     let mut children = Vec::new();
+    if let Some(child) = get("submodel") {
+        children.push(part(child, depth + 1, refs, loader, count)?);
+    }
     if let Some(items) = get("submodels") {
         let items = items.as_array().ok_or(Error::Invalid("submodels must be array"))?;
         for child in items { children.push(part(child, depth + 1, refs, loader, count)?); }
     }
-    Ok(Part { name, id, translation, rotation, boxes, children, animation })
+    Ok(Part { name, id, translation, rotation, inverted_axes, mirrored_uv, texture, texture_size,
+        boxes, children, animation })
 }
 
 /// Resolve JPM references only within the owning resource pack directory.
