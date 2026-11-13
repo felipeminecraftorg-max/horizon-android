@@ -8267,7 +8267,10 @@ impl Game<'_> {
                 let attack_left = Some(self.settings.touch.attack_indicator_left);
                 #[cfg(not(target_os = "android"))]
                 let attack_left = None;
-                let draws = hud_layout::hotbar_with_attack_side(wi, hi, &inputs, attack_left);
+                let mut draws = hud_layout::hotbar_with_attack_side(wi, hi, &inputs, attack_left);
+                self.reanimated.animate_hotbar(
+                    &mut draws, self.selected, self.started.elapsed().as_secs_f32()
+                );
                 hud_layout::paint(&mut batch, &self.gui.atlas, &draws);
                 for d in &draws {
                     if let hud_layout::GuiDraw::Item { slot, x, y, .. } = *d {
