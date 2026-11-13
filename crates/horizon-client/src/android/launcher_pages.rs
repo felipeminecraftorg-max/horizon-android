@@ -1,6 +1,8 @@
 use super::*;
 #[path = "launcher_sfx.rs"]
 mod ui_sfx;
+#[path = "launcher_xmb_pages.rs"]
+mod xmb_pages;
 use crate::catalog::SettingsCategory;
 use horizon_client::ui_theme::launcher_visual as visual;
 use horizon_client::{
@@ -1492,6 +1494,14 @@ impl Launcher {
                     },
                 );
             }
+        } else if layout.console && page.is_catalog() {
+            // Entirely independent XMB menu: no M3 project cards, pills or
+            // repeated app-header layout. Original actions remain functional.
+            self.draw_xmb_catalog(
+                &mut ui, page, content_x, content_w, h, slide_y,
+            );
+        } else if layout.console && page == Page::Installed {
+            self.draw_xmb_installed(&mut ui, content_x, content_w, h, slide_y);
         } else if page == Page::Skins {
             self.wardrobe.draw(
                 &mut ui,
@@ -3838,6 +3848,13 @@ impl Launcher {
         ime_top_dp: Option<f32>,
     ) {
         let cat = self.catalog.settings_category;
+        if cat == SettingsCategory::Overview
+            && horizon_client::ui_theme::active_theme().experience
+                == horizon_client::ui_theme::ExperiencePreset::OldSchool
+        {
+            self.draw_xmb_settings_overview(ui, content_x, content_w, h, slide_y);
+            return;
+        }
         if cat == SettingsCategory::Overview {
             ui.text(
                 Face::SemiBold,
