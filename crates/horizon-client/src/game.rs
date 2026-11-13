@@ -15022,6 +15022,9 @@ impl Game<'_> {
             view_yaw,
             view_pitch,
         );
+        // Snapshot listener angles before the cinematic visual effect.
+        // Preserve Sound Physics' stereo/directional sound orientation.
+        let listener_angles = (view_yaw, view_pitch);
         // Only adjust the presentation camera, after the native camera stack.
         // No input/world/network angle changes or positional displacements.
         let station_scene = self.cinematic_station();
@@ -15031,8 +15034,11 @@ impl Game<'_> {
         let (view_yaw, view_pitch, view_roll, cinematic_fov) =
             self.cinematic_rig.apply(view_yaw, view_pitch, view_roll, 85.0);
         let cinematic_fov = cinematic_fov - 85.0;
-        self.audio
-            .set_listener([camera.x, camera.y, camera.z], view_yaw, view_pitch);
+        self.audio.set_listener(
+            [camera.x, camera.y, camera.z],
+            listener_angles.0,
+            listener_angles.1,
+        );
         android_bundled::native_sound_physics(self, [camera.x, camera.y, camera.z], underwater);
         let block = [
             camera.x.floor() as i32,
