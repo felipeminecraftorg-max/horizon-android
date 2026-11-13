@@ -132,6 +132,16 @@ impl Rig {
         )
     }
 }
+/// Some native furnace and brewing screens are block-entity containers,
+/// not entries in the station logic enum.
+pub fn station_of_container_block(name: &str) -> Option<Station> {
+    Some(match name {
+        "minecraft:furnace" | "minecraft:blast_furnace" | "minecraft:smoker" => Station::Furnace,
+        "minecraft:brewing_stand" => Station::Brewing,
+        _ => return None,
+    })
+}
+
 impl Game<'_> {
     /// Identify workstation scenes from the same state that renders the
     /// inventory screen. No server packets, block edits, or click interception.
@@ -139,6 +149,13 @@ impl Game<'_> {
         if !self.camera_type.first_person() || self.title.is_some()
             || self.screen != Screen::Inventory { return None; }
         if self.craft_table.is_some() { return Some(Station::Crafting); }
+        if let Some(pos) = self.container {
+            let block=self.world.block(pos.0,pos.1,pos.2);
+            let name = &self.res.facts().get(block).name;
+            if let Some(station) = station_of_container_block(name) {
+                return Some(station);
+            }
+        }
         let kind=self.station.as_ref()?.kind;
         Some(match kind {
             stations::Kind::Enchanting => Station::Enchanting,
@@ -170,6 +187,13 @@ mod tests {
         r.advance(Some(Station::Anvil),0.0);
         let p=r.advance(Some(Station::Anvil),900.0);
         assert!(p.pitch>0.0 && p.pitch<1.8);
+    }
+    #[test] fn maps_real_furnace_and_brewing_container_blocks() {
+        for kind in ["minecraft:furnace","minecraft:smoker","minecraft:blast_furnace"] {
+            assert_eq!(station_of_container_block(kind), Some(Station::Furnace));
+        }
+        assert_eq!(station_of_container_block("minecraft:brewing_stand"),Some(Station::Brewing));
+        assert_eq!(station_of_container_block("minecraft:chest"),None);
     }
     #[test] fn scene_profiles_differ_and_stay_small() {
         assert_ne!(Station::Anvil.target(), Station::Enchanting.target());
