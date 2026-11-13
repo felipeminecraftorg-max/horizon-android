@@ -672,7 +672,7 @@ impl HudAtlas {
             if let Ok(namespaces) = fs::read_dir(root.join("assets")) {
                 for ns in namespaces.flatten() {
                     for top in ["optifine", "mcpatcher"] {
-                        for folder in ["random/entity", "mob"] {
+                        for folder in ["random/entity", "mob", "cem"] {
                             walk(&ns.path().join(top).join(folder), &mut extra);
                         }
                     }
@@ -740,6 +740,8 @@ impl HudAtlas {
                             || rest.starts_with("optifine/mob/")
                             || rest.starts_with("mcpatcher/random/entity/")
                             || rest.starts_with("mcpatcher/mob/")
+                            || rest.starts_with("optifine/cem/")
+                            || rest.starts_with("mcpatcher/cem/")
                         {
                             format!("{namespace}:{rest}")
                         } else { return None; }
