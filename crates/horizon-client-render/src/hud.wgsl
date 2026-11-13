@@ -29,6 +29,14 @@ struct Out {
     return out;
 }
 @fragment fn fs_main(in: Out) -> @location(0) vec4<f32> {
+    // Atlas-independent native XMB wallpaper. The UI emits exactly one
+    // fullscreen quad with sentinel u=-4; all normal HUD/game samples remain
+    // unchanged and use the same existing draw pipeline.
+    if in.uv.x < -2.0 {
+        let screen = vec2<f32>(in.proj.x, 1.0 - in.proj.y);
+        let rgb = xmb_wallpaper(screen, in.glint_uv.x, in.glint_uv.y);
+        return vec4<f32>(rgb, 1.0);
+    }
     // u >= 2: the GLINT_TEXTURING sample over the item, masked by the item's
     // texture alpha (item.fsh's ALPHA_CUTOUT and GLINT path).
     if in.uv.x >= 2.0 {

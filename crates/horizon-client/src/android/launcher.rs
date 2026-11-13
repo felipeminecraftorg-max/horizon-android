@@ -55,6 +55,14 @@ pub(super) struct Launcher {
     install_cancelled: Arc<std::sync::atomic::AtomicBool>,
     install_transfer: crate::catalog::TransferTracker,
     pub(super) anim: pages::AnimState,
+    /// Independent XMB state, never shared with Liquid Glass.
+    pub(super) xmb: horizon_client::ui_theme::launcher_xmb::Navigation,
+    /// 0: files, 1: named locations, 2: file commands. XMB only.
+    xmb_files_panel: u8,
+    /// Transient, independent context overlay: focused action and finger anchor in dp.
+    xmb_context: Option<(pages::Action, [f32; 2])>,
+    /// Prevents held D-pad and rapid swipe sequences from overlapping UI samples.
+    xmb_last_sound: Option<Instant>,
     pub(super) control_editor: Option<horizon_client::touch::TouchControls>,
     worker: Option<mpsc::Receiver<std::result::Result<(), String>>>,
     error: Option<String>,
@@ -238,6 +246,10 @@ impl Launcher {
             install_cancelled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             install_transfer: Default::default(),
             anim: Default::default(),
+            xmb: Default::default(),
+            xmb_files_panel: 0,
+            xmb_context: None,
+            xmb_last_sound: None,
             control_editor: None,
             worker: None,
             error: None,
@@ -283,6 +295,7 @@ impl Launcher {
         horizon_client::ui_theme::reset_atlas();
         self.cursor = (0.0, 0.0);
         self.drag = None;
+        self.xmb_context = None;
         self.chooser = None;
         self.exit_confirmation = false;
         self.focus = None;
@@ -385,6 +398,12 @@ impl Launcher {
     }
 
     fn request_back(&mut self) {
+        if self.xmb_context.take().is_some() {
+            self.xmb_play_back();
+            self.focus = None;
+            self.pending_focus = None;
+            return;
+        }
         if self.catalog.page == Page::Settings
             && self.catalog.settings_category == crate::catalog::SettingsCategory::Theme
             && self.theme_advanced
@@ -442,14 +461,32 @@ impl Launcher {
                 };
             self.catalog.scroll = 0.0;
             self.anim.trigger_page_transition();
+        } else if self.catalog.page != Page::Play
+            && self.catalog.editing.is_none()
+            && horizon_client::ui_theme::active_theme().experience
+                == horizon_client::ui_theme::ExperiencePreset::OldSchool
+        {
+            // XMB circle/back climbs to the Game axis before asking to exit.
+            self.catalog.page = Page::Play;
+            self.catalog.scroll = 0.;
+            self.catalog.browse(&self.home);
+            self.anim.trigger_page_transition();
         } else if self.catalog.editing.take().is_none() {
             self.exit_confirmation = true;
         }
         self.focus = None;
         self.pending_focus = self.exit_confirmation.then_some(pages::Action::Dismiss);
+        self.xmb_play_back();
         self.targets.clear();
         self.list_targets.clear();
         self.drag = None;
+        if !self.exit_confirmation
+            && self.catalog.page == Page::Play
+            && horizon_client::ui_theme::active_theme().experience
+                == horizon_client::ui_theme::ExperiencePreset::OldSchool
+        {
+            self.xmb_step_home(0);
+        }
         if let Err(error) = self.catalog.config.save(&self.home) {
             self.fail(error);
         }
@@ -821,7 +858,7 @@ impl ApplicationHandler for Launcher {
                         winit::keyboard::Key::Named(winit::keyboard::NamedKey::Enter)
                     )
                 {
-                    self.activate(events)
+                    self.xmb_confirm_selected(events)
                 } else {
                     self.type_key(event);
                     Ok(())
@@ -1021,7 +1058,19 @@ impl ApplicationHandler for Launcher {
                 return;
             }
         }
+        // Motion reduced / battery saving: a static procedural wallpaper.
+        // Normal XMB: refresh the slow wave at 30Hz without forcing 60Hz idle
+        // GPU work. Liquid Glass and the running game are unaffected.
+        let xmb_wallpaper_animating = horizon_client::ui_theme::active_theme().experience
+            == horizon_client::ui_theme::ExperiencePreset::OldSchool
+            && !horizon_client::ui_theme::motion::reduced_motion()
+            && self.catalog.config.theme.glass_effects
+            && !self.catalog.config.battery_perf_mode
+            && !self.catalog.config.super_perf_mode;
         let animating = self.anim.is_active()
+            || (horizon_client::ui_theme::active_theme().experience
+                == horizon_client::ui_theme::ExperiencePreset::OldSchool
+                && self.xmb.motion_active())
             || self.catalog.editing.is_some()
             || self.controller_repeat.is_some()
             || self.drag.is_some()
@@ -1042,13 +1091,15 @@ impl ApplicationHandler for Launcher {
                 .project_modal
                 .as_ref()
                 .is_some_and(|m| m.loading);
-        if (animating || working || async_changed)
+        if (animating || xmb_wallpaper_animating || working || async_changed)
             && let Some(window) = &self.window
         {
             window.request_redraw();
         }
         let frame_ms = if animating {
             16
+        } else if xmb_wallpaper_animating {
+            33
         } else if working {
             100
         } else {
@@ -1108,18 +1159,22 @@ impl Launcher {
                     self.controller_repeat = Some((b, now, false));
                 }
             } else if b == Button::South {
-                self.activate(events)?;
+                self.xmb_confirm_selected(events)?;
             } else if b == Button::East {
-                crate::platform::hide();
-                self.catalog.editing = None;
-                if self.chooser.take().is_none() {
-                    if self.login.visible {
-                        self.login.visible = false;
-                    } else {
-                        self.catalog.page = Page::Play;
+                if self.xmb_navigation_available() {
+                    self.request_back();
+                } else {
+                    crate::platform::hide();
+                    self.catalog.editing = None;
+                    if self.chooser.take().is_none() {
+                        if self.login.visible {
+                            self.login.visible = false;
+                        } else {
+                            self.catalog.page = Page::Play;
+                        }
                     }
+                    self.focus = None;
                 }
-                self.focus = None;
             }
         }
         Ok(())
