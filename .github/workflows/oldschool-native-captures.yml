@@ -1,0 +1,65 @@
+name: Old School native UI captures
+
+on:
+  pull_request:
+    paths:
+      - 'crates/horizon-client/examples/launcher_capture.rs'
+      - '.github/workflows/oldschool-native-captures.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oldschool-capture-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    env:
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      HORIZON_TELEMETRY_URL: 'off'
+      HORIZON_CAPTURE_SKIP_OPTICS: '1'
+      WGPU_BACKEND: vulkan
+      LIBGL_ALWAYS_SOFTWARE: '1'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - name: Install native and software GPU dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -yq libasound2-dev libudev-dev libvulkan1 mesa-vulkan-drivers
+          rustup show
+          echo "Available software Vulkan ICDs:"
+          find /usr/share/vulkan/icd.d -type f -name '*.json' -print || true
+          lvp="$(find /usr/share/vulkan/icd.d -type f -name '*lvp*.json' -print -quit 2>/dev/null)"
+          if [[ -n "$lvp" ]]; then
+            echo "VK_ICD_FILENAMES=$lvp" >> "$GITHUB_ENV"
+          else
+            echo "No Lavapipe JSON found; allowing wgpu to find a working adapter."
+          fi
+      - name: Render native Old School UI
+        run: |
+          cargo run -p horizon-client --no-default-features --example launcher_capture -- native-captures
+      - name: Collect native preset PNGs
+        run: |
+          mkdir -p preview
+          cp native-captures/old-school-*.png preview/
+          cat > preview/README.txt <<'EOF'
+          HORIZON ANDROID - OLD SCHOOL V2 NATIVE RENDERER PREVIEW
+          These PNG files are genuine output of crates/horizon-client/examples/launcher_capture.rs
+          using the same native HUD renderer, theme, fonts, icons, and Old School dashboard.
+          They are deterministic preview captures without Android device UI, live Microsoft
+          account state, or the full Android app shell. Not screenshots taken on a phone.
+          Source commit is recorded in the workflow run metadata on GitHub.
+          EOF
+          ls -lh preview
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: oldschool-dashboard-native-preview
+          path: preview/
+          if-no-files-found: error
+          retention-days: 14
