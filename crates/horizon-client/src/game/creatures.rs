@@ -5999,6 +5999,13 @@ impl Game<'_> {
             static CEM_PREVIEW: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
             let cem_enabled = *CEM_PREVIEW.get_or_init(|| {
                 std::env::var("HORIZON_CEM_PREVIEW").is_ok_and(|v| v == "1")
+                    // Android debug profiles cannot normally set process
+                    // environment variables. An explicit local file next to
+                    // prepared game resources enables this experiment after
+                    // restarting; downloading a resource pack cannot set it.
+                    || std::fs::read_to_string(
+                        self.options.resources.join("horizon-cem-preview.flag")
+                    ).is_ok_and(|v| v.trim() == "enabled")
             });
             let cem_body = if cem_enabled && !layers_only && !is_player
                 && matches!(mob.kind.id.as_str(), "minecraft:zombie" | "minecraft:creeper")
