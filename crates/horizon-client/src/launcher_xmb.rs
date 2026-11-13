@@ -114,19 +114,11 @@ impl Cross {
     }
 }
 
-/// Draw a background *of a new composition*, with deep color and a quiet
-/// bottom radiance. Part 2 replaces this transitional gradient with WGSL
-/// organic light; it must never render the previous chrome/satin tiles.
-pub fn background(ui: &mut Ui<'_>, w: f32, h: f32) {
-    ui.fill(0., 0., w, h, color::hex(0x090E1C, 255));
-    let stripes = 48;
-    for i in 0..stripes {
-        let f = i as f32 / stripes as f32;
-        let y = h * (0.34 + f * 0.66);
-        let alpha = (f.powf(1.3) * 13.) as u8;
-        ui.fill(0., y, w, h / stripes as f32 + 1.,
-            color::hex(0x374C83, alpha));
-    }
+/// Truly native single-pass GPU wallpaper. It is part of the original
+/// Horizon XMB, not a resized bitmap or a fallback to the old dashboard.
+/// Pass a frozen phase in battery/reduced-motion mode to save energy.
+pub fn background(ui: &mut Ui<'_>, phase_seconds: f32, detail: f32) {
+    ui.xmb_wallpaper(phase_seconds, detail);
 }
 
 #[derive(Clone, Copy)]
