@@ -57,6 +57,8 @@ pub(super) struct Launcher {
     pub(super) anim: pages::AnimState,
     /// Independent XMB state, never shared with Liquid Glass.
     pub(super) xmb: horizon_client::ui_theme::launcher_xmb::Navigation,
+    /// 0: files, 1: named locations, 2: file commands. XMB only.
+    xmb_files_panel: u8,
     pub(super) control_editor: Option<horizon_client::touch::TouchControls>,
     worker: Option<mpsc::Receiver<std::result::Result<(), String>>>,
     error: Option<String>,
@@ -241,6 +243,7 @@ impl Launcher {
             install_transfer: Default::default(),
             anim: Default::default(),
             xmb: Default::default(),
+            xmb_files_panel: 0,
             control_editor: None,
             worker: None,
             error: None,
