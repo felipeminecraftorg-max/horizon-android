@@ -1,0 +1,126 @@
+name: Horizon XMB final ARM64 test APK
+
+on:
+  pull_request:
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'research-lock.json'
+      - 'packaging/android/**'
+      - 'tools/**'
+      - '.github/workflows/xmb-final-arm64-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: horizon-xmb-final-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  signed-public-arm64:
+    # Treat PR source as untrusted: no credential persistence, no signing secret.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_TARGET_DIR: ${{ github.workspace }}/.local/ci-target
+      HORIZON_TELEMETRY_URL: 'off'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          gradle-version: '8.14'
+      - name: Android SDK, NDK and Rust target
+        run: |
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$sdkmanager" ]]; then
+            sdkmanager=$(find "$ANDROID_HOME/cmdline-tools" -type f -path '*/bin/sdkmanager' | sort -V | tail -n 1)
+          fi
+          test -x "$sdkmanager"
+          "$sdkmanager" --sdk_root="$ANDROID_HOME" 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358'
+          rustup target add aarch64-linux-android
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .local/ci-target
+          key: xmb-arm64-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'packaging/android/build.gradle') }}-${{ github.sha }}
+          restore-keys: |
+            xmb-arm64-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'packaging/android/build.gradle') }}-
+      - name: Audit public source and APK checks
+        run: |
+          python3 tools/check_public_tree.py
+          python3 -m unittest discover -s tests -p 'test_android_release_audit.py'
+      - name: Prepare engine metadata from verified Mojang downloads
+        run: python3 tools/android_prepare.py --java-home "$JAVA_HOME"
+      - name: Compile arm64 Android and assemble public XMB APK
+        run: |
+          python3 tools/android_build.py --abi arm64-v8a --public --profile fast \
+            --sdk "$ANDROID_HOME" --java-home "$JAVA_HOME_17_X64" \
+            --gradle "$(command -v gradle)" \
+            --ndk-version 28.2.13676358 --build-tools-version 35.0.0 \
+            --dev-build "xmb.${GITHUB_RUN_NUMBER}.${GITHUB_SHA:0:12}" \
+            --dev-version-code "$((500000 + GITHUB_RUN_NUMBER))"
+      - name: Verify APK identity, ABI, ZIP integrity and signing
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import json, hashlib, os, shutil, subprocess
+          src = Path('.local/android/apk/arm64-v8a/horizon-android-public.apk')
+          assert src.is_file() and src.stat().st_size > 1_000_000, 'APK missing or unexpectedly small'
+          with ZipFile(src) as z:
+              assert z.testzip() is None, 'APK has a corrupt ZIP entry'
+              libs = [n for n in z.namelist() if n.startswith('lib/') and n.endswith('.so')]
+              assert 'lib/arm64-v8a/libhorizon_android.so' in libs, libs
+              assert not any(n.startswith('lib/') and not n.startswith('lib/arm64-v8a/') for n in libs), libs
+              assert 'AndroidManifest.xml' in z.namelist()
+              assert 'classes.dex' in z.namelist()
+          build_tools = Path(os.environ['ANDROID_HOME']) / 'build-tools/35.0.0'
+          subprocess.run([str(build_tools / 'apksigner'), 'verify', '--verbose', str(src)], check=True)
+          name = f'Horizon-XMB-final5-{os.environ["GITHUB_SHA"][:12]}-arm64-v8a.apk'
+          dest = Path('dist')
+          dest.mkdir()
+          shutil.copyfile(src, dest/name)
+          digest = hashlib.sha256((dest/name).read_bytes()).hexdigest()
+          (dest/'SHA256SUMS.txt').write_text(f'{digest}  {name}\n')
+          (dest/'BUILD.json').write_text(json.dumps({
+            'sha': os.environ['GITHUB_SHA'], 'architecture': 'arm64-v8a',
+            'package': 'dev.horizon.android.dev',
+            'signing': 'ephemeral-development-key-not-stable',
+            'public_generated_tables_only': True,
+            'sha256': digest,
+            'release_grade': False,
+            'install_note': 'Separate dev app. Previous dev app signed by a different key may need to be removed.'
+          }, indent=2)+'\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
+            out.write(f'### XMB final test build\n\nAPK: \`{name}\`\nSHA256: \`{digest}\`\n\n**Not production signed.** Separate test app; Android physical device not tested.\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: horizon-xmb-final5-arm64-apk
+          path: dist/
+          retention-days: 14
+          if-no-files-found: error
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        if: always()
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .local/ci-target
+          key: xmb-arm64-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'packaging/android/build.gradle') }}-${{ github.sha }}
+      - name: Delete disposable signing key
+        if: always()
+        run: rm -f .local/android/debug.keystore
