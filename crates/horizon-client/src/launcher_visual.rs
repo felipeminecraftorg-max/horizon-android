@@ -901,7 +901,7 @@ impl Layout {
         let x = if portrait {
             16.
         } else if console {
-            24. // Full-width console dashboard beneath the horizontal tabs.
+            24. // XMB content retains roomy side margins without a dashboard.
         } else if experience == ExperiencePreset::LiquidGlass {
             119. // Narrow icon rail, like the modern reference.
         } else {
@@ -912,7 +912,7 @@ impl Layout {
             console,
             x,
             width: (w - x - if console { 24. } else { 20. }).max(200.),
-            bottom: if portrait { h - 84. } else { h },
+            bottom: if portrait && !console { h - 84. } else { h },
         }
     }
     pub fn nav_rect(self, w: f32, h: f32, index: usize, count: usize) -> [f32; 4] {
