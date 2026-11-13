@@ -188,6 +188,224 @@ pub(super) fn xmb_setting_row(
 }
 
 impl Launcher {
+    /// XMB project details replace the Modrinth Material popup. Every
+    /// available version stays selectable and installs through the original
+    /// catalog operation; descriptions and remote screenshots are preserved.
+    pub(super) fn draw_xmb_project_modal(&mut self,ui:&mut Ui<'_>,w:f32,h:f32){
+        let Some(install_label)=self.catalog.project_modal.as_ref().map(|modal|{
+            let version=modal.versions.get(modal.selected_version)
+                .map_or_else(||"mais recente".to_string(),|v|v.number.clone());
+            if let Some(id)=modal.bundled_id {
+                if self.catalog.bundled_enabled.contains(id){
+                    "Desativar mod integrado".to_string()
+                }else{
+                    format!("Ativar mod ({version})")
+                }
+            }else if crate::catalog::source_only_mod(&modal.project){
+                "Formato não suportado nesta versão Android".to_string()
+            }else if let Some(state)=self.catalog.download_label(&modal.project){
+                state
+            }else{
+                format!("Baixar {} ({version})",modal.project.kind.label())
+            }
+        })else{return;};
+        let Some(modal)=self.catalog.project_modal.as_mut()else{return;};
+        self.targets.clear();
+        self.list_targets.clear();
+        ui.fill(0.,0.,w,h,ink(0x040916,214));
+        let x=if h>w{20.}else{(w*0.17).max(34.)};
+        let width=(w-x-22.).min(690.);
+        ui.text(Face::Regular,10.,x,18.,ink(0xAACBEB,181),
+            "CONTEÚDO / INFORMAÇÕES");
+        let title=ui.fit_text(Face::Medium,20.,&modal.project.title,
+            width-60.);
+        ui.text(Face::Medium,20.,x,39.,ink(WHITE,248),&title);
+        let info=format!("{} · {} · {}",modal.author,
+            modal.project.source.label(),modal.license);
+        let meta=ui.fit_text(Face::Regular,10.7,&info,width-17.);
+        ui.text(Face::Regular,10.7,x,76.,ink(MUTED,169),&meta);
+        xmb_text_action(ui,&mut self.targets,
+            [x+width-84.,14.,84.,39.],"Fechar",
+            Action::CloseProjectModal,false);
+
+        let top=107.;
+        let bottom=h-62.;
+        let desc_lines=wrap_text_lines(ui,Face::Regular,12.5,
+            &modal.description,(width-12.).max(80.));
+        let desc_height=desc_lines.len().max(1)as f32*19.;
+        let screenshots=modal.screenshots.len().min(3);
+        let gallery_h=if screenshots>0{118.}else{0.};
+        let version_h=modal.versions.len().min(6)as f32*54.+32.;
+        let total=desc_height+34.+gallery_h+version_h+24.;
+        let max_scroll=(total-(bottom-top)).max(0.);
+        modal.scroll=modal.scroll.clamp(0.,max_scroll);
+        self.list_view=Some([top,bottom,max_scroll]);
+        let mut row=top-modal.scroll;
+        ui.set_clip(Some([x,top,width,(bottom-top).max(1.)]));
+        ui.text(Face::Regular,11.,x+4.,row,ink(0xB8DDF5,183),
+            "SOBRE O PROJETO");
+        row+=26.;
+        for text in &desc_lines{
+            if row+19.>=top && row<=bottom{
+                let value=ui.fit_text(Face::Regular,12.5,text,width-12.);
+                ui.text(Face::Regular,12.5,x+4.,row,ink(WHITE,207),&value);
+            }
+            row+=19.;
+        }
+        row+=12.;
+        if screenshots>0{
+            ui.text(Face::Regular,11.,x+4.,row,ink(0xB7D9EF,174),
+                "IMAGENS DO PROJETO");
+            row+=22.;
+            let gap=8.;
+            let cell=(width-gap*(screenshots as f32-1.))
+                /screenshots as f32;
+            let cell_h=83.;
+            for(i,(caption,sw,sh,rgba))in modal.screenshots
+                .iter().take(3).enumerate(){
+                let sx=x+i as f32*(cell+gap);
+                if row+cell_h>=top && row<=bottom{
+                    let key=format!("xmb-shot:{}:{i}",modal.project.id);
+                    let _=ui.image(&key,*sw,*sh,rgba,sx,row,cell,63.);
+                    let cap=ui.fit_text(Face::Regular,9.5,caption,cell);
+                    ui.text(Face::Regular,9.5,sx,row+66.,
+                        ink(MUTED,171),&cap);
+                }
+            }
+            row+=98.;
+        }
+        ui.text(Face::Regular,11.,x+4.,row,ink(0xB7D9EF,184),
+            "VERSÕES DISPONÍVEIS");
+        row+=28.;
+        if modal.versions.is_empty(){
+            ui.text(Face::Regular,11.5,x+10.,row,
+                ink(MUTED,168),"Verificando versões disponíveis...");
+            row+=42.;
+        }
+        for (i,version) in modal.versions.iter().take(6).enumerate(){
+            let active=i==modal.selected_version;
+            if row+49.>=top && row<=bottom{
+                if active{ui.fill(x+1.,row+7.,2.,35.,ink(0xD9F0FF,210));}
+                let label=ui.fit_text(Face::Medium,14.,&version.number,
+                    width-44.);
+                ui.text(Face::Medium,14.,x+13.,row+5.,
+                    ink(WHITE,if active{251}else{206}),&label);
+                ui.text(Face::Regular,10.,x+13.,row+28.,
+                    ink(MUTED,160),
+                    if active{"VERSÃO SELECIONADA"}else{"TOCAR PARA SELECIONAR"});
+                if let Some(hit)=ui.clip_rect([x,row,width,50.]){
+                    self.targets.push((hit,Action::SelectModalVersion(i)));
+                    self.list_targets.push((hit,Action::SelectModalVersion(i)));
+                }
+            }
+            row+=54.;
+        }
+        ui.set_clip(None);
+        // A single clear primary command in the bottom action lane.
+        xmb_text_action(ui,&mut self.targets,
+            [x,h-54.,(width-104.).max(135.),43.],
+            &install_label,Action::InstallModalProject,true);
+        xmb_text_action(ui,&mut self.targets,
+            [x+width-97.,h-54.,96.,43.],
+            "Voltar",Action::CloseProjectModal,false);
+    }
+
+    /// Contextual file dialogs are XMB text commands, with real validation,
+    /// Android text entry and irreversible delete confirmation preserved.
+    pub(super) fn draw_xmb_file_modal(
+        &mut self,ui:&mut Ui<'_>,w:f32,h:f32,ime_top:Option<f32>,
+    ){
+        let Some(modal)=self.catalog.fm_modal.clone()else{return;};
+        self.targets.clear();
+        self.list_targets.clear();
+        self.list_view=None;
+        ui.fill(0.,0.,w,h,ink(0x030A15,206));
+        let x=if h>w{22.}else{(w*.20).max(33.)};
+        let width=(w-x-25.).min(620.);
+        let mut y=if h>w{(h*.22).max(50.)}else{72.};
+        if let Some(ime_y)=ime_top {
+            y=y.min((ime_y-195.).max(8.));
+        }
+        ui.text(Face::Regular,10.,x,y,ink(0xBAD9F0,191),
+            "ARQUIVOS / COMANDO");
+        y+=25.;
+        match modal {
+            crate::catalog::FmModal::ConfirmDelete{paths}=>{
+                ui.text(Face::Medium,19.,x,y,ink(WHITE,252),
+                    "Confirmar exclusão");
+                let detail=format!("{} item(ns) serão apagados permanentemente",
+                    paths.len());
+                let detail=ui.fit_text(Face::Regular,12.2,&detail,width);
+                ui.text(Face::Regular,12.2,x,y+39.,ink(MUTED,188),&detail);
+                let names=paths.iter().take(3).cloned().collect::<Vec<_>>().join(", ");
+                let names=ui.fit_text(Face::Regular,11.,&names,width);
+                ui.text(Face::Regular,11.,x,y+68.,ink(WHITE,204),&names);
+                xmb_text_action(ui,&mut self.targets,
+                    [x,y+113.,width*.47,43.],"Cancelar",
+                    Action::FmCloseModal,false);
+                xmb_text_action(ui,&mut self.targets,
+                    [x+width*.50,y+113.,width*.49,43.],
+                    "Excluir arquivos",Action::FmConfirmDelete,true);
+            }
+            crate::catalog::FmModal::Rename{target_rel}=>{
+                ui.text(Face::Medium,19.,x,y,ink(WHITE,250),
+                    "Renomear");
+                let path=ui.fit_text(Face::Regular,11.,&target_rel,width);
+                ui.text(Face::Regular,11.,x,y+33.,ink(MUTED,169),&path);
+                xmb_search(ui,&mut self.targets,[x,y+67.,width,44.],
+                    &self.catalog.fm_input_text,"Novo nome",
+                    Action::Field("fm_rename"),
+                    self.catalog.editing==Some("fm_rename"));
+                xmb_text_action(ui,&mut self.targets,
+                    [x,y+128.,width*.47,40.],"Cancelar",
+                    Action::FmCloseModal,false);
+                xmb_text_action(ui,&mut self.targets,
+                    [x+width*.50,y+128.,width*.49,40.],"Salvar",
+                    Action::FmSubmitRename,true);
+            }
+            crate::catalog::FmModal::NewFolder=>{
+                ui.text(Face::Medium,19.,x,y,ink(WHITE,250),
+                    "Nova pasta");
+                let path=ui.fit_text(Face::Regular,11.,
+                    &self.catalog.fm_current_dir,width);
+                ui.text(Face::Regular,11.,x,y+34.,ink(MUTED,176),&path);
+                xmb_search(ui,&mut self.targets,[x,y+69.,width,44.],
+                    &self.catalog.fm_input_text,"Nome da pasta",
+                    Action::Field("fm_new_folder"),
+                    self.catalog.editing==Some("fm_new_folder"));
+                xmb_text_action(ui,&mut self.targets,
+                    [x,y+130.,width*.47,40.],"Cancelar",
+                    Action::FmCloseModal,false);
+                xmb_text_action(ui,&mut self.targets,
+                    [x+width*.50,y+130.,width*.49,40.],"Criar pasta",
+                    Action::FmSubmitNewFolder,true);
+            }
+            crate::catalog::FmModal::Details(details)=>{
+                let name=ui.fit_text(Face::Medium,18.5,&details.name,width);
+                ui.text(Face::Medium,18.5,x,y,ink(WHITE,250),&name);
+                let summary=format!("{} · {} · {}",details.kind_label,
+                    crate::catalog::format_file_size(details.size_bytes),
+                    details.modified_label);
+                let summary=ui.fit_text(Face::Regular,11.,&summary,width);
+                ui.text(Face::Regular,11.,x,y+33.,ink(MUTED,174),&summary);
+                let text_top=y+69.;
+                let bottom=h-70.;
+                ui.set_clip(Some([x,text_top,width,(bottom-text_top).max(1.)]));
+                for(i,line)in details.preview_lines.iter().enumerate(){
+                    let yy=text_top+i as f32*16.;
+                    if yy>=bottom{break;}
+                    let fitted=ui.fit_text(Face::Mono,10.,line,width-10.);
+                    ui.text(Face::Mono,10.,x+4.,yy,ink(WHITE,209),&fitted);
+                }
+                ui.set_clip(None);
+                xmb_text_action(ui,&mut self.targets,
+                    [x,h-56.,(width-10.).max(95.),43.],
+                    "Fechar detalhes",Action::FmCloseModal,true);
+            }
+        }
+    }
+
+impl Launcher {
     pub(super) fn draw_xmb_catalog(
         &mut self, ui:&mut Ui<'_>, page:Page,
         x:f32,w:f32,h:f32,slide_y:f32
