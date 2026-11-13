@@ -132,6 +132,24 @@ impl Rig {
         self.current.fov=self.current.fov.clamp(-4.0,4.0);
         self.current
     }
+    /// Render-only first-person arm movement during workstation scenes.
+    /// The original FirstPerson Model body rendering stays untouched; callers
+    /// apply this only inside the vanilla hand geometry path.
+    pub fn hand_offset(&self) -> glam::Mat4 {
+        if !self.config.enabled || self.config.reduced_motion {
+            return glam::Mat4::IDENTITY;
+        }
+        let focus=(self.current.pitch/3.0).clamp(0.0,1.0);
+        let click=self.interaction_age.map_or(0.0,|age|
+            (age*17.0).sin()*(-6.0*age).exp()
+        );
+        let tx=0.015*click;
+        let ty=-0.035*focus-0.020*click;
+        let tz=-0.09*focus+0.012*click;
+        glam::Mat4::from_translation(glam::Vec3::new(tx,ty,tz))
+            * glam::Mat4::from_rotation_x((0.10*focus+0.06*click).clamp(-0.2,0.2))
+    }
+
     /// Controls remain unaffected. Camera angles are additive over the
     /// already-computed FirstPerson/CameraOverhaul output from the engine.
     pub fn apply(&self, yaw:f32,pitch:f32,roll:f32,fov:f32) -> (f32,f32,f32,f32) {
@@ -241,6 +259,17 @@ mod tests {
         for i in 15..180 { r.advance(None,i as f32/60.0); }
         assert_eq!(r.interaction_age,None);
         assert!(r.current.roll.abs()<0.01);
+    }
+    #[test] fn workstation_hand_offset_is_visual_and_stays_bounded() {
+        let mut rig=Rig::new(Config{enabled:true,..Default::default()});
+        rig.advance(Some(Station::Enchanting),0.0);
+        rig.advance(Some(Station::Enchanting),0.2);
+        let m=rig.hand_offset();
+        assert!(m.is_finite());
+        let displaced=m.transform_point3(glam::Vec3::ZERO);
+        assert!(displaced.length()<0.20);
+        rig.config.enabled=false;
+        assert_eq!(rig.hand_offset(),glam::Mat4::IDENTITY);
     }
     #[test] fn disabled_interaction_never_pulses() {
         let mut r=Rig::default();
