@@ -501,6 +501,8 @@ pub(super) enum Action {
     FmExportSingle(usize),
     FmExportSelected,
     FmCloseModal,
+    /// Independent XMB file context view; never changes the file manager state.
+    XmbFilesPanel(u8),
 }
 
 pub(super) fn button(
@@ -5606,6 +5608,10 @@ impl Launcher {
             }
             Some(Action::ConfirmExit) => {
                 events.exit();
+            }
+            Some(Action::XmbFilesPanel(panel)) => {
+                self.xmb_files_panel = panel.min(2);
+                self.catalog.scroll = 0.;
             }
             Some(Action::SettingsCat(cat)) => {
                 self.catalog.page = Page::Settings;
