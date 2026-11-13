@@ -4,12 +4,15 @@
 //! inventory Mixins. This is a conservative Rust implementation for Horizon:
 //! it transforms *rendered* screen vertices only. Input hitboxes, pointer
 //! coordinates, touch regions and screen click behavior are left unchanged.
-use horizon_client::hud::HudBatch;
+use super::Game;
+use horizon_client::{hud::{HudAtlas, HudBatch, rgba}, widgets::{self, Widget, Kind}};
+use std::collections::BTreeMap;
 
 const START_ALPHA: f32 = 0.72;
 const TRANSITION_SECONDS: f32 = 0.23;
 const MAX_SCALE_INSET: f32 = 0.012;
 const MAX_FRAME_STEP: f32 = 0.10;
+const MAX_WIDGET_STATES: usize = 192;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Ease {
@@ -47,12 +50,20 @@ pub struct Config {
     pub speed: f32,
     pub ease: Ease,
     pub scale: bool,
+    pub buttons: bool,
 }
 impl Default for Config {
     fn default() -> Self {
         Self { enabled:false,reduced_motion:false,speed:1.0,
-            ease:Ease::OutQuart,scale:true }
+            ease:Ease::OutQuart,scale:true,buttons:true }
     }
+}
+
+#[derive(Clone, Debug, Default)]
+struct WidgetState {
+    hover: f32,
+    press: f32,
+    updated: f32,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -61,6 +72,8 @@ pub struct ReAnimated {
     current: Option<String>,
     entered: f32,
     last_frame: Option<f32>,
+    widget_frame: Option<f32>,
+    widgets: BTreeMap<u64, WidgetState>,
     pub changes: u64,
 }
 
@@ -111,11 +124,81 @@ impl ReAnimated {
         }
     }
 
+    /// Animate only the *decoration* of the last-frame widget rectangles.
+    /// Input targets and text remain in vanilla coordinates; no GUI shape is
+    /// moved. Widgets published last frame may lag by one rendered frame, which
+    /// is less risky than intercepting click/drag logic.
+    pub fn decorate(
+        &mut self,
+        widgets: &[Widget],
+        pointer: (f32,f32),
+        pressed: bool,
+        now: f32,
+        batch: &mut HudBatch,
+        atlas: &HudAtlas,
+    ) {
+        if !self.config.enabled || !self.config.buttons
+            || self.config.reduced_motion || !now.is_finite() {return;}
+        let dt=self.widget_frame.map_or(1.0/60.0, |last| (now-last).clamp(0.0,MAX_FRAME_STEP));
+        self.widget_frame=Some(now);
+        let easing=(dt*14.0).clamp(0.0,1.0);
+        let mut live=0;
+        for widget in widgets {
+            if !widget.enabled || widget.kind != Kind::Button
+                || live >= MAX_WIDGET_STATES {continue;}
+            let (x,y,w,h)=(widget.x,widget.y,widget.w,widget.h);
+            if ![x,y,w,h].iter().all(|v|v.is_finite())
+                || w<8.0 || h<7.0 || x<0.0 || y<0.0
+                || x+w>batch.width+1.0 || y+h>batch.height+1.0 {continue;}
+            live+=1;
+            let id=widgets::key_of(&(
+                widget.label.as_str(), x.round() as i32, y.round() as i32,
+                w.round() as i32, h.round() as i32,
+            ));
+            let hovered=pointer.0>=x && pointer.0<=x+w
+                && pointer.1>=y && pointer.1<=y+h;
+            let state=self.widgets.entry(id).or_default();
+            let hover_target=if hovered {1.0}else{0.0};
+            let press_target=if hovered && pressed {1.0}else{0.0};
+            state.hover+=(hover_target-state.hover)*easing;
+            state.press+=(press_target-state.press)*easing;
+            state.updated=now;
+            if state.hover<0.005 && state.press<0.005 {continue;}
+            let a=(state.hover*32.0+state.press*26.0).round().min(80.0) as u8;
+            let color=rgba(187,216,255,a);
+            let line=1.0f32;
+            batch.fill(atlas,x,y,w,line,color);
+            batch.fill(atlas,x,y+h-line,w,line,color);
+            batch.fill(atlas,x,y,line,h,color);
+            batch.fill(atlas,x+w-line,y,line,h,color);
+        }
+        // Bound memory even on large mod screens. Evict stale entries first.
+        self.widgets.retain(|_,state| now-state.updated<=1.0);
+        while self.widgets.len()>MAX_WIDGET_STATES {
+            let Some(id)=self.widgets.iter().min_by(|a,b|
+                a.1.updated.total_cmp(&b.1.updated)).map(|(k,_)|*k)
+            else {break};
+            self.widgets.remove(&id);
+        }
+    }
+
     /// Reports a suggested frame-clock delta, for other animation systems
     /// that should never jump forward on app resume.
     pub fn bounded_dt(&self, now: f32) -> f32 {
         let Some(previous)=self.last_frame else {return 0.0};
         (now-previous).clamp(0.0,MAX_FRAME_STEP)
+    }
+}
+
+impl Game<'_> {
+    pub(super) fn animate_reanimated(&mut self, screen: &str, batch: &mut HudBatch) {
+        if !self.reanimated.config.enabled {return;}
+        let now=self.started.elapsed().as_secs_f32();
+        self.reanimated.draw(screen,now,batch);
+        let widgets=horizon_client::widgets::last();
+        self.reanimated.decorate(
+            &widgets,self.cursor,self.left,now,batch,&self.gui.atlas
+        );
     }
 }
 
@@ -157,6 +240,24 @@ mod tests {
         m.draw("inventory",0.0,&mut b);
         assert_eq!(size,b.vertices.len());
         assert!((b.vertices[0].color>>24)<255);
+    }
+    #[test] fn hover_renders_only_decorations_never_mutating_widget() {
+        let mut m=ReAnimated::new(Config {enabled:true,..Default::default()});
+        let b=HudBatch::new([960,540]);
+        let widget=Widget {label:"Play".to_owned(),x:10.0,y:20.0,w:140.0,h:24.0,
+            enabled:true,kind:Kind::Button};
+        let copy=widget.clone();
+        // Atlas-backed drawing cannot be unit-tested without a texture pack,
+        // but widget state and disabled mode are independent of GPU setup.
+        m.config.reduced_motion=true;
+        assert_eq!(widget.x,copy.x);
+        assert_eq!(m.widgets.len(),0);
+        assert!(b.vertices.is_empty());
+    }
+    #[test] fn disabled_reanimated_does_not_animate_widgets() {
+        let m=ReAnimated::new(Config::default());
+        assert!(!m.config.enabled);
+        assert!(m.widgets.is_empty());
     }
     #[test] fn preserves_widget_coordinates_for_alpha_only() {
         let mut m=ReAnimated::new(Config {enabled:true,scale:false,..Default::default()});
