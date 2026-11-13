@@ -36,11 +36,43 @@ Validation: cargo test --locked -p horizon-optifine
 Renderer compile: cargo check --locked -p horizon-client-render
 
 
+## Experimental native CEM rendering (this branch)
+
+The GPU-facing bridge now compiles a **bounded subset** of CEM boxes into the
+Horizon `mesher::Vertex` layout during resource-pack reload. The bridge applies
+compiled model-space pose matrices and maps CEM pixel UVs into the existing
+entity atlas. ETF random-entity images can also be included in the optional
+atlas, limited to the first 256 candidate images to avoid unbounded Android
+memory growth; unsupported or unavailable variations fall back to vanilla.
+
+The preview renderer in `game/creatures.rs` currently targets only zombies
+and creepers. It retains vanilla equipment/layers and uses vanilla rendering
+when required model data, animation inputs or textures are unavailable.
+FirstPerson/other entities are not modified.
+
+It is **disabled by default**. For an isolated development run, either:
+- set `HORIZON_CEM_PREVIEW=1` in the process environment before starting Horizon;
+- or create a local file named `horizon-cem-preview.flag` next to the prepared
+  game resources, containing exactly `enabled`, then relaunch Horizon.
+
+This is a debug switch, **not a user-facing Android settings control**.
+Resource packs cannot activate it by themselves. The flag is sampled once
+per process, so restart after changing it. Only run previews on disposable test
+worlds until entity geometry and GPU parity are reviewed.
+
+Check the full code with:
+```sh
+cargo test --locked -p horizon-optifine
+cargo check --locked -p horizon-client-render
+cargo check --locked -p horizon-client --no-default-features
+```
+
 ## Explicit limitations — not yet a functional Fresh Animations port
 
-These APIs prepare resource data but do not replace entity models or textures
-in the renderer yet. There is no renderer binding, GPU upload, living entity
-pose input mapping, texture atlas wiring, or texture emittance/blinking support.
+Some resources can now be rendered **experimentally** through Horizon's
+existing vertex and atlas path when explicitly enabled. There is still no
+validated Fresh Animations compatibility, no complete living-entity pose mapping,
+and no texture emissive/blinking or end-to-end Android proof.
 
 This is a strict subset of EMF 3.3.12 and ETF 7.2.7 functionality:
 - EMF CEM complex aliases, some JPM/face-UV semantics, custom textures,
