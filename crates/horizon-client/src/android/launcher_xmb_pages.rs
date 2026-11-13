@@ -101,6 +101,92 @@ fn xmb_heading(ui:&mut Ui<'_>, x:f32,y:f32,w:f32, breadcrumb:&str,title:&str) {
     ui.text(Face::Medium,19.,x+3.,y+19.,ink(WHITE,250),&fitted);
 }
 
+/// Unified unframed setting row for Video, Launcher, Controls, Experimental,
+/// Diagnostics, account and advanced theme settings. The original command
+/// dispatch is untouched; every control variant keeps its real action.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn xmb_setting_row(
+    ui:&mut Ui<'_>,targets:&mut Vec<([f32;4],Action)>,
+    list_targets:&mut Vec<([f32;4],Action)>,
+    x:f32,y:f32,w:f32,h:f32,
+    title:&str,subtitle:&str,control:SettingControl<'_>
+) {
+    let is_group=matches!(control,SettingControl::SectionHeader(..));
+    if is_group {
+        if let SettingControl::SectionHeader(badge,icon)=control {
+            ui.icon(icon,x+6.,y+17.,23.,ink(0xDCF0FF,202));
+            let title=ui.fit_text(Face::Medium,15.5,title,(w-48.).max(35.));
+            ui.text(Face::Medium,15.5,x+43.,y+10.,ink(WHITE,243),&title);
+            let badge=ui.fit_text(Face::Regular,10.,badge,(w-48.).max(35.));
+            ui.text(Face::Regular,10.,x+43.,y+33.,ink(MUTED,169),&badge);
+        }
+        return;
+    }
+    let action_w=if w < 395. {136.} else {196.};
+    let text_w=(w-action_w-30.).max(32.);
+    let title=ui.fit_text(Face::Medium,14.5,title,text_w);
+    let summary=ui.fit_text(Face::Regular,10.7,subtitle,text_w);
+    ui.text(Face::Medium,14.5,x+8.,y+7.,ink(WHITE,230),&title);
+    ui.text(Face::Regular,10.7,x+8.,y+32.,ink(MUTED,155),&summary);
+    ui.fill(x+9.,y+h-2.,w-18.,0.7,ink(0x9BC7E5,29));
+    let ctrl_x=x+w-action_w+2.;
+    match control {
+        SettingControl::SectionHeader(..)=>{}
+        SettingControl::Toggle(on,action)=>{
+            let r=[ctrl_x,y+11.,action_w-9.,37.];
+            ui.icon(if on{Icon::Check}else{Icon::Close},
+                ctrl_x+1.,y+20.,16.,ink(if on{0xCCEBFA}else{MUTED},211));
+            xmb_text_action(ui,targets,
+                [ctrl_x+18.,r[1],r[2]-18.,r[3]],
+                if on{"Ativado"}else{"Desativado"},action,on);
+            if let Some(hit)=ui.clip_rect(r){list_targets.push((hit,action));}
+        }
+        SettingControl::Button(label,action,accent)=>{
+            let r=[ctrl_x,y+10.,action_w-6.,38.];
+            xmb_text_action(ui,targets,r,label,action,accent);
+            if let Some(hit)=ui.clip_rect(r){list_targets.push((hit,action));}
+        }
+        SettingControl::TextField{label,value,hint,active,action}=>{
+            let r=[ctrl_x,y+9.,action_w-6.,40.];
+            xmb_search(ui,targets,r,value,
+                if hint.is_empty(){label}else{hint},action,active);
+            if let Some(hit)=ui.clip_rect(r){list_targets.push((hit,action));}
+        }
+        SettingControl::Stepper(value,minus,plus)=>{
+            let middle=[ctrl_x+36.,y+11.,action_w-78.,36.];
+            let value=ui.fit_text(Face::Regular,12.2,value,middle[2]-8.);
+            ui.centered_fit(Face::Regular,12.2,middle,ink(WHITE,220),&value);
+            let r_minus=[ctrl_x,y+11.,35.,36.];
+            let r_plus=[ctrl_x+action_w-40.,y+11.,35.,36.];
+            xmb_text_action(ui,targets,r_minus,"−",minus,false);
+            xmb_text_action(ui,targets,r_plus,"+",plus,false);
+            if let Some(hit)=ui.clip_rect(r_minus){list_targets.push((hit,minus));}
+            if let Some(hit)=ui.clip_rect(r_plus){list_targets.push((hit,plus));}
+        }
+        SettingControl::Slider{value_label,fraction,minus_action,plus_action}=>{
+            let r_minus=[ctrl_x,y+12.,32.,35.];
+            let r_plus=[ctrl_x+action_w-37.,y+12.,32.,35.];
+            let track_x=ctrl_x+36.;
+            let track_w=(action_w-80.).max(22.);
+            ui.fill(track_x,y+36.,track_w,2.,ink(0x94B6D5,90));
+            ui.fill(track_x,y+36.,track_w*fraction.clamp(0.,1.),2.,
+                ink(0xD9F3FF,229));
+            let text=ui.fit_text(Face::Regular,10.3,value_label,track_w);
+            ui.text(Face::Regular,10.3,track_x,y+12.,ink(WHITE,214),&text);
+            xmb_text_action(ui,targets,r_minus,"−",minus_action,false);
+            xmb_text_action(ui,targets,r_plus,"+",plus_action,false);
+            let track=[track_x,y+23.,track_w,24.];
+            if let Some(hit)=ui.clip_rect(track){
+                SLIDER_TRACK_TARGETS.with(|tracks|
+                    tracks.borrow_mut().push((hit,minus_action,track_x,track_w)));
+                list_targets.push((hit,minus_action));
+            }
+            if let Some(hit)=ui.clip_rect(r_minus){list_targets.push((hit,minus_action));}
+            if let Some(hit)=ui.clip_rect(r_plus){list_targets.push((hit,plus_action));}
+        }
+    }
+}
+
 impl Launcher {
     pub(super) fn draw_xmb_catalog(
         &mut self, ui:&mut Ui<'_>, page:Page,
