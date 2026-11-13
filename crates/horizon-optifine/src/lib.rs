@@ -7,6 +7,7 @@
 
 pub mod entity_animations;
 pub mod entity_models;
+pub mod entity_resources;
 pub mod entity_textures;
 pub mod matchers;
 pub mod paths;
