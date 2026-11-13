@@ -1126,11 +1126,22 @@ fn home_old_school(
     // doubled the contour around the Old School game hero.
     ui.rounded(x + 15., y + 16., (poster_w - 30.).min(330.), 104., 12.,
         color::hex(0x0A1020, 111));
-    ui.text(Face::SemiBold, if narrow { 23. } else { 31. },
+    // The profile picker occupies the right edge. Short landscape views need
+    // a smaller heading so the title cannot run underneath that control.
+    let title_size = if narrow || poster_w < 360. { 23. } else { 31. };
+    ui.text(Face::SemiBold, title_size,
         x + 26., y + 22., color::hex(0xFFFFFF, 255), "MINECRAFT");
     ui.text(Face::Medium, 16., x + 27., y + 64., color::hex(0xE4E6F5, 243), "26.3");
     let small = if view.installed { "Ready to play" } else { "Installation required" };
-    ui.text(Face::Regular, 12.5, x + 27., y + 95., color::hex(0xFAFAFF, 236), small);
+    // At low landscape heights, the original third text row crossed the
+    // Play button. Share the version row instead of hiding status entirely.
+    let compact_status = poster_h < 190.;
+    let status_x = if compact_status { x + 93. } else { x + 27. };
+    let status_y = if compact_status { y + 64. } else { y + 95. };
+    let status = ui.fit_text(Face::Regular, 12.5, small,
+        (poster_w - if compact_status { 104. } else { 32. }).max(32.));
+    ui.text(Face::Regular, 12.5, status_x, status_y,
+        color::hex(0xFAFAFF, 236), &status);
     // A small profile selector belongs to the poster, not the utility cards.
     let profile = [x + poster_w - 119., y + 13., 105., 37.];
     panel(ui, profile, 9., false);
