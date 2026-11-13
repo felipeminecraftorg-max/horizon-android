@@ -1035,7 +1035,90 @@ pub(super) fn cancel_slider_drag() {
     ACTIVE_SLIDER_DRAG.with(|c| c.set(None));
 }
 
+/// Keep all eight original launch actions wired while replacing their UI
+/// with a single spatial XMB item column.
+fn xmb_home_to_action(action: visual::HomeAction) -> Action {
+    match action {
+        visual::HomeAction::Play => Action::Play,
+        visual::HomeAction::Profile => Action::Profile,
+        visual::HomeAction::Appearance => Action::SettingsCat(SettingsCategory::Theme),
+        visual::HomeAction::Settings => Action::SettingsCat(SettingsCategory::Overview),
+        visual::HomeAction::Mods => Action::Page(Page::Mods),
+        visual::HomeAction::Packs => Action::Page(Page::Packs),
+        visual::HomeAction::Shaders => Action::Page(Page::Shaders),
+        visual::HomeAction::Files => Action::SetInstalledSubTab(
+            crate::catalog::InstalledSubTab::FileManager,
+        ),
+        visual::HomeAction::Skins => Action::Page(Page::Skins),
+    }
+}
+
 impl Launcher {
+    /// XMB categories move as a single spatial strip. Existing catalog data
+    /// and navigation handlers are reused; the old interface components are not.
+    fn xmb_switch_category(&mut self, delta: isize) {
+        let current = Page::ALL.iter().position(|p| *p == self.catalog.page).unwrap_or(0);
+        let next = current.saturating_add_signed(delta).min(Page::ALL.len() - 1);
+        let page = Page::ALL[next];
+        if page != self.catalog.page {
+            if page == Page::Skins {
+                self.wardrobe.open(
+                    &self.catalog.config.name,
+                    &self.catalog.config.microsoft_client_id,
+                );
+            }
+            self.catalog.editing = None;
+            self.catalog.project_modal = None;
+            self.catalog.modal_worker = None;
+            self.catalog.page = page;
+            self.catalog.scroll = 0.;
+            self.catalog.offset = 0;
+            self.error = None;
+            self.catalog.browse(&self.home);
+            self.anim.trigger_page_transition();
+        }
+        self.pending_focus = Some(Action::Page(page));
+        self.focus = None;
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    pub(super) fn xmb_step_home(&mut self, delta: i32) {
+        let action = self.xmb.step_home(delta);
+        self.pending_focus = Some(xmb_home_to_action(action));
+        self.focus = None;
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Keyboard and controller confirmation always acts on the item visibly
+    /// selected in the XMB Home column, including the very first A/Enter press.
+    pub(super) fn xmb_confirm_selected(
+        &mut self, events: &ActiveEventLoop,
+    ) -> Result<()> {
+        if self.xmb_navigation_available() && self.catalog.page == Page::Play {
+            let wanted = xmb_home_to_action(self.xmb.selected_action());
+            self.focus = self.targets.iter().rposition(|(_, action)| *action == wanted);
+        }
+        self.activate(events)
+    }
+
+    pub(super) fn xmb_navigation_available(&self) -> bool {
+        horizon_client::ui_theme::active_theme().experience
+            == horizon_client::ui_theme::ExperiencePreset::OldSchool
+            && !self.login.visible
+            && self.chooser.is_none()
+            && !self.exit_confirmation
+            && !self.status_details
+            && !self.diagnostics_modal_open
+            && self.catalog.project_modal.is_none()
+            && self.catalog.fm_modal.is_none()
+            && self.catalog.editing.is_none()
+            && self.control_editor.is_none()
+    }
+
     pub(super) fn pointer_action(&self) -> Option<Action> {
         let d = self.ui_density();
         let (x, y) = (self.cursor.0 as f32 / d, self.cursor.1 as f32 / d);
@@ -1057,6 +1140,27 @@ impl Launcher {
         }
         if self.catalog.editing.is_some() || self.targets.is_empty() {
             return false;
+        }
+        if self.xmb_navigation_available() {
+            match key {
+                Key::Named(NamedKey::ArrowLeft) => {
+                    self.xmb_switch_category(-1);
+                    return true;
+                }
+                Key::Named(NamedKey::ArrowRight) => {
+                    self.xmb_switch_category(1);
+                    return true;
+                }
+                Key::Named(NamedKey::ArrowUp) if self.catalog.page == Page::Play => {
+                    self.xmb_step_home(-1);
+                    return true;
+                }
+                Key::Named(NamedKey::ArrowDown) if self.catalog.page == Page::Play => {
+                    self.xmb_step_home(1);
+                    return true;
+                }
+                _ => {}
+            }
         }
         let button = match key {
             Key::Named(NamedKey::ArrowUp) => Button::DPadUp,
@@ -1166,13 +1270,10 @@ impl Launcher {
         };
         let (w, h) = (ui.w, ui.h);
         let active_th = horizon_client::ui_theme::active_theme();
-        if active_th.experience == horizon_client::ui_theme::ExperiencePreset::OldSchool
-            && active_th.wallpaper == visual::Wallpaper::Graphite
-        {
-            // Only Old School's default Graphite dashboard gets the new muted
-            // console waves. Dark Aero, Liquid Glass and deliberately selected
-            // alternative wallpapers retain their original rendering.
-            visual::console_background(&mut ui, [0., 0., w, h]);
+        if active_th.experience == horizon_client::ui_theme::ExperiencePreset::OldSchool {
+            // New independent XMB environment. Even custom Old School wallpapers
+            // must not go through the retired console dashboard material.
+            horizon_client::ui_theme::launcher_xmb::background(&mut ui, w, h);
         } else {
             ui.draw_theme_background(0.0, 0.0, w, h, &active_th);
         }
@@ -1194,8 +1295,13 @@ impl Launcher {
             self.catalog.page,
             self.catalog.settings_category,
             {
-                let target = layout.nav_rect(w, h, selected_idx, Page::ALL.len());
-                [target[0], target[1]]
+                if layout.console {
+                    let cross = horizon_client::ui_theme::launcher_xmb::Cross::from_screen(w, h);
+                    [cross.x - 27., cross.category_y - 27.]
+                } else {
+                    let target = layout.nav_rect(w, h, selected_idx, Page::ALL.len());
+                    [target[0], target[1]]
+                }
             },
             has_any_modal,
             self.catalog.sections,
@@ -1365,35 +1471,19 @@ impl Launcher {
                     profile: self.catalog.config.profile,
                     renderer: self.catalog.config.renderer.label(),
                 };
-                let is_console = layout.console && !layout.portrait;
+                let is_console = layout.console;
                 let home_top = if is_console { 130.0 } else { 76.0 };
                 // Reserve an actual footer lane. Previously the dashboard
                 // overlapped the Status/GitHub buttons and their lens halos.
                 let home_reserved_bottom = if layout.portrait { 60.0 } else { 78.0 };
-                visual::home(
+                visual::home_with_focus(
                     &mut ui,
                     [content_x, home_top + slide_y, content_w,
                         (h - home_top - home_reserved_bottom).max(0.0)],
                     &view,
+                    self.xmb.selected_home(),
                     |rect, action| {
-                        let action = match action {
-                            visual::HomeAction::Play => Action::Play,
-                            visual::HomeAction::Profile => Action::Profile,
-                            visual::HomeAction::Appearance => {
-                                Action::SettingsCat(SettingsCategory::Theme)
-                            }
-                            visual::HomeAction::Settings => {
-                                Action::SettingsCat(SettingsCategory::Overview)
-                            }
-                            visual::HomeAction::Mods => Action::Page(Page::Mods),
-                            visual::HomeAction::Packs => Action::Page(Page::Packs),
-                            visual::HomeAction::Shaders => Action::Page(Page::Shaders),
-                            visual::HomeAction::Files => Action::SetInstalledSubTab(
-                                crate::catalog::InstalledSubTab::FileManager,
-                            ),
-                            visual::HomeAction::Skins => Action::Page(Page::Skins),
-                        };
-                        self.targets.push((rect, action));
+                        self.targets.push((rect, xmb_home_to_action(action)));
                     },
                 );
             }
@@ -1836,8 +1926,8 @@ impl Launcher {
             let has_utilities = page == Page::Play
                 || (page == Page::Settings
                     && self.catalog.settings_category == SettingsCategory::Overview);
-            if has_utilities && layout.console && !layout.portrait && page == Page::Play {
-                // The console Home has a quiet, continuous system footer.
+            if has_utilities && layout.console && page == Page::Play {
+                // XMB footer remains text only, independent from app-style buttons.
                 // Keep full touch rectangles but avoid detached floating
                 // chrome buttons competing with the hero and quick access.
                 ui.fill(content_x, h - 52., content_w, 1.,
@@ -2048,12 +2138,30 @@ impl Launcher {
             );
         }
         if let Some(action) = self.pending_focus.take() {
-            self.focus = self.targets.iter().position(|(_, a)| *a == action);
+            // Home item actions may also exist in the category strip
+            // (for example Mods and Shaders). XMB focus belongs to the
+            // vertical item row; never steal it back to the category icon.
+            self.focus = if self.xmb_navigation_available()
+                && self.catalog.page == Page::Play
+                && horizon_client::ui_theme::launcher_xmb::HOME_ACTIONS
+                    .iter().any(|home| xmb_home_to_action(*home) == action)
+            {
+                self.targets.iter().rposition(|(_, a)| *a == action)
+            } else {
+                self.targets.iter().position(|(_, a)| *a == action)
+            };
         }
         if let Some(index) = self.focus
             && let Some(([x, y, w, h], _)) = self.targets.get(index)
         {
-            ui.border(*x - 2.0, *y - 2.0, *w + 4.0, *h + 4.0, 12.0, my3_accent());
+            if layout.console {
+                // XMB focus belongs to the floating text/icon, not an M3 card.
+                // Optical highlight and kinetic focus arrive in part 2 / 4.
+                ui.fill(*x + 1., *y + 8., 1.5, (*h - 16.).max(0.),
+                    color::hex(0xD5E6FF, 96));
+            } else {
+                ui.border(*x - 2.0, *y - 2.0, *w + 4.0, *h + 4.0, 12.0, my3_accent());
+            }
             self.cursor = (
                 f64::from((x + w / 2.0) * ui.density),
                 f64::from((y + h / 2.0) * ui.density),
@@ -2070,14 +2178,16 @@ impl Launcher {
                     && point[1] >= rect[1]
                     && point[1] <= rect[1] + rect[3]
             }) {
-                ui.rounded(
-                    *x,
-                    *y,
-                    *w,
-                    *h,
-                    (*h * 0.42).clamp(10.0, 22.0),
-                    horizon_client::hud::rgba(255, 255, 255, 36),
-                );
+                if layout.console {
+                    ui.rounded(*x + 8., *y + 9., 28., (*h - 18.).max(1.), 14.,
+                        horizon_client::hud::rgba(227, 237, 255, 20));
+                } else {
+                    ui.rounded(
+                        *x, *y, *w, *h,
+                        (*h * 0.42).clamp(10.0, 22.0),
+                        horizon_client::hud::rgba(255, 255, 255, 36),
+                    );
+                }
             }
         }
         let press = self
@@ -2093,14 +2203,16 @@ impl Launcher {
         if let Some((action, alpha)) = feedback
             && let Some(([x, y, w, h], _)) = self.targets.iter().find(|(_, a)| *a == action)
         {
-            ui.rounded(
-                *x,
-                *y,
-                *w,
-                *h,
-                (*h * 0.42).clamp(10., 22.),
-                horizon_client::hud::rgba(255, 255, 255, alpha),
-            );
+            if layout.console {
+                ui.rounded(*x + 8., *y + 9., 28., (*h - 18.).max(1.), 14.,
+                    horizon_client::hud::rgba(227, 237, 255, alpha / 2));
+            } else {
+                ui.rounded(
+                    *x, *y, *w, *h,
+                    (*h * 0.42).clamp(10., 22.),
+                    horizon_client::hud::rgba(255, 255, 255, alpha),
+                );
+            }
         }
         crate::documents::draw_ui(&mut ui);
         if !self.anim.intro_done {
@@ -7125,9 +7237,14 @@ impl Launcher {
                     self.apply_slider_fraction(action, frac);
                 } else {
                     let density_f64 = density as f64;
+                    let xmb_allowed = self.xmb_navigation_available();
                     if let Some(drag) = &mut self.drag {
                         let delta = drag.update(t.location.x, t.location.y, density_f64);
-                        if drag.moved {
+                        let dx = (t.location.x - drag.origin_x()).abs();
+                        let dy = (t.location.y - drag.origin_y()).abs();
+                        let horizontal_xmb_swipe = xmb_allowed
+                            && dx >= 18. * density_f64 && dx > dy * 1.3;
+                        if drag.moved && !horizontal_xmb_swipe {
                             if let Some(chooser) = &mut self.chooser {
                                 chooser.scroll = (chooser.scroll + delta).max(0.0);
                             } else if let Some(modal) = &mut self.catalog.project_modal {
@@ -7147,9 +7264,61 @@ impl Launcher {
                     self.drag = None;
                     self.taps.cancel();
                 } else {
-                    let moved = self.drag.take().is_none_or(|drag| drag.moved);
+                    let drag = self.drag.take();
+                    if self.xmb_navigation_available()
+                        && let Some(ref start) = drag
+                        && start.moved
+                    {
+                        let dx = px - start.origin_x() as f32 / density;
+                        let dy = py - start.origin_y() as f32 / density;
+                        let swipe = super::gesture::xmb_swipe(
+                            dx, dy, self.catalog.page == Page::Play,
+                        );
+                        match swipe {
+                            Some(super::gesture::XmbSwipe::Category(delta)) => {
+                                self.taps.cancel();
+                                self.xmb_switch_category(delta);
+                                return Ok(());
+                            }
+                            Some(super::gesture::XmbSwipe::Item(delta)) => {
+                                self.taps.cancel();
+                                self.xmb_step_home(delta);
+                                return Ok(());
+                            }
+                            None => {}
+                        }
+                    }
+                    let moved = drag.is_none_or(|drag| drag.moved);
                     let target = self.pointer_action();
                     if self.taps.finish(t.id, target, moved) {
+                        if self.xmb_navigation_available() && self.catalog.page == Page::Play {
+                            let size = self.renderer.as_ref().map(|r| (
+                                r.config.width as f32 / density,
+                                r.config.height as f32 / density,
+                            ));
+                            if let Some((width, height)) = size {
+                                let cross = horizon_client::ui_theme::launcher_xmb::Cross::from_screen(
+                                    width, height,
+                                );
+                                if py >= cross.category_y + 46.
+                                    && let Some(action) = target
+                                    && let Some((index, _)) = horizon_client::ui_theme::launcher_xmb::HOME_ACTIONS
+                                        .iter().enumerate()
+                                        .find(|(_, item)| xmb_home_to_action(**item) == action)
+                                    && index != self.xmb.selected_home()
+                                {
+                                    // First tap focuses a neighboring XMB row;
+                                    // second tap/confirm activates it. A category
+                                    // tap never changes Home selection.
+                                    self.xmb.focus_home(
+                                        horizon_client::ui_theme::launcher_xmb::HOME_ACTIONS[index],
+                                    );
+                                    self.pending_focus = Some(action);
+                                    self.focus = None;
+                                    return Ok(());
+                                }
+                            }
+                        }
                         self.activate(events)?;
                     }
                 }

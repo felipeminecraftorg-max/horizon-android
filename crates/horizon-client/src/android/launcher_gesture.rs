@@ -61,6 +61,10 @@ impl Drag {
         }
     }
 
+    pub(super) fn origin_x(&self) -> f64 {
+        self.origin[0]
+    }
+
     pub(super) fn origin_y(&self) -> f64 {
         self.origin[1]
     }
@@ -78,9 +82,45 @@ impl Drag {
     }
 }
 
+/// The axis-lock decision for PS3-style cross navigation is deliberately
+/// independent of frame rate, scroll offsets and Android pixel density:
+/// callers pass the final drag vector in dp.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum XmbSwipe {
+    Category(isize),
+    Item(i32),
+}
+
+pub(super) fn xmb_swipe(dx: f32, dy: f32, on_home: bool) -> Option<XmbSwipe> {
+    if !dx.is_finite() || !dy.is_finite() {
+        return None;
+    }
+    if dx.abs() >= 38. && dx.abs() > dy.abs() * 1.3 {
+        return Some(XmbSwipe::Category(if dx < 0. { 1 } else { -1 }));
+    }
+    if on_home && dy.abs() >= 38. && dy.abs() > dx.abs() * 1.3 {
+        let steps = ((dy.abs() / 66.).round() as i32).clamp(1, 3);
+        return Some(XmbSwipe::Item(if dy < 0. { steps } else { -steps }));
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn xmb_swipes_lock_axis_avoid_diagonals_and_cap_steps() {
+        assert_eq!(xmb_swipe(-90., 9., true), Some(XmbSwipe::Category(1)));
+        assert_eq!(xmb_swipe(90., 9., true), Some(XmbSwipe::Category(-1)));
+        assert_eq!(xmb_swipe(9., -64., true), Some(XmbSwipe::Item(1)));
+        assert_eq!(xmb_swipe(9., 150., true), Some(XmbSwipe::Item(-2)));
+        assert_eq!(xmb_swipe(0., -1000., true), Some(XmbSwipe::Item(3)));
+        assert_eq!(xmb_swipe(0., -100., false), None);
+        assert_eq!(xmb_swipe(-35., 3., true), None);
+        assert_eq!(xmb_swipe(-80., 79., true), None);
+        assert_eq!(xmb_swipe(f32::NAN, 0., true), None);
+    }
 
     #[test]
     fn a_release_never_clicks_another_button_or_an_empty_press() {
