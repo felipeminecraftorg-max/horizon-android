@@ -6012,8 +6012,22 @@ impl Game<'_> {
             {
                 let resources = &self.pack.render.entity_resources;
                 let compiled = &self.pack.render.cem_meshes;
+                // ETF variants are optional: if a rule selects a texture not
+                // present in the opt-in atlas, draw with the vanilla sprite.
+                let vanilla_id = format!("minecraft:textures/{}.png",mob.kind.texture);
+                let variation = resources.variation_sprite(
+                    &vanilla_id,
+                    horizon_client::horizon_optifine::entity_textures::EntityContext {
+                        seed:u64::from(mob.id),
+                        name:mob.custom_name.as_deref(),
+                        biome:None,
+                        block_y:Some(mob.position.y.floor() as i32),
+                    },
+                );
+                let texture_uv = variation.as_deref().and_then(&lookup)
+                    .or_else(|| lookup(&mob.kind.texture));
                 match (resources.model_for_entity(&mob.kind.id), compiled.get(&mob.kind.id),
-                    lookup(&mob.kind.texture))
+                    texture_uv)
                 {
                     (Some(model),Some(mesh),Some(uv)) => {
                         let lerp = alpha as f32;
