@@ -144,8 +144,17 @@ impl ReAnimated {
         let easing=(dt*14.0).clamp(0.0,1.0);
         let mut live=0;
         for widget in widgets {
-            if !widget.enabled || widget.kind != Kind::Button
-                || live >= MAX_WIDGET_STATES {continue;}
+            if !widget.enabled || live >= MAX_WIDGET_STATES {continue;}
+            let category = match widget.kind {
+                Kind::Button => 0,
+                Kind::Slider {..} | Kind::Field => 1,
+                Kind::Tab(_) => 2,
+                Kind::Row => 3,
+                Kind::Slot => 4,
+            };
+            // A previous screen's controls are not decorated while a new
+            // screen replaces them (last_labelled is one frame delayed).
+            if now-self.entered<0.04 {continue;}
             let (x,y,w,h)=(widget.x,widget.y,widget.w,widget.h);
             if ![x,y,w,h].iter().all(|v|v.is_finite())
                 || w<8.0 || h<7.0 || x<0.0 || y<0.0
@@ -164,8 +173,15 @@ impl ReAnimated {
             state.press+=(press_target-state.press)*easing;
             state.updated=now;
             if state.hover<0.005 && state.press<0.005 {continue;}
-            let a=(state.hover*32.0+state.press*26.0).round().min(80.0) as u8;
-            let color=rgba(187,216,255,a);
+            let (r,g,b) = match category {
+                0 => (187,216,255), // buttons
+                1 => (183,228,225), // sliders & text fields
+                2 => (219,196,246), // tabs
+                3 => (208,222,255), // selectable rows
+                _ => (250,232,190), // inventory slots
+            };
+            let a=(state.hover*27.0+state.press*20.0).round().min(65.0) as u8;
+            let color=rgba(r,g,b,a);
             let line=1.0f32;
             batch.fill(atlas,x,y,w,line,color);
             batch.fill(atlas,x,y+h-line,w,line,color);
@@ -195,7 +211,7 @@ impl Game<'_> {
         if !self.reanimated.config.enabled {return;}
         let now=self.started.elapsed().as_secs_f32();
         self.reanimated.draw(screen,now,batch);
-        let widgets=horizon_client::widgets::last();
+        let widgets=horizon_client::widgets::last_labelled();
         self.reanimated.decorate(
             &widgets,self.cursor,self.left,now,batch,&self.gui.atlas
         );
