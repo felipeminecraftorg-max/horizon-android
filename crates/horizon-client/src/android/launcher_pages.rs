@@ -1168,7 +1168,6 @@ impl Launcher {
         let active_th = horizon_client::ui_theme::active_theme();
         if active_th.experience == horizon_client::ui_theme::ExperiencePreset::OldSchool
             && active_th.wallpaper == visual::Wallpaper::Graphite
-            && w > h && w >= 620.
         {
             // Only Old School's default Graphite dashboard gets the new muted
             // console waves. Dark Aero, Liquid Glass and deliberately selected
