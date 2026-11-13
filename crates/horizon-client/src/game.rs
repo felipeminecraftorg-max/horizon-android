@@ -18780,6 +18780,7 @@ impl<'a> Game<'a> {
                     speed: native_preview.cinematic.speed,
                     roll_strength: native_preview.cinematic.roll_strength,
                     reduced_motion: native_preview.cinematic.reduced_motion,
+                    scene_move: native_preview.cinematic.scene_move,
                 },
             ),
             window: None,
