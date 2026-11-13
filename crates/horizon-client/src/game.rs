@@ -13438,7 +13438,10 @@ impl Game<'_> {
         });
         let heights = self.heights.interpolated(a);
         // The hand sway: both hands turn by a tenth of the bobs' lag.
-        let to_world = self.sway.to_world(a, &self.view);
+        // Workstation interactions move only the existing first-person arms.
+        // FirstPerson Model with body arms still returns above unchanged.
+        let to_world=self.sway.to_world(a, &self.view)
+            * self.cinematic_rig.hand_offset();
         let eye = self.eye_position().unwrap_or_default();
         let light = self.world.light(
             eye[0].floor() as i32,
