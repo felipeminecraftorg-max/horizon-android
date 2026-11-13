@@ -37,6 +37,7 @@ jobs:
         run: |
           rustup show
           cargo test -p horizon-client --lib launcher_visual::tests -- --test-threads=1
+          cargo test -p horizon-client --lib ui_theme::tests -- --test-threads=1
           cargo test -p horizon-client --lib launcher_preset_pack::tests
           cargo test -p horizon-client-render --lib physical_glass_shader_validates_with_naga
           cargo check -p horizon-client-render --lib
