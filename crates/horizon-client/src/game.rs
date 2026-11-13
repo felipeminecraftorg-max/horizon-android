@@ -18757,6 +18757,7 @@ impl<'a> Game<'a> {
                 hotbar: native_preview.reanimated.hotbar,
                 hotbar_speed: native_preview.reanimated.hotbar_speed,
                 toasts: native_preview.reanimated.toasts,
+                per_screen: native_preview.reanimated.per_screen.clone(),
                 // Touch hitboxes remain aligned during the fade.
                 scale: !cfg!(target_os = "android"),
                 ..Default::default()
