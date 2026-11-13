@@ -159,7 +159,23 @@ pub fn parse_with<F: FnMut(&str) -> Option<String>>(src: &str, mut loader: F) ->
     let mut count = Count::default();
     let mut refs = HashSet::new();
     let mut parts = Vec::new();
-    for v in models { parts.push(part(v, 0, &mut refs, &mut loader, &mut count)?); }
+    let mut bases: BTreeMap<String, serde_json::Map<String,Value>> = BTreeMap::new();
+    for v in models {
+        let obj = v.as_object().ok_or(Error::Invalid("model must be object"))?;
+        // baseId may inherit an earlier model definition, but may not refer
+        // to an undefined/forward/cyclic parent. Unknown inheritance is not ignored.
+        let mut merged = if let Some(base) = obj.get("baseId") {
+            let key = base.as_str().ok_or(Error::Invalid("baseId not string"))?;
+            bases.get(key).ok_or(Error::Invalid("unresolved baseId"))?.clone()
+        } else {
+            serde_json::Map::new()
+        };
+        merged.extend(obj.iter().map(|(k,v)| (k.clone(), v.clone())));
+        let resolved = Value::Object(merged.clone());
+        let parsed = part(&resolved, 0, &mut refs, &mut loader, &mut count)?;
+        if !parsed.id.is_empty() { bases.insert(parsed.id.clone(), merged); }
+        parts.push(parsed);
+    }
     Ok(Model { texture, texture_size, shadow, parts })
 }
 pub fn parse(src: &str) -> Result<Model, Error> { parse_with(src, |_| None) }
@@ -180,6 +196,22 @@ mod tests {
     #[test] fn blocks_traversal() {
         assert!(matches!(parse_with(r#"{"models":[{"model":"../x.jpm"}]}"#, |_| None),
             Err(Error::InvalidPath(_))));
+    }
+    #[test] fn base_id_inherits_box_and_reads_face_uv() {
+        let model = parse(r#"{"models":[
+            {"id":"base","part":"head","invertAxis":"xz","boxes":[
+                {"coordinates":[0,0,0,2,3,4],"uvNorth":[0,0,2,3]}]},
+            {"baseId":"base","id":"child","part":"arm","mirrorTexture":"u"}
+        ]}"#).unwrap();
+        assert_eq!(model.parts[1].boxes.len(),1);
+        assert_eq!(model.parts[1].mirrored_uv, "u");
+        assert_eq!(model.parts[1].inverted_axes, "xz");
+        assert_eq!(model.parts[1].boxes[0].face_uv["north"], [0.0,0.0,2.0,3.0]);
+    }
+    #[test] fn unknown_base_and_mixed_uv_are_rejected() {
+        assert!(parse(r#"{"models":[{"baseId":"missing","part":"head"}]}"#).is_err());
+        assert!(parse(r#"{"models":[{"boxes":[{"coordinates":[0,0,0,1,1,1],
+            "textureOffset":[0,0],"uvUp":[0,0,1,1]}]}]}"#).is_err());
     }
     #[test] fn rejects_bad_geometry() {
         assert!(parse(r#"{"models":[{"boxes":[{"coordinates":[0,1,2]}]}]}"#).is_err());
