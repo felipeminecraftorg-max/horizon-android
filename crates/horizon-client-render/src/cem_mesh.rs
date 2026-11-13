@@ -171,7 +171,9 @@ impl Mesh {
                 });
             }
         }
-        out.len()>before
+        // A valid pose may deliberately hide every model part. That is still
+        // a successful CEM render, and MUST NOT resurrect the vanilla body.
+        true
     }
 }
 
@@ -223,6 +225,19 @@ mod tests {
         let mut verts=Vec::new();
         assert!(mesh.draw(&pose,Mat4::IDENTITY,[0.0,0.0,1.0,1.0],240,&mut verts));
         assert_eq!(verts.len(),24);
+    }
+    #[test] fn fully_hidden_pose_does_not_fall_back_to_vanilla() {
+        let m=entity_models::parse(
+            r#"{"models":[{"part":"head","boxes":[
+                {"coordinates":[0,0,0,2,2,2],"textureOffset":[0,0]}]}]}"#
+        ).unwrap();
+        let mesh=Mesh::compile(&m).unwrap();
+        let mut pose=Pose::from_model(&m).unwrap();
+        pose.set("head.visible",0.0).unwrap();
+        pose.update_world();
+        let mut out=Vec::new();
+        assert!(mesh.draw(&pose,Mat4::IDENTITY,[0.0,0.0,1.0,1.0],240,&mut out));
+        assert!(out.is_empty());
     }
     #[test] fn invalid_or_unsupported_models_reject_without_partial_draw() {
         let m=entity_models::parse(r#"{"models":[{"part":"body","boxes":[{
