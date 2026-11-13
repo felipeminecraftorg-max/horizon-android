@@ -3060,6 +3060,10 @@ impl Launcher {
     /// - Create New Folder with `Ui::text_field` (`FmModal::NewFolder`)
     /// - View File Details with metadata & read-only text preview (`FmModal::Details`)
     fn draw_fm_modal(&mut self, ui: &mut Ui, w: f32, h: f32, ime_top_dp: Option<f32>) {
+        if horizon_client::ui_theme::active_theme().experience
+            == horizon_client::ui_theme::ExperiencePreset::OldSchool {
+            return self.draw_xmb_file_modal(ui,w,h,ime_top_dp);
+        }
         let Some(modal) = self.catalog.fm_modal.clone() else {
             return;
         };
@@ -3355,6 +3359,10 @@ impl Launcher {
     /// Material You 3 Project Detail Dialog showing Modrinth PFP, Description,
     /// Gallery Screenshots, and selectable Versions to Download.
     fn draw_project_modal(&mut self, ui: &mut Ui, w: f32, h: f32) {
+        if horizon_client::ui_theme::active_theme().experience
+            == horizon_client::ui_theme::ExperiencePreset::OldSchool {
+            return self.draw_xmb_project_modal(ui,w,h);
+        }
         // The install label asks the catalog about the project the modal is showing, so work it out
         // before the modal is borrowed mutably for drawing.
         let Some(install_label) = self.catalog.project_modal.as_ref().map(|modal| {
