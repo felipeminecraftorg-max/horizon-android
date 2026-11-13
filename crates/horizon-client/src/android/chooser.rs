@@ -373,7 +373,66 @@ impl Chooser {
             (self.choices.len() as f32 * 84.0 - (height - 237.0)).max(0.0),
         ]
     }
+    /// Old School XMB hierarchy: selections are text entries floating above
+    /// the existing procedural wallpaper, not M3 cards in a full-screen sheet.
+    fn draw_xmb(
+        &mut self,ui:&mut Ui,targets:&mut Vec<([f32;4],Action)>,
+    ){
+        use horizon_client::ui_theme::{color,Icon};
+        targets.clear();
+        let (w,h)=(ui.w,ui.h);
+        ui.fill(0.,0.,w,h,color::hex(0x050B1D,150));
+        let x=if w<h{20.}else{(w*0.15).max(28.)};
+        let usable=(w-x-24.).max(120.);
+        ui.text(Face::Regular,10.,x,29.,
+            color::hex(0xAFCDE7,193),"SISTEMA / SELECIONAR");
+        let title=ui.fit_text(Face::Medium,19.,self.title,usable);
+        ui.text(Face::Medium,19.,x,49.,color::hex(0xEEF7FF,251),&title);
+        let help=ui.fit_text(Face::Regular,11.5,self.help,usable);
+        ui.text(Face::Regular,11.5,x,86.,color::hex(0xB8D3E8,187),&help);
+        if let Some(device)=&self.device{
+            let text=ui.fit_text(Face::Regular,10.,device,usable);
+            ui.text(Face::Regular,10.,x,111.,
+                color::hex(0xB3DEF8,178),&text);
+        }
+        let top=if self.device.is_some(){140.}else{124.};
+        let bottom=h-57.;
+        let step=57.;
+        let maximum=(self.choices.len()as f32*step-(bottom-top)).max(0.);
+        self.scroll=self.scroll.clamp(0.,maximum);
+        ui.set_clip(Some([x,top,usable,(bottom-top).max(1.)]));
+        for(i,(name,desc,action,chosen))in self.choices.iter().enumerate(){
+            let y=top+i as f32*step-self.scroll;
+            if y+54.<top||y>bottom{continue;}
+            if *chosen{
+                ui.fill(x+1.,y+9.,2.,37.,color::hex(0xDDF4FF,212));
+                ui.icon(Icon::Check,x+11.,y+17.,18.,color::hex(0xE5F7FF,239));
+            }
+            let left=x+if *chosen{40.}else{18.};
+            let fitted=ui.fit_text(Face::Medium,15.2,name,
+                (usable-48.).max(60.));
+            ui.text(Face::Medium,15.2,left,y+5.,
+                color::hex(0xEDF5FF,if *chosen{251}else{208}),&fitted);
+            let detail=ui.fit_text(Face::Regular,10.5,desc,
+                (usable-49.).max(40.));
+            ui.text(Face::Regular,10.5,left,y+31.,
+                color::hex(0xACCBE3,160),&detail);
+            ui.fill(x+14.,y+55.,usable-22.,0.7,
+                color::hex(0x9ECBE6,23));
+            if let Some(hit)=ui.clip_rect([x,y,usable,56.]) {
+                targets.push((hit,*action));
+            }
+        }
+        ui.set_clip(None);
+        button(ui,targets,[x,h-48.,122.,40.],
+            "Voltar",Action::Dismiss,false);
+    }
+
     pub fn draw(&mut self, ui: &mut Ui, targets: &mut Vec<([f32; 4], Action)>, modal_anim: f32) {
+        if horizon_client::ui_theme::active_theme().experience
+            == horizon_client::ui_theme::ExperiencePreset::OldSchool {
+            return self.draw_xmb(ui, targets);
+        }
         let (w, h) = (ui.w, ui.h);
         let theme = horizon_client::ui_theme::active_theme();
         let slide = (1.0 - modal_anim.clamp(0.0, 1.0)) * 16.0;
