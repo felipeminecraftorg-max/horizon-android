@@ -8107,15 +8107,8 @@ impl Game<'_> {
             self.frame_graph
                 .draw(self.settings.horizon.overlay, b, &self.gui.atlas);
         });
-        let screen_key = if self.title.is_some() {
-            "title"
-        } else if self.station.is_some() {
-            "station"
-        } else {
-            self.screen.id()
-        };
-        // Transform screen visuals before the cursor and touch UI draw.
-        self.reanimated.draw(screen_key, self.started.elapsed().as_secs_f32(), &mut batch);
+        // Screen animations are applied in hud_layers, *before* overlays and
+        // tooltips; the cursor always remains in the original hitbox space.
         self.draw_pad_cursor(&mut batch);
         self.resolve_inline_profiles(&batch.inline_profiles);
         batch
@@ -8138,6 +8131,7 @@ impl Game<'_> {
             // The early return skips the match below: the hook still sees the
             // screen, after its own drawing.
             self.fire_screen_render_post(&mut batch);
+            self.animate_reanimated("win", &mut batch);
             return batch;
         }
         if self.screen == Screen::Options && !self.touch_editing() {
@@ -8147,12 +8141,14 @@ impl Game<'_> {
             }
             self.draw_options(&mut batch);
             self.fire_screen_render_post(&mut batch);
+            self.animate_reanimated("options", &mut batch);
             self.draw_split_hud(&mut batch, true);
             return batch;
         }
         // A mod's settings page opened from Options > Mods at the title.
         if self.screen == Screen::Mod && self.title.is_some() {
             self.draw_mod_screen(&mut batch);
+            self.animate_reanimated("mod", &mut batch);
             return batch;
         }
         if let Some(title) = &mut self.title {
@@ -8190,6 +8186,7 @@ impl Game<'_> {
                     self.settings.file.bool("hideSplashTexts"),
                 );
             }
+            self.animate_reanimated("title", &mut batch);
             self.draw_toasts(&mut batch, false);
             self.draw_tutorial_toasts(&mut batch, false);
             self.draw_pack_toasts(&mut batch, false);
@@ -8492,6 +8489,18 @@ impl Game<'_> {
             Screen::Playing | Screen::Options | Screen::Win => {}
         }
         self.fire_screen_render_post(&mut batch);
+        // Only screen/UI vertices since blur_at are animated, not the HUD,
+        // tooltips, toasts, saved indicator or native touch controls.
+        if screen != Screen::Playing {
+            let key = if self.station.is_some() {
+                "station"
+            } else if self.craft_table.is_some() {
+                "crafting"
+            } else {
+                screen.id()
+            };
+            self.animate_reanimated(key, &mut batch);
+        }
         horizon_client::hud::inset_overlay(&mut batch, margins, |b| self.draw_saving_indicator(b));
         horizon_client::hud::inset_overlay(&mut batch, margins, |b| self.draw_toasts(b, !show_hud));
         horizon_client::hud::inset_overlay(&mut batch, margins, |b| {
