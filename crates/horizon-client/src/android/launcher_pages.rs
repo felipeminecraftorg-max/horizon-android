@@ -1537,7 +1537,10 @@ impl Launcher {
                 self.catalog.scroll,
                 content_x,
                 content_w,
-                if layout.console && !layout.portrait { 130.0 + slide_y } else { 62.0 + slide_y },
+                if layout.console {
+                    horizon_client::ui_theme::launcher_xmb::Cross::from_screen(w,h)
+                        .category_y + 51. + slide_y
+                } else { 62.0 + slide_y },
             );
             self.list_view = Some(self.wardrobe.view);
             self.catalog.scroll = self.catalog.scroll.min(self.wardrobe.view[2]);
