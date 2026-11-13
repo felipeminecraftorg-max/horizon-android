@@ -95,6 +95,20 @@ pub enum Face {
     ConsoleDisplay,
 }
 
+/// Old School gets its own real font family across native launcher pages.
+/// Convert before measuring, ellipsis and glyph-cache access, so different
+/// presets never share a cached glyph under an incorrect Face key.
+fn launcher_face(face: Face, experience: ExperiencePreset) -> Face {
+    if experience != ExperiencePreset::OldSchool { return face; }
+    match face {
+        Face::Regular => Face::ConsoleRegular,
+        Face::Medium => Face::ConsoleMedium,
+        Face::SemiBold => Face::ConsoleSemiBold,
+        // Keep monospace diagnostics/source output legible and aligned.
+        _ => face,
+    }
+}
+
 /// Vector icons used by the Material You 3 Android launcher navigation rail,
 /// top bar, and progress controls.
 static ANDROID_DPI_BITS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
@@ -957,6 +971,7 @@ impl<'a> Ui<'a> {
     }
 
     pub fn fit_text(&self, face: Face, size: f32, text: &str, width: f32) -> String {
+        let face = launcher_face(face, active_theme().experience);
         if text.is_empty() || width <= 0.0 {
             return String::new();
         }
@@ -1588,6 +1603,7 @@ impl<'a> Ui<'a> {
     // ---- text ----
     /// The advance of `text` in dp.
     pub fn measure(&self, face: Face, size: f32, text: &str) -> f32 {
+        let face = launcher_face(face, active_theme().experience);
         let px = (size * self.density * 4.0).round() / 4.0;
         with_cache(self.atlas, |c| {
             let font = c.fonts.face(face);
@@ -1618,6 +1634,7 @@ impl<'a> Ui<'a> {
         color: u32,
         text: &str,
     ) -> f32 {
+        let face = launcher_face(face, active_theme().experience);
         let px = (size * self.density * 4.0).round() / 4.0;
         let real = color >> 24 != 0;
         let (x0, y0) = (self.px_x(x), self.px_y(y));
@@ -3060,6 +3077,21 @@ pub mod motion {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn console_typography_is_preset_scoped_and_preserves_monospace() {
+        assert_eq!(launcher_face(Face::Regular, ExperiencePreset::OldSchool),
+            Face::ConsoleRegular);
+        assert_eq!(launcher_face(Face::Medium, ExperiencePreset::OldSchool),
+            Face::ConsoleMedium);
+        assert_eq!(launcher_face(Face::SemiBold, ExperiencePreset::OldSchool),
+            Face::ConsoleSemiBold);
+        assert_eq!(launcher_face(Face::Mono, ExperiencePreset::OldSchool), Face::Mono);
+        for experience in [ExperiencePreset::LiquidGlass, ExperiencePreset::Standard] {
+            assert_eq!(launcher_face(Face::Regular, experience), Face::Regular);
+            assert_eq!(launcher_face(Face::SemiBold, experience), Face::SemiBold);
+        }
+    }
+
     #[test]
     fn bundled_console_font_and_icon_families_are_distinct() {
         // Separate face variants must resolve through the same glyph atlas.
