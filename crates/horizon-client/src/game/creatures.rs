@@ -6021,8 +6021,18 @@ impl Game<'_> {
                     mob.custom_name.as_deref(),
                     mob.position.y.floor() as i32,
                 );
-                let texture_uv = variation.as_deref().and_then(&lookup)
-                    .or_else(|| lookup(&mob.kind.texture));
+                // A CEM root texture must resolve to an actual atlas
+                // sprite. Never draw custom UVs against the wrong vanilla
+                // image: use the vanilla geometry if the image is missing.
+                let root_texture = resources.model_for_entity(&mob.kind.id)
+                    .is_some_and(|model|model.model.texture.is_some());
+                let texture_uv = if root_texture {
+                    resources.cem_texture_sprite(&mob.kind.id)
+                        .as_deref().and_then(&lookup)
+                } else {
+                    variation.as_deref().and_then(&lookup)
+                        .or_else(|| lookup(&mob.kind.texture))
+                };
                 match (resources.model_for_entity(&mob.kind.id), compiled.get(&mob.kind.id),
                     texture_uv)
                 {
