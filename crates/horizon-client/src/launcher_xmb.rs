@@ -6,7 +6,8 @@
 //! presentation asset is the user's existing licensed launcher sound pack.
 //! Other presets never enter this file.
 use super::{color, Face, Icon, Ui};
-use super::launcher_visual::{HomeAction, HomeView, Layout, ShellAction};
+use super::launcher_visual::{AppearanceAction, HomeAction, HomeView, Layout, ShellAction};
+use super::{LauncherThemeConfig, ThemePreset};
 
 pub const HOME_ACTIONS: [HomeAction; 8] = [
     HomeAction::Play, HomeAction::Profile, HomeAction::Mods,
@@ -272,6 +273,69 @@ pub fn home(
                 if chosen { 249 } else { 152 }), &fitted);
         target(r, action);
     }
+}
+
+/// Contextual Old School-only appearance menu. The iconic wave remains
+/// the default material, and users can switch to Liquid Glass without
+/// triggering any old dashboard/chrome preview assets.
+pub fn appearance(
+    ui:&mut Ui<'_>, x:f32,w:f32, bottom:f32, slide:f32,
+    cfg:&LauncherThemeConfig, reduced:bool,scroll:f32,
+    mut target:impl FnMut([f32;4],AppearanceAction),
+)->[f32;3]{
+    let c=Cross::from_screen(ui.w,ui.h);
+    let heading=c.category_y+55.+slide;
+    ui.text(Face::Regular,10.,x+5.,heading,
+        color::hex(0xB5D8F2,171),"SISTEMA / PERSONALIZAÇÃO");
+    ui.text(Face::Medium,19.,x+5.,heading+19.,
+        color::hex(0xECF6FF,249),"Aparência");
+
+    let start=heading+57.;
+    let end=bottom-49.;
+    let step=55.;
+    let options=[
+        ("Old School XMB","Ondas luminosas clássicas",
+            Icon::XmbSystem,AppearanceAction::Preset(ThemePreset::OldSchool),
+            cfg.preset==ThemePreset::OldSchool),
+        ("Liquid Glass","Interface própria em vidro fluido",
+            Icon::XmbPacks,AppearanceAction::Preset(ThemePreset::LiquidGlass),
+            cfg.preset==ThemePreset::LiquidGlass),
+        ("Efeitos atmosféricos","Fundo procedural por GPU",
+            Icon::XmbShaders,AppearanceAction::Effects,cfg.glass_effects),
+        ("Sons da interface","Pacote existente de sons de console",
+            Icon::XmbGame,AppearanceAction::Sounds,cfg.interface_sounds),
+        ("Movimento da XMB","Redução de movimento disponível",
+            Icon::XmbSystem,AppearanceAction::Motion,!reduced),
+        ("Configurações avançadas","Cores e ajustes adicionais",
+            Icon::XmbSystem,AppearanceAction::Advanced,false),
+        ("Voltar","Retornar ao sistema",
+            Icon::ArrowLeft,AppearanceAction::Back,false),
+    ];
+    let max_scroll=(options.len() as f32*step-(end-start)).max(0.);
+    let scroll=scroll.clamp(0.,max_scroll);
+    ui.set_clip(Some([x,start,w,(end-start).max(1.)]));
+    for (i,(title,subtitle,icon,action,on)) in options.into_iter().enumerate(){
+        let y=start+i as f32*step-scroll;
+        if y+step<start||y>end{continue;}
+        let rect=[x,y,w,step-1.];
+        if on{
+            ui.fill(x+3.,y+11.,2.5,step-22.,
+                color::hex(0xC4ECFF,217));
+        }
+        ui.icon(icon,x+15.,y+17.,24.,
+            color::hex(0xD6EBFC,if on{249}else{185}));
+        let title=ui.fit_text(Face::Medium,14.6,title,(w-72.).max(45.));
+        ui.text(Face::Medium,14.6,x+51.,y+5.,
+            color::hex(0xEEF7FF,if on{252}else{215}),&title);
+        let sub=ui.fit_text(Face::Regular,10.7,subtitle,(w-70.).max(40.));
+        ui.text(Face::Regular,10.7,x+51.,y+29.,
+            color::hex(0xACCBE3,168),&sub);
+        ui.fill(x+51.,y+step-1.,w-57.,0.7,
+            color::hex(0x93C1DB,25));
+        if let Some(hit)=ui.clip_rect(rect){target(hit,action);}
+    }
+    ui.set_clip(None);
+    [start,end,max_scroll]
 }
 
 #[cfg(test)]
