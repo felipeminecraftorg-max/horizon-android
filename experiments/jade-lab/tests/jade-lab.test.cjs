@@ -377,6 +377,9 @@ test("one seven-page console navigation replaces duplicate menu row",()=>{
   assert.match(css,/-webkit-backdrop-filter:none!important/);
   assert.match(css,/--light-pos-x/);
   assert.match(css,/--sceneMetal/);
+  // In mobile/landscape the minimized editor must release click targets.
+  assert.match(css,/\.editor\.collapsed\s*\{[^}]*pointer-events:none!important/s);
+  assert.match(css,/\.floating-tools\s*\{[^}]*bottom:auto!important/s);
 });
 
 test("themes separate neutral materials from accents and export them independently",()=>{
