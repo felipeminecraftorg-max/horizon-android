@@ -35,6 +35,9 @@ uniform vec4 uGlassModel;  // style [0..3], opacity, blurRadius, transmission
 uniform vec4 uGlassOptics; // tint, scatter, fresnel, chromatic rim
 uniform vec4 uGlassDetail; // fine grain, satin glint, contact shadow, tap tier
 uniform vec4 uGlassTargets;// hero, tiles, system chrome, play CTA
+uniform sampler2D uSceneTexture;
+uniform int uScenePass; // 1=backdrop draw, 0=composite, 2=fallback
+uniform vec4 uEnvironment; // environment neutral, pearl highlight, warmth, light spread
 
 float hash12(vec2 p) {
   vec3 p3=fract(vec3(p.xyx)*0.1031);
@@ -166,26 +169,24 @@ vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
 // landscape. It does not sample native/DOM text or completed UI layers.
 // All offset positions stay in viewport coordinates despite render scaling.
 vec3 frostedBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
-  vec3 center=renderBackdrop(uv,p,time,mouse);
-  if(uGlassDetail.w<.5 || uGlassModel.z<=.001) return center;
+  // Read the cached GPU scene; no more recursive expensive ribbons.
+  vec3 center=texture(uSceneTexture,uv).rgb;
+  if(uGlassDetail.w<.5||uGlassModel.z<=.001)return center;
   float radius=1.5+19.0*clamp(uGlassModel.z,0.0,1.0);
   vec2 dx=vec2(radius/max(uViewport.x,1.0),0.0);
   vec2 dy=vec2(0.0,radius/max(uViewport.y,1.0));
-  vec3 axial=renderBackdrop(clamp(uv+dx,vec2(0.),vec2(1.)),p+vec2(radius,0.),time,mouse);
-  axial+=renderBackdrop(clamp(uv-dx,vec2(0.),vec2(1.)),p-vec2(radius,0.),time,mouse);
-  axial+=renderBackdrop(clamp(uv+dy,vec2(0.),vec2(1.)),p+vec2(0.,radius),time,mouse);
-  axial+=renderBackdrop(clamp(uv-dy,vec2(0.),vec2(1.)),p-vec2(0.,radius),time,mouse);
-  vec3 sum=center*4.0+axial;
+  vec3 sum=center*4.0;
+  sum+=texture(uSceneTexture,clamp(uv+dx,vec2(0.),vec2(1.))).rgb;
+  sum+=texture(uSceneTexture,clamp(uv-dx,vec2(0.),vec2(1.))).rgb;
+  sum+=texture(uSceneTexture,clamp(uv+dy,vec2(0.),vec2(1.))).rgb;
+  sum+=texture(uSceneTexture,clamp(uv-dy,vec2(0.),vec2(1.))).rgb;
   float weight=8.0;
   if(uGlassDetail.w>1.5){
     vec2 dxy=vec2(dx.x*.7071068,dy.y*.7071068);
-    vec2 dp=dxy*uViewport;
-    sum+=renderBackdrop(clamp(uv+dxy,vec2(0.),vec2(1.)),p+dp,time,mouse);
-    sum+=renderBackdrop(clamp(uv-dxy,vec2(0.),vec2(1.)),p-dp,time,mouse);
-    sum+=renderBackdrop(clamp(uv+vec2(dx.x,-dy.y)*.7071068,vec2(0.),vec2(1.)),
-          p+vec2(dp.x,-dp.y),time,mouse);
-    sum+=renderBackdrop(clamp(uv+vec2(-dx.x,dy.y)*.7071068,vec2(0.),vec2(1.)),
-          p+vec2(-dp.x,dp.y),time,mouse);
+    sum+=texture(uSceneTexture,clamp(uv+dxy,vec2(0.),vec2(1.))).rgb;
+    sum+=texture(uSceneTexture,clamp(uv-dxy,vec2(0.),vec2(1.))).rgb;
+    sum+=texture(uSceneTexture,clamp(uv+vec2(dxy.x,-dxy.y),vec2(0.),vec2(1.))).rgb;
+    sum+=texture(uSceneTexture,clamp(uv+vec2(-dxy.x,dxy.y),vec2(0.),vec2(1.))).rgb;
     weight=12.0;
   }
   return sum/weight;
@@ -197,7 +198,16 @@ void main() {
   // Reduced motion freezes time, while cursor-driven lighting remains alive.
   float tt=uTime*uMotion.x*(1.0-uReduced);
   vec2 cursor=uPointer/max(uViewport,vec2(1.0));
-  vec3 result=renderBackdrop(uv,p,tt,cursor);
+  if(uScenePass==1){
+    vec3 background=renderBackdrop(uv,p,tt,cursor);
+    float diffused=radial(uv,vec2(.5,.43),vec2(.85,.8));
+    background+=vec3(uEnvironment.x)*diffused*.20+
+      vec3(1.0,.96,.89)*uEnvironment.z*diffused*.015;
+    fragmentColor=vec4(background,1.0);
+    return;
+  }
+  vec3 result=uScenePass==2?renderBackdrop(uv,p,tt,cursor):
+    texture(uSceneTexture,uv).rgb;
   cursor-=vec2(.5);
   float angle=uLight.x*3.14159265/180.0;
   vec3 light=normalize(vec3(cos(angle)*.87+cursor.x*uMotion.z,
@@ -399,7 +409,8 @@ void main() {
         "uRects[0]","uPalette[0]","uAtmos","uLight","uMaterial","uSurface","uMotion","uDetail",
         "uFocusIndex","uSelectionStyle","uBackdropShape",
         "uBackdropLayers","uBackdropLight","uBackdropDetail",
-        "uGlassModel","uGlassOptics","uGlassDetail","uGlassTargets"];
+        "uGlassModel","uGlassOptics","uGlassDetail","uGlassTargets",
+        "uSceneTexture","uScenePass","uEnvironment"];
       keys.forEach(k => { uniform[k] = gl.getUniformLocation(program, k); });
       buffer = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
