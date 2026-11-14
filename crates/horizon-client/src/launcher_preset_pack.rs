@@ -21,7 +21,7 @@ pub fn uniform_profile(experience: ExperiencePreset) -> [[f32; 4]; 6] {
         ],
         ExperiencePreset::OldSchool => [
             // Horizon Jade: low-glare satin alloy, not PS3 pearl chrome.
-            [1.0, 1.0, 0.22, 0.15],
+            [1.0, 4.0, 0.22, 0.15],
             [0.57357645, -0.81915206, 1.12, 0.72],
             [0.065, 9.0, 0.12, 0.012],
             [0.52, 0.85, 0.03, 0.08],
@@ -102,7 +102,7 @@ mod tests {
         let old=uniform_profile(ExperiencePreset::OldSchool);
         assert_eq!(liquid[0][0], 0.0);
         assert_eq!(old[0][0], 1.0);
-        assert_eq!(old[0][1], 1.0); // Jade satin-metal finish
+        assert_eq!(old[0][1], 4.0); // Dedicated Jade GGX finish, independent of old chrome
         assert!((liquid[2][0]-1.122).abs()<0.0001);
         assert!((old[2][0]-0.065).abs()<0.0001);
         assert_eq!(old[5][3], 0.70);
