@@ -356,6 +356,7 @@ impl AnimState {
 pub(super) enum Action {
     Page(Page),
     SettingsCat(SettingsCategory),
+    CloseQuickPanel,
     Play,
     PauseInstall,
     CancelInstall,
@@ -1154,7 +1155,7 @@ impl Launcher {
         ui.text(Face::ConsoleMedium, 10.5, x + 29., y + 40.,
             th.text_muted, "Navigate between Horizon channels");
         let close = [x + panel_w - 47., y + 12., 35., 35.];
-        ui.rounded(close[0], close[1], close[2], close[3], 8., th.surface_high);
+        ui.rounded(close[0], close[1], close[2], close[3], 8., th.surface_bright);
         ui.icon(Icon::Close, close[0] + 10., close[1] + 10., 16., th.text_primary);
         self.targets.push((close, Action::CloseQuickPanel));
 
@@ -1338,7 +1339,8 @@ impl Launcher {
             || self.login.visible
             || self.exit_confirmation
             || self.diagnostics_modal_open
-            || self.status_details;
+            || self.status_details
+            || self.quick_panel_open;
         self.anim.step(
             self.catalog.page,
             self.catalog.settings_category,
@@ -2192,6 +2194,9 @@ impl Launcher {
                 Action::ConfirmExit,
                 true,
             );
+        }
+        if self.quick_panel_open {
+            self.draw_jade_quick_panel(&mut ui, w, h);
         }
         if let Some(action) = self.pending_focus.take() {
             self.focus = self.targets.iter().position(|(_, a)| *a == action);
