@@ -979,7 +979,15 @@ fn shell_console(
     if !items.is_empty() {
         let step = (w - 48.) / items.len() as f32;
         let fx = focus_x.clamp(24., (w - 24. - step).max(24.));
-        ui.rounded(fx + 3., 76., (step - 6.).max(20.), 38., 8., th.surface_selected);
+        let focus_rect = [fx + 3., 76., (step - 6.).max(20.), 38.];
+        ui.rounded(focus_rect[0], focus_rect[1], focus_rect[2], focus_rect[3],
+            8., th.surface_selected);
+        // The small focused console tab receives actual per-fragment GGX
+        // shading from the native WGSL material, not a pre-baked highlight.
+        // Liquid Glass never enters this path; graphics effects can be disabled.
+        if th.jade_gpu_fx && !th.is_light {
+            ui.backdrop_lens(focus_rect, 8., color::hex(0x66C77A, 0), [0.0, 0.0]);
+        }
         ui.rounded(fx + step * 0.20, 115., step * 0.60, 2.5, 1.25, th.accent);
     }
     for (i, (label, icon)) in items.iter().enumerate() {
@@ -1263,6 +1271,13 @@ fn home_old_school(
         let tile_text = if th.is_light { th.text_primary } else { color::hex(0xF4F7F3, 255) };
         let tile_muted = if th.is_light { th.text_muted } else { color::hex(0xC1CEC4, 255) };
         ui.rounded(cx, cy, cw, ch, 10., color::hex(tile_bg, 255));
+        // Hovered tiles use the live GPU material. This is an ordered,
+        // clipped backdrop pass; PNG pictograms and labels draw afterwards.
+        let hovered = ui.cursor.0 >= cx && ui.cursor.0 < cx + cw
+            && ui.cursor.1 >= cy && ui.cursor.1 < cy + ch;
+        if hovered && th.jade_gpu_fx && !th.is_light {
+            ui.backdrop_lens(card, 10., color::hex(0x66C77A, 0), [0.0, 0.0]);
+        }
         ui.stroke_rounded(cx, cy, cw, ch, 10., 0.8, th.border);
         ui.rounded(cx + 5., cy + 10., 3., (ch - 20.).max(1.), 1.5,
             color::hex(tint, 255));
