@@ -5,7 +5,10 @@
 (function () {
   "use strict";
   const FORMAT="HORIZON_JADE_LAB_V1";
+  const PALETTES=window.JadePalettes;
+  if(!PALETTES)throw new Error("O catálogo de paletas não foi carregado");
   const DEFAULTS=Object.freeze({
+    paletteId:"jade",selectionStyle:"halo",
     fog:.48,waves:.33,noise:.09,vignette:.35,diffusion:.58,
     azimuth:-38,elevation:.72,intensity:1.24,ambient:.66,
     roughness:.29,metallic:.31,reflectivity:.72,bevel:.57,
@@ -16,6 +19,8 @@
     quality:.87,fps:60
   });
   const SPECS={
+    paletteId:["Preset cromático","palette",null,null,"Cada perfil também altera luz, atmosfera e material"],
+    selectionStyle:["Tipo de seleção","select",["halo","rim","underline","quiet"],null,"Halo, borda física, linha inferior ou seleção discreta"],
     fog:["Névoa atmosférica",0,1,.01,"Intensidade difusa no fundo"],
     waves:["Ondas de energia",0,1,.01,"Luz ambiental em ondas largas"],
     noise:["Textura fina",0,.6,.01,"Granulação óptica discreta"],
@@ -58,11 +63,14 @@
     {id:"Materiais",icon:"◈",intro:"Resposta física GGX: normal, micro-rugosidade e oclusão.",groups:[
       ["Acabamento",["roughness","metallic","reflectivity","bevel"]],
       ["Profundidade dos painéis",["depth","ao"]]]},
-    {id:"Cores",icon:"◉",intro:"Somente modo escuro. Todos os matizes são editáveis.",groups:[
-      ["Paleta Jade",["bg","surface","accent"]],
+    {id:"Paletas",icon:"◉",intro:"Sete identidades dark: cada uma tem luz, material, gradiente e contraste próprios.",groups:[
+      ["Identidades cromáticas",["paletteId"]]]},
+    {id:"Cores",icon:"◌",intro:"Edite as cinco cores individualmente. Ao alterar uma cor, o preset vira Personalizado.",groups:[
+      ["Cores de superfície",["bg","surface","accent"]],
       ["Luzes auxiliares",["cool","warm"]],
       ["Tratamento final",["contrast","saturation"]]]},
-    {id:"Componentes",icon:"▦",intro:"Ajuste dos materiais sobre os componentes reais da prévia.",groups:[
+    {id:"Componentes",icon:"▦",intro:"Foco integrado ao material. Nenhuma barra lateral fixa.",groups:[
+      ["Hierarquia da seleção",["selectionStyle"]],
       ["Hero + botão principal",["heroGlow","depth","bevel"]],
       ["Cards + navegação",["ao","edgeLight","reflectivity","bloom"]]]},
     {id:"Movimento",icon:"≋",intro:"Ondas lentas e resposta ao foco sem partículas invasivas.",groups:[
@@ -79,6 +87,8 @@
   const validValue=(key,value)=>{
     const spec=SPECS[key]; if(!spec)return undefined;
     if(spec[1]==="color")return validColor(value)?value.toLowerCase():undefined;
+    if(spec[1]==="palette")return value==="custom"||PALETTES.isPreset(String(value))?String(value):undefined;
+    if(spec[1]==="select")return spec[2].includes(String(value))?String(value):undefined;
     if(spec[1]==="toggle")return typeof value==="boolean"?value:undefined;
     if(spec[1]==="choice")return spec[2].includes(Number(value))?Number(value):undefined;
     const number=Number(value);
@@ -103,18 +113,37 @@
   function restore() {
     try {
       const saved=JSON.parse(localStorage.getItem(storeKey)||"null");
-      if(saved&&typeof saved==="object") Object.keys(DEFAULTS).forEach(k=>{
-        const v=validValue(k,saved[k]);if(v!==undefined)state[k]=v;
-      });
+      if(saved&&typeof saved==="object") {
+        Object.keys(DEFAULTS).forEach(k=>{
+          const v=validValue(k,saved[k]);if(v!==undefined)state[k]=v;
+        });
+        // Backward compatible with the original Jade Lab's saved custom color
+        // schemes, which had no paletteId at all.
+        if(!Object.hasOwn(saved,"paletteId") &&
+          PALETTES.colorFields.some(k=>saved[k] &&
+              saved[k].toLowerCase()!==DEFAULTS[k]))state.paletteId="custom";
+      }
     }catch(e){}
   }
   function sync() {
     window.JadeRenderer.setPreset(state);
-    document.documentElement.style.setProperty("--accent",state.accent);
+    const root=document.documentElement;
+    for(const k of PALETTES.colorFields)root.style.setProperty("--"+k,state[k]);
+    const rgb=[1,3,5].map(i=>parseInt(state.accent.slice(i,i+2),16)).join(",");
+    root.style.setProperty("--accent-rgb",rgb);
+    const white=PALETTES.contrast(state.accent,"#ffffff");
+    const black=PALETTES.contrast(state.accent,"#000000");
+    root.style.setProperty("--on-accent",white>=black?"#ffffff":"#08101b");
+    const themeColor=document.querySelector?.('meta[name="theme-color"]');
+    if(themeColor)themeColor.setAttribute("content",state.bg);
     const preview=el("preview");
-    if(preview){preview.dataset.mode="dark";}
+    if(preview){
+      preview.dataset.mode="dark";
+      preview.dataset.palette=state.paletteId;
+      preview.dataset.selection=state.selectionStyle;
+    }
     const badge=el("live-hint");
-    if(badge)badge.textContent="LIVE GPU · DARK · "+state.fps+" FPS";
+    if(badge)badge.textContent="LIVE GPU · "+state.paletteId.toUpperCase()+" · "+state.fps+" FPS";
     safeSave();
   }
   function formatValue(key,value) {
