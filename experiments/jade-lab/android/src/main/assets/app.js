@@ -14,7 +14,7 @@
     glassOpacity:.38,glassBlur:.69,glassTransmission:.78,
     glassTint:.35,glassScatter:.42,glassFresnel:.58,glassRim:.64,
     glassGrain:.15,glassHighlight:.62,glassShadow:.52,
-    glassHero:true,glassCards:true,glassChrome:true,glassCTA:false,
+    glassHero:true,glassCards:true,glassChrome:false,glassCTA:false,
     backgroundStyle:"ribbons",backgroundIntensity:1.05,
     backgroundScale:1.12,backgroundFlow:.32,
     ribbonLayers:3,ribbonCurve:.95,ribbonWidth:.73,ribbonSoftness:1.10,
