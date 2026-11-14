@@ -471,6 +471,8 @@ void main() {
       const element=document.querySelector('[data-surface="'+name+'"]');
       if(!element)return;
       if(element.classList?.contains("tile"))return;
+      if((name==="topbar"||name==="nav"||name==="footer") &&
+          !preset.glassChrome)return;
       if(getComputedStyle(element).display==="none")return;
       const r=element.getBoundingClientRect();
       if(r.width<2||r.height<2)return;
