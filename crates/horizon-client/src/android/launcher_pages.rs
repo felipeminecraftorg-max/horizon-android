@@ -7278,6 +7278,11 @@ impl Launcher {
         let density = self.ui_density();
         let px = t.location.x as f32 / density;
         let py = t.location.y as f32 / density;
+        let viewport = self.renderer.as_ref().map_or([360., 800.], |r| [
+            r.config.width as f32 / density.max(0.01),
+            r.config.height as f32 / density.max(0.01),
+        ]);
+        let console_nav = self.jade_nav_ready();
         match t.phase {
             TouchPhase::Started => {
                 let hit_slider = SLIDER_TRACK_TARGETS.with(|list| {
@@ -7307,7 +7312,10 @@ impl Launcher {
                     let density_f64 = density as f64;
                     if let Some(drag) = &mut self.drag {
                         let delta = drag.update(t.location.x, t.location.y, density_f64);
-                        if drag.moved {
+                        if drag.moved
+                            && !(console_nav
+                                && drag.originated_in_console_nav(density_f64, viewport))
+                        {
                             if let Some(chooser) = &mut self.chooser {
                                 chooser.scroll = (chooser.scroll + delta).max(0.0);
                             } else if let Some(modal) = &mut self.catalog.project_modal {
@@ -7327,10 +7335,31 @@ impl Launcher {
                     self.drag = None;
                     self.taps.cancel();
                 } else {
-                    let moved = self.drag.take().is_none_or(|drag| drag.moved);
-                    let target = self.pointer_action();
-                    if self.taps.finish(t.id, target, moved) {
-                        self.activate(events)?;
+                    let drag = self.drag.take();
+                    let gesture = drag.as_ref().and_then(|drag| {
+                        console_nav.then(|| drag.release_console_swipe(
+                            t.location.x, t.location.y, density as f64, viewport))
+                    }).flatten();
+                    let long_press = console_nav && drag.as_ref().is_some_and(|drag|
+                        drag.console_long_press(density as f64, viewport));
+                    if let Some(swipe) = gesture {
+                        // A nav swipe always consumes its owned tap. It never
+                        // activates a tile under the release position.
+                        self.taps.cancel();
+                        let direction = match swipe {
+                            super::gesture::PageSwipe::Previous => -1,
+                            super::gesture::PageSwipe::Next => 1,
+                        };
+                        self.cycle_jade_page(direction);
+                    } else if long_press {
+                        self.taps.cancel();
+                        self.toggle_jade_panel();
+                    } else {
+                        let moved = drag.is_none_or(|drag| drag.moved);
+                        let target = self.pointer_action();
+                        if self.taps.finish(t.id, target, moved) {
+                            self.activate(events)?;
+                        }
                     }
                 }
             }
