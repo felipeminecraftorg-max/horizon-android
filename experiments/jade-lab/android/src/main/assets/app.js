@@ -197,7 +197,13 @@
       preview.dataset.mode="dark";
       preview.dataset.palette=state.paletteId;
       preview.dataset.selection=state.selectionStyle;
+      preview.dataset.glass=state.glassStyle;
     }
+    const editor=el("editor");
+    if(editor)editor.dataset.glass=state.glassStyle;
+    root.style.setProperty("--glass-blur",Math.round(state.glassBlur*23+5)+"px");
+    root.style.setProperty("--glass-opacity",String(state.glassOpacity));
+    root.style.setProperty("--glass-rim",String(state.glassRim));
     const badge=el("live-hint");
     if(badge)badge.textContent="LIVE GPU · "+state.paletteId.toUpperCase()+" · "+state.fps+" FPS";
     safeSave();
