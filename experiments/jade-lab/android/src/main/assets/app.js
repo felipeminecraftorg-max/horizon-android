@@ -5,7 +5,10 @@
 (function () {
   "use strict";
   const FORMAT="HORIZON_JADE_LAB_V1";
+  const PALETTES=window.JadePalettes;
+  if(!PALETTES)throw new Error("O catálogo de paletas não foi carregado");
   const DEFAULTS=Object.freeze({
+    paletteId:"jade",selectionStyle:"halo",
     fog:.48,waves:.33,noise:.09,vignette:.35,diffusion:.58,
     azimuth:-38,elevation:.72,intensity:1.24,ambient:.66,
     roughness:.29,metallic:.31,reflectivity:.72,bevel:.57,
@@ -16,6 +19,8 @@
     quality:.87,fps:60
   });
   const SPECS={
+    paletteId:["Preset cromático","palette",null,null,"Cada perfil também altera luz, atmosfera e material"],
+    selectionStyle:["Tipo de seleção","select",["halo","rim","underline","quiet"],null,"Halo, borda física, linha inferior ou seleção discreta"],
     fog:["Névoa atmosférica",0,1,.01,"Intensidade difusa no fundo"],
     waves:["Ondas de energia",0,1,.01,"Luz ambiental em ondas largas"],
     noise:["Textura fina",0,.6,.01,"Granulação óptica discreta"],
@@ -58,11 +63,14 @@
     {id:"Materiais",icon:"◈",intro:"Resposta física GGX: normal, micro-rugosidade e oclusão.",groups:[
       ["Acabamento",["roughness","metallic","reflectivity","bevel"]],
       ["Profundidade dos painéis",["depth","ao"]]]},
-    {id:"Cores",icon:"◉",intro:"Somente modo escuro. Todos os matizes são editáveis.",groups:[
-      ["Paleta Jade",["bg","surface","accent"]],
+    {id:"Paletas",icon:"◉",intro:"Sete identidades dark: cada uma tem luz, material, gradiente e contraste próprios.",groups:[
+      ["Identidades cromáticas",["paletteId"]]]},
+    {id:"Cores",icon:"◌",intro:"Edite as cinco cores individualmente. Ao alterar uma cor, o preset vira Personalizado.",groups:[
+      ["Cores de superfície",["bg","surface","accent"]],
       ["Luzes auxiliares",["cool","warm"]],
       ["Tratamento final",["contrast","saturation"]]]},
-    {id:"Componentes",icon:"▦",intro:"Ajuste dos materiais sobre os componentes reais da prévia.",groups:[
+    {id:"Componentes",icon:"▦",intro:"Foco integrado ao material. Nenhuma barra lateral fixa.",groups:[
+      ["Hierarquia da seleção",["selectionStyle"]],
       ["Hero + botão principal",["heroGlow","depth","bevel"]],
       ["Cards + navegação",["ao","edgeLight","reflectivity","bloom"]]]},
     {id:"Movimento",icon:"≋",intro:"Ondas lentas e resposta ao foco sem partículas invasivas.",groups:[
@@ -79,6 +87,8 @@
   const validValue=(key,value)=>{
     const spec=SPECS[key]; if(!spec)return undefined;
     if(spec[1]==="color")return validColor(value)?value.toLowerCase():undefined;
+    if(spec[1]==="palette")return value==="custom"||PALETTES.isPreset(String(value))?String(value):undefined;
+    if(spec[1]==="select")return spec[2].includes(String(value))?String(value):undefined;
     if(spec[1]==="toggle")return typeof value==="boolean"?value:undefined;
     if(spec[1]==="choice")return spec[2].includes(Number(value))?Number(value):undefined;
     const number=Number(value);
@@ -103,18 +113,37 @@
   function restore() {
     try {
       const saved=JSON.parse(localStorage.getItem(storeKey)||"null");
-      if(saved&&typeof saved==="object") Object.keys(DEFAULTS).forEach(k=>{
-        const v=validValue(k,saved[k]);if(v!==undefined)state[k]=v;
-      });
+      if(saved&&typeof saved==="object") {
+        Object.keys(DEFAULTS).forEach(k=>{
+          const v=validValue(k,saved[k]);if(v!==undefined)state[k]=v;
+        });
+        // Backward compatible with the original Jade Lab's saved custom color
+        // schemes, which had no paletteId at all.
+        if(!Object.hasOwn(saved,"paletteId") &&
+          PALETTES.colorFields.some(k=>saved[k] &&
+              saved[k].toLowerCase()!==DEFAULTS[k]))state.paletteId="custom";
+      }
     }catch(e){}
   }
   function sync() {
     window.JadeRenderer.setPreset(state);
-    document.documentElement.style.setProperty("--accent",state.accent);
+    const root=document.documentElement;
+    for(const k of PALETTES.colorFields)root.style.setProperty("--"+k,state[k]);
+    const rgb=[1,3,5].map(i=>parseInt(state.accent.slice(i,i+2),16)).join(",");
+    root.style.setProperty("--accent-rgb",rgb);
+    const white=PALETTES.contrast(state.accent,"#ffffff");
+    const black=PALETTES.contrast(state.accent,"#000000");
+    root.style.setProperty("--on-accent",white>=black?"#ffffff":"#08101b");
+    const themeColor=document.querySelector?.('meta[name="theme-color"]');
+    if(themeColor)themeColor.setAttribute("content",state.bg);
     const preview=el("preview");
-    if(preview){preview.dataset.mode="dark";}
+    if(preview){
+      preview.dataset.mode="dark";
+      preview.dataset.palette=state.paletteId;
+      preview.dataset.selection=state.selectionStyle;
+    }
     const badge=el("live-hint");
-    if(badge)badge.textContent="LIVE GPU · DARK · "+state.fps+" FPS";
+    if(badge)badge.textContent="LIVE GPU · "+state.paletteId.toUpperCase()+" · "+state.fps+" FPS";
     safeSave();
   }
   function formatValue(key,value) {
@@ -122,6 +151,7 @@
     if(key==="fps")return value+" FPS";
     if(key==="quality")return Math.round(value*100)+"%";
     if(typeof value==="number")return value.toFixed((SPECS[key][3]||1)>=1?0:2).replace(/0+$/,"").replace(/\.$/,"");
+    if(typeof value==="string")return value;
     return value===true?"ON":"OFF";
   }
   function escapeHtml(s) {
@@ -130,6 +160,26 @@
   }
   function field(key) {
     const spec=SPECS[key],val=state[key],label=escapeHtml(spec[0]),hint=escapeHtml(spec[4]);
+    if(spec[1]==="palette"){
+      const cards=PALETTES.ids.map(id=>{
+        const p=PALETTES.profiles[id],c=p.colors,active=val===id;
+        return '<button type="button" class="palette-card'+(active?' active':'')+
+          '" aria-label="Selecionar '+escapeHtml(p.name)+'" aria-pressed="'+active+
+          '" data-palette="'+id+'" style="--card-bg:'+c.bg+
+          ';--card-surface:'+c.surface+';--card-accent:'+c.accent+
+          ';--card-cool:'+c.cool+'"><span class="palette-name">'+escapeHtml(p.name)+
+          '</span><span class="palette-desc">'+escapeHtml(p.tagline)+
+          '</span><span class="palette-swatches">'+
+          PALETTES.colorFields.map(k=>'<span class="palette-swatch" title="'+k+
+            '" style="--swatch:'+c[k]+'"></span>').join("")+'</span></button>';
+      }).join("");
+      const mode=val==="custom"?"Personalizado (ajustes manuais)":
+        PALETTES.profiles[val]?.name||"Personalizado";
+      return '<div class="field"><div class="field-head"><label>'+label+
+        '</label><output data-readout="paletteId">'+escapeHtml(mode)+
+        '</output></div><div class="palette-grid">'+cards+
+        '</div><p class="palette-custom-note">Cada perfil aplica cinco cores, rugosidade, metalização, iluminação e contraste sem perder seus ajustes de FPS e escala.</p></div>';
+    }
     let control="";
     if(spec[1]==="color"){
       control='<input aria-label="'+label+'" type="color" data-param="'+key+'" value="'+val+'">';
@@ -138,6 +188,11 @@
     }else if(spec[1]==="choice"){
       control='<select data-param="'+key+'" aria-label="'+label+'">'+
         spec[2].map(v=>'<option value="'+v+'"'+(v===val?' selected':'')+'>'+v+' FPS</option>').join("")+'</select>';
+    }else if(spec[1]==="select"){
+      const labels={halo:"Halo material",rim:"Borda luminosa",underline:"Linha inferior",quiet:"Discreto"};
+      control='<select data-param="'+key+'" aria-label="'+label+'">'+
+        spec[2].map(v=>'<option value="'+v+'"'+(v===val?' selected':'')+'>'+
+        escapeHtml(labels[v]||v)+'</option>').join("")+'</select>';
     }else{
       control='<input aria-label="'+label+'" type="range" data-param="'+key+
         '" min="'+spec[1]+'" max="'+spec[2]+'" step="'+spec[3]+'" value="'+val+'">';
@@ -178,19 +233,38 @@
   }
   function changeTab(next) {
     if(!TABS.some(t=>t.id===next))return;
-    tabId=next;renderPanel();el("editor-body").scrollTop=0;
+    tabId=next;
+    if(el("editor-tabs") && el("editor-body")){
+      renderPanel();el("editor-body").scrollTop=0;
+    }
+  }
+  function setPalette(id) {
+    const next=PALETTES.apply(state,id);
+    if(!next)return false;
+    state=next;
+    sync();
+    if(el("editor-tabs") && el("editor-body"))renderPanel();
+    return true;
   }
   function setField(key,value) {
     const next=validValue(key,value);
     if(next===undefined)return;
+    if(key==="paletteId"){
+      if(next==="custom"){state.paletteId="custom";sync();}
+      else setPalette(next);
+      return;
+    }
     state[key]=next;
+    if(PALETTES.colorFields.includes(key))state.paletteId="custom";
     const readouts=document.querySelectorAll('[data-readout="'+key+'"]');
     readouts.forEach(o=>{o.textContent=String(formatValue(key,next));});
     sync();
   }
   function presetObject() {
-    return {format:FORMAT,preset:"Horizon Jade",theme:"oldschool-dark",
-      engine:"WebGL2",createdAt:new Date().toISOString(),controls:clone(state)};
+    return {format:FORMAT,preset:"Horizon Jade · "+
+        (PALETTES.profiles[state.paletteId]?.name||"Custom"),theme:"oldschool-dark",
+      palette:state.paletteId,engine:"WebGL2",createdAt:new Date().toISOString(),
+      controls:clone(state)};
   }
   function sectionObject(id) {
     const t=TABS.find(x=>x.id===id)||TABS[0];
@@ -289,11 +363,15 @@
     for(const t of TABS.filter(x=>x.id!=="Exportar")){
       entries.push(json("tabs/"+sanitizeName(t.id.toLowerCase())+".json",sectionObject(t.id)));
     }
+    entries.push(json("palettes/catalog.json",{
+      theme:"oldschool-dark",ids:PALETTES.ids,profiles:PALETTES.profiles,
+      selected:state.paletteId,selectionStyle:state.selectionStyle
+    }));
     entries.push({name:"shaders/jade_scene.frag",bytes:textBytes(window.JadeRenderer.fragmentSource)});
     entries.push({name:"shaders/fullscreen.vert",bytes:textBytes(window.JadeRenderer.vertexSource)});
     entries.push(json("uniforms.json",{
       engine:"WebGL2 / GLSL ES 300",theme:"oldschool-dark",
-      uniforms:["uAtmos","uLight","uMaterial","uSurface","uMotion","uDetail","uPalette","uRects"],
+      uniforms:["uAtmos","uLight","uMaterial","uSurface","uMotion","uDetail","uPalette","uRects","uFocusIndex","uSelectionStyle"],
       controls:clone(state),note:"GPU rects use CSS viewport coordinates; see source app."
     }));
     entries.push(json("manifest.json",{
@@ -336,7 +414,18 @@
       updates[k]=v;
     }
     if(!Object.keys(updates).length)throw new Error("Nenhuma configuração reconhecida");
-    Object.assign(state,updates);sync();renderPanel();
+    // Importing a standalone Paletas tab must apply the COMPLETE curated
+    // profile, not merely alter its ID while leaving the old purple/green mix.
+    if(incoming.format==="HORIZON_JADE_TAB_V1" && incoming.tab==="Paletas" &&
+       PALETTES.isPreset(updates.paletteId)){
+      state=PALETTES.apply(state,updates.paletteId);
+    }else{
+      Object.assign(state,updates);
+      if(!("paletteId" in updates)&&
+         PALETTES.colorFields.some(k=>Object.hasOwn(updates,k)))
+        state.paletteId="custom";
+    }
+    sync();if(el("editor-tabs") && el("editor-body"))renderPanel();
     toast("Preset importado: "+Object.keys(updates).length+" parâmetros");
   }
   async function doExport(command) {
@@ -400,6 +489,12 @@
         groupOpen[e.target.dataset.group]=e.target.open;
     },true);
     body.addEventListener("click",e=>{
+      const palette=e.target.closest("[data-palette]");
+      if(palette){
+        if(setPalette(palette.dataset.palette))
+          toast("Paleta "+PALETTES.profiles[palette.dataset.palette].name+" aplicada");
+        return;
+      }
       const button=e.target.closest("[data-export]");
       if(button)doExport(button.dataset.export);
     });
@@ -451,18 +546,27 @@
       btn.classList.toggle("active",current);
       if(current)btn.setAttribute("aria-current","page");else btn.removeAttribute("aria-current");
     });
+    document.querySelectorAll(".hero[data-surface],.tile[data-page]").forEach(node=>{
+      const selected=node.classList.contains("hero")?page==="Play":
+        node.dataset.page===page;
+      node.classList.toggle("is-selected",selected);
+      if(node.matches("button"))node.setAttribute("aria-pressed",String(selected));
+    });
+    window.JadeRenderer.setPage?.(page);
   }
   function init() {
     restore();sync();renderPanel();setupEditor();
     window.JadeRenderer.init();
     document.querySelectorAll("[data-page]").forEach(button=>
       button.addEventListener("click",()=>pageSelect(button.dataset.page)));
+    pageSelect("Play");
     el("hero-action").addEventListener("click",()=>toast("Prévia de "+page+"; este laboratório não instala o jogo"));
     if(window.JadeRenderer.state().error)toast(window.JadeRenderer.state().error);
     // Native Android may invoke this after entering immersive mode.
     window.addEventListener("pageshow",()=>window.JadeRenderer.refresh());
   }
   window.JadeLab={getPreset:presetObject,getSection:sectionObject,defaults:()=>clone(DEFAULTS),
+    palettes:PALETTES.profiles,applyPalette:setPalette,selectedPalette:()=>state.paletteId,
     exportPreset:downloadPreset,exportPack:downloadPack,exportSection:downloadSection,
     importFile,setField,changeTab,zipStore,findStoredZipPreset};
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init);

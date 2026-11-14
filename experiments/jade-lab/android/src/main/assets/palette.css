@@ -1,0 +1,215 @@
+/* Jade Lab v2: material-colored dark interface, independent of the live GPU.
+ * No fixed left indicators. Focus and active-page hierarchy are driven by
+ * computed spectral edge light, inner luminance and local material contrast.
+ */
+:root{
+  --bg:#091611;--surface:#203c2c;--accent:#74da94;--cool:#63aeb8;
+  --warm:#cb995a;--accent-rgb:116,218,148;--on-accent:#08170f;
+  --ink:#eff5f1;--muted:#acb9b2;
+}
+html,body{background:var(--bg);color:var(--ink)}
+.brand-mark{
+  color:var(--accent);
+  text-shadow:0 0 17px rgba(var(--accent-rgb),.19);
+}
+.brand small,.editor-title small{color:var(--muted)}
+.account{
+  background:linear-gradient(117deg,
+    rgba(var(--accent-rgb),.035),
+    rgba(var(--accent-rgb),.085) 54%,
+    color-mix(in srgb,var(--cool) 8%,transparent));
+}
+.top-settings{
+  background:rgba(var(--accent-rgb),.075);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.045);
+}
+.channel.active{
+  color:var(--ink);
+  background:radial-gradient(ellipse at 50% 115%,
+    rgba(var(--accent-rgb),.18),transparent 78%);
+  text-shadow:0 0 12px rgba(var(--accent-rgb),.21);
+}
+.channel.active:after{
+  background:var(--accent);
+  box-shadow:0 0 9px rgba(var(--accent-rgb),.34);
+}
+#preview[data-selection="halo"] .channel.active:after,
+#preview[data-selection="rim"] .channel.active:after,
+#preview[data-selection="quiet"] .channel.active:after{opacity:0}
+#preview[data-selection="rim"] .channel.active{
+  box-shadow:inset 0 0 0 1px rgba(var(--accent-rgb),.48),
+             inset 0 1px 0 rgba(255,255,255,.10);
+  background:rgba(var(--accent-rgb),.085);
+}
+#preview[data-selection="quiet"] .channel.active{
+  background:rgba(var(--accent-rgb),.045);text-shadow:none;
+}
+#preview[data-selection="underline"] .channel.active{
+  background:rgba(var(--accent-rgb),.065);
+}
+.status-spark{background:var(--accent);box-shadow:0 0 9px rgba(var(--accent-rgb),.40)}
+.hero,.tile,.play-cta{transition:border-color .16s,box-shadow .16s,filter .16s}
+.hero.is-selected,.tile.is-selected{
+  border-color:rgba(var(--accent-rgb),.25);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.075),
+             0 0 27px rgba(var(--accent-rgb),.075);
+}
+.tile.is-selected{
+  filter:brightness(1.06);
+}
+#preview[data-selection="quiet"] .hero.is-selected,
+#preview[data-selection="quiet"] .tile.is-selected{
+  border-color:rgba(var(--accent-rgb),.13);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.045);
+  filter:none;
+}
+#preview[data-selection="rim"] .hero.is-selected,
+#preview[data-selection="rim"] .tile.is-selected{
+  border-color:rgba(var(--accent-rgb),.47);
+  box-shadow:inset 0 0 0 .6px rgba(var(--accent-rgb),.20),
+             0 4px 28px rgba(0,0,0,.20);
+}
+.play-cta{
+  color:var(--on-accent);
+  border-color:rgba(var(--accent-rgb),.34);
+  background:linear-gradient(140deg,
+     color-mix(in srgb,var(--accent) 89%,white 11%),
+     color-mix(in srgb,var(--accent) 65%,var(--surface) 35%) 54%,
+     color-mix(in srgb,var(--accent) 45%,var(--bg) 55%));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.22),
+             0 8px 30px rgba(0,0,0,.34),
+             0 0 22px rgba(var(--accent-rgb),.09);
+  text-shadow:none;
+}
+.play-cta:focus-visible{
+  outline-color:var(--accent);
+  box-shadow:0 0 0 3px rgba(var(--accent-rgb),.25);
+}
+.profile-pill{
+  border-color:rgba(var(--accent-rgb),.17);
+  background:linear-gradient(160deg,rgba(255,255,255,.075),rgba(var(--accent-rgb),.045));
+}
+.tile small{color:var(--muted)}
+.tile-symbol{color:var(--ink);text-shadow:0 1px 8px rgba(0,0,0,.42)}
+.tile:hover .tile-symbol{filter:drop-shadow(0 0 7px rgba(var(--accent-rgb),.3))}
+.status-footer{border-color:rgba(var(--accent-rgb),.17);color:var(--muted)}
+.float-button{
+  border-color:rgba(var(--accent-rgb),.29);
+  background:color-mix(in srgb,var(--bg) 77%,var(--surface) 23%);
+  color:var(--ink);
+}
+.editor{
+  background:color-mix(in srgb,var(--bg) 85%,#15191e 15%);
+  border-color:rgba(var(--accent-rgb),.36);
+  box-shadow:0 28px 78px rgba(0,0,0,.70),
+             0 0 37px rgba(var(--accent-rgb),.095);
+}
+.drag-grip{background:rgba(var(--accent-rgb),.40)}
+.editor-head,.editor-tabs,.editor-foot{border-color:rgba(var(--accent-rgb),.13)}
+.editor-title em{color:var(--accent)}
+#render-badge{
+  border-color:rgba(var(--accent-rgb),.32);
+  color:var(--accent);
+}
+.editor-buttons button{
+  border-color:rgba(var(--accent-rgb),.14);
+  background:rgba(var(--accent-rgb),.055);
+}
+.editor-tabs button{
+  color:var(--muted);
+  border-color:rgba(var(--accent-rgb),.08);
+  background:rgba(var(--accent-rgb),.045);
+}
+.editor-tabs button.active{
+  color:var(--ink);
+  background:rgba(var(--accent-rgb),.14);
+  border-color:rgba(var(--accent-rgb),.44);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.07);
+}
+.parameter-group{
+  background:linear-gradient(155deg,rgba(var(--accent-rgb),.046),
+    rgba(255,255,255,.012));
+  border-color:rgba(var(--accent-rgb),.17);
+}
+.parameter-group summary{color:var(--ink)}
+.parameter-group summary:after{color:var(--accent)}
+.field{border-color:rgba(var(--accent-rgb),.10)}
+.field-head output{color:var(--accent)}
+.field input[type=range]{accent-color:var(--accent)}
+.field input[type=color],.field select{
+  border-color:rgba(var(--accent-rgb),.28);
+  background:color-mix(in srgb,var(--bg) 58%,var(--surface) 42%);
+  color:var(--ink);
+}
+.field .hint,.section-intro{color:var(--muted)}
+.editor-foot button,.action-grid button,.big-action{
+  border-color:rgba(var(--accent-rgb),.25);
+  background:rgba(var(--accent-rgb),.06);
+  color:var(--ink);
+}
+.editor-foot .primary{
+  color:var(--on-accent);
+  background:var(--accent);
+  border-color:var(--accent);
+}
+.note{
+  background:rgba(var(--accent-rgb),.06);
+  color:var(--muted);
+  border-color:var(--accent);
+}
+.toast{
+  background:color-mix(in srgb,var(--surface) 45%,var(--bg) 55%);
+  color:var(--ink);border-color:rgba(var(--accent-rgb),.42);
+}
+/* Full palette cards: each preview has three distinguishable illuminated
+ * layers, so the palette name is never the only visual identifier.
+ */
+.palette-grid{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:9px;padding-top:3px;
+}
+.palette-card{
+  display:flex;flex-direction:column;gap:8px;
+  text-align:left;min-width:0;min-height:117px;
+  padding:10px;border-radius:12px;position:relative;
+  border:1px solid color-mix(in srgb,var(--card-accent) 36%,transparent);
+  color:var(--ink);
+  background:
+    radial-gradient(ellipse at 84% 8%,color-mix(in srgb,var(--card-cool) 27%,transparent),transparent 68%),
+    linear-gradient(140deg,color-mix(in srgb,var(--card-surface) 86%,#ffffff 14%),var(--card-bg));
+  box-shadow:inset 0 1px 0 #ffffff15,0 7px 23px #0005;
+}
+.palette-card:after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  border-radius:inherit;
+  background:linear-gradient(130deg,#ffffff12,transparent 40%,#00000012);
+}
+.palette-card.active{
+  border-color:var(--card-accent);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--card-accent) 50%,transparent),
+             0 0 18px color-mix(in srgb,var(--card-accent) 20%,transparent),
+             inset 0 1px 0 #ffffff2a;
+}
+.palette-name{font-size:13px;font-weight:750;color:#f7f7fa}
+.palette-desc{font-size:10px;line-height:1.3;color:#e7e9eee5}
+.palette-swatches{display:flex;gap:4px;margin-top:auto}
+.palette-swatch{
+  height:12px;flex:1;border-radius:4px;
+  box-shadow:inset 0 1px 0 #ffffff25,0 1px 4px #0005;
+  background:var(--swatch);
+}
+.palette-custom-note{font-size:11px;color:var(--muted);padding:4px 1px 0}
+.palette-status{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:10px;color:var(--accent);font-weight:700;
+}
+.palette-status:before{
+  content:"";width:6px;height:6px;border-radius:50%;
+  background:var(--accent);box-shadow:0 0 6px rgba(var(--accent-rgb),.40);
+}
+@media(max-width:340px){
+  .palette-grid{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){
+  .hero,.tile,.play-cta{transition:none}
+}

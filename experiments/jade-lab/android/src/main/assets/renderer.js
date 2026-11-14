@@ -22,6 +22,8 @@ uniform vec4 uMaterial;
 uniform vec4 uSurface;
 uniform vec4 uMotion;
 uniform vec4 uDetail;
+uniform int uFocusIndex;
+uniform int uSelectionStyle;
 
 float hash12(vec2 p) {
   vec3 p3=fract(vec3(p.xyx)*0.1031);
@@ -96,6 +98,9 @@ void main() {
     result*=1.0-shadow*uSurface.y*.18;
     float inMask=1.0-smoothstep(-.55,.85,d);
     if(inMask<0.0001) continue;
+    // Actual focused surface: no procedural left stripe or baked status bar.
+    // Local material response is calculated in screen space on every frame.
+    bool focused=i==uFocusIndex;
     vec2 q=(p-r.xy)/max(r.zw,vec2(1.0));
     float bevelDistance=smoothstep(-10.0,-.4,d);
     vec3 normal=normalize(vec3(
@@ -140,6 +145,28 @@ void main() {
     if(i==10) mat+=uPalette[2].rgb*.025;
     float border=(1.0-smoothstep(.2,1.9,abs(d+.5)));
     mat+=mix(vec3(.13),uPalette[2].rgb,.62)*border*uSurface.z*.23;
+    // Focus does not add a fixed sidebar. It modifies the material's
+    // physically located light, Fresnel contour, or soft bottom glow.
+    if(focused){
+      float pulse=1.0-uReduced*.12+sin(tt*1.6)*uMotion.y*.12*(1.0-uReduced);
+      vec2 hotspot=q-vec2(.3+.1*cursor.x,.28+.08*cursor.y);
+      float halo=exp(-dot(hotspot,hotspot)*4.5)*pulse;
+      float edgeMask=1.0-smoothstep(.1,2.1,abs(d+.6));
+      if(uSelectionStyle==0){ // Material halo (default)
+        mat+=uPalette[2].rgb*halo*.105*uSurface.w;
+        mat+=mix(uPalette[3].rgb,vec3(1.0),.45)*edgeMask*.035*uSurface.z;
+      }else if(uSelectionStyle==1){ // Rim-lit outline
+        mat+=mix(uPalette[2].rgb,vec3(1.0),.23)*edgeMask*.15*uSurface.z;
+        mat+=uPalette[3].rgb*halo*.035*uSurface.w;
+      }else if(uSelectionStyle==2){ // Soft lower emphasis
+        float under=exp(-pow((q.y-.965)*39.0,2.0));
+        under*=smoothstep(.05,.29,q.x)*(1.0-smoothstep(.71,.95,q.x));
+        mat+=uPalette[2].rgb*under*.17;
+        mat+=uPalette[2].rgb*halo*.025;
+      }else{ // Quiet selection (accessibility-friendly)
+        mat+=uPalette[2].rgb*halo*.025;
+      }
+    }
     // A deliberately subtle bloom, per local tile rather than global blur.
     mat+=spec*uMotion.w*.12;
     result=mix(result,mat,inMask*.96);
@@ -155,6 +182,7 @@ void main() {
   const NAMES = ["topbar", "nav", "hero", "mods", "packs", "shaders", "files", "skins", "settings", "footer", "cta"];
   let canvas, gl, program, uniform = {}, buffer, working = false;
   let preset, paused = false, last = 0, elapsed = 0, dpr = 1, renderCount = 0;
+  let selectedPage="Play";
   let cursor = [0, 0], error = "";
   const $ = (id) => document.getElementById(id);
   const num = (v, fallback) => Number.isFinite(Number(v)) ? Number(v) : fallback;
@@ -194,7 +222,8 @@ void main() {
       if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
       gl.useProgram(program);
       const keys = ["uResolution","uViewport","uPointer","uTime","uReduced","uRectCount",
-        "uRects[0]","uPalette[0]","uAtmos","uLight","uMaterial","uSurface","uMotion","uDetail"];
+        "uRects[0]","uPalette[0]","uAtmos","uLight","uMaterial","uSurface","uMotion","uDetail",
+        "uFocusIndex","uSelectionStyle"];
       keys.forEach(k => { uniform[k] = gl.getUniformLocation(program, k); });
       buffer = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -268,6 +297,14 @@ void main() {
       count++;
     });
     gl.uniform1i(uniform.uRectCount,count);
+    const surfaces={Play:"hero",Mods:"mods",Packs:"packs",Shaders:"shaders",
+      Files:"files",Skins:"skins",Settings:"settings"};
+    const selectedSurface=surfaces[selectedPage]||"hero";
+    // Surface order is unchanged by navigation: only the light source moves.
+    gl.uniform1i(uniform.uFocusIndex,NAMES.indexOf(selectedSurface));
+    const modes=["halo","rim","underline","quiet"];
+    gl.uniform1i(uniform.uSelectionStyle,
+      Math.max(0,modes.indexOf(preset.selectionStyle)));
     gl.uniform4fv(uniform["uRects[0]"],rects);
     const c=["bg","surface","accent","cool","warm"].flatMap(k=>color(preset[k]));
     gl.uniform4fv(uniform["uPalette[0]"],new Float32Array(c));
@@ -283,6 +320,9 @@ void main() {
     preset=p;
     if (gl) resize();
   }
+  function setPage(name) {
+    selectedPage=String(name||"Play");
+  }
   function pause(value) {paused=!!value;return paused;}
   function recenter() {cursor=[innerWidth*.35,innerHeight*.4];}
   function screenshot() {
@@ -291,5 +331,6 @@ void main() {
     return canvas.toDataURL("image/png");
   }
   function state() {return {webgl2:working,paused,error,dimensions:[canvas&&canvas.width,canvas&&canvas.height]};}
-  window.JadeRenderer={init,setPreset,pause,recenter,screenshot,state,vertexSource:VERTEX_SOURCE,fragmentSource:FRAGMENT_SOURCE,refresh:draw};
+  window.JadeRenderer={init,setPreset,setPage,pause,recenter,screenshot,state,
+    vertexSource:VERTEX_SOURCE,fragmentSource:FRAGMENT_SOURCE,refresh:draw};
 })();

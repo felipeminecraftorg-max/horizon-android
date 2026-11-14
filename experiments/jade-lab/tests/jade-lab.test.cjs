@@ -6,6 +6,7 @@ const path=require("node:path");
 const vm=require("node:vm");
 const root=path.resolve(__dirname,"../android/src/main/assets");
 const renderer=fs.readFileSync(path.join(root,"renderer.js"),"utf8");
+const palettes=fs.readFileSync(path.join(root,"palettes.js"),"utf8");
 const editor=fs.readFileSync(path.join(root,"app.js"),"utf8");
 
 function sandbox() {
@@ -24,6 +25,7 @@ function sandbox() {
     localStorage:{setItem(k,v){set[k]=v;},getItem(k){return set[k]||null;}}
   };
   vm.createContext(env);
+  vm.runInContext(palettes,env,{filename:"palettes.js"});
   vm.runInContext(renderer,env,{filename:"renderer.js"});
   vm.runInContext(editor,env,{filename:"app.js"});
   return win;
@@ -50,7 +52,7 @@ test("default preset is dark-only and covers all material families",()=>{
 
 test("every settings tab can be exported as a separate JSON object",()=>{
   const x=sandbox();
-  for(const tab of ["Atmosfera","Luz","Materiais","Cores","Componentes",
+  for(const tab of ["Atmosfera","Luz","Materiais","Paletas","Cores","Componentes",
     "Movimento","Desempenho","Exportar"]){
     const one=x.JadeLab.getSection(tab);
     assert.equal(one.format,"HORIZON_JADE_TAB_V1");
@@ -90,6 +92,100 @@ test("exported dependency-free stored ZIP can reimport preset",async()=>{
   assert.equal(loaded.format,p.format);
   assert.equal(loaded.controls.accent,p.controls.accent);
   assert.equal(loaded.theme,"oldschool-dark");
+});
+
+test("seven curated dark palettes have independent material, atmosphere and readable accents",()=>{
+  const x=sandbox();
+  const catalog=x.JadePalettes;
+  assert.equal(catalog.ids.length,7);
+  assert.deepEqual(Array.from(catalog.ids).sort(),
+    ["amethyst","azure","cobalt","graphite","jade","obsidian","smoke"].sort());
+  const signatures=new Set();
+  for(const id of catalog.ids){
+    const p=catalog.profiles[id];
+    for(const section of ["colors","material","lighting","atmosphere"])
+      assert.ok(Object.keys(p[section]).length>=3,id+":"+section);
+    const c=p.colors;
+    for(const key of ["bg","surface","accent","cool","warm"])
+      assert.match(c[key],/^#[0-9a-f]{6}$/i);
+    assert.ok(catalog.contrast(c.accent,c.bg)>=3.0,
+      id+" accent/background contrast");
+    assert.ok(catalog.contrast(c.accent,c.surface)>=2.8,
+      id+" accent/surface contrast");
+    assert.ok(catalog.contrast(c.surface,c.bg)>1.1,
+      id+" surfaces must be distinct");
+    signatures.add([c.bg,c.surface,c.accent,p.material.roughness,
+      p.lighting.intensity,p.atmosphere.fog].join("|"));
+  }
+  assert.equal(signatures.size,7);
+  assert.ok(catalog.contrast("#ffffff","#000000")>20);
+});
+
+test("palette switches recolor GPU presets while preserving fps and quality",()=>{
+  const x=sandbox();
+  x.JadeLab.setField("fps",90);
+  x.JadeLab.setField("quality",.65);
+  x.JadeLab.setField("reducedMotion",true);
+  for(const id of x.JadePalettes.ids){
+    assert.equal(x.JadeLab.applyPalette(id),true);
+    const p=x.JadeLab.getPreset();
+    const spec=x.JadePalettes.profiles[id];
+    assert.equal(p.controls.paletteId,id);
+    assert.equal(p.palette,id);
+    assert.equal(p.theme,"oldschool-dark");
+    assert.equal(p.controls.accent,spec.colors.accent);
+    assert.equal(p.controls.roughness,spec.material.roughness);
+    assert.equal(p.controls.ambient,spec.lighting.ambient);
+    assert.equal(p.controls.fog,spec.atmosphere.fog);
+    assert.equal(p.controls.fps,90);
+    assert.equal(p.controls.quality,.65);
+    assert.equal(p.controls.reducedMotion,true);
+  }
+  assert.equal(x.JadeLab.applyPalette("__invalid__"),false);
+  assert.equal(x.JadeLab.selectedPalette(),"smoke");
+});
+
+test("custom color edits do not overwrite chosen colors or legacy preset format",async()=>{
+  const x=sandbox();
+  x.JadeLab.applyPalette("amethyst");
+  x.JadeLab.setField("accent","#efbb66");
+  x.JadeLab.setField("selectionStyle","rim");
+  assert.equal(x.JadeLab.selectedPalette(),"custom");
+  assert.equal(x.JadeLab.getPreset().controls.accent,"#efbb66");
+  assert.equal(x.JadeLab.getSection("Componentes").controls.selectionStyle,"rim");
+  assert.equal(x.JadeLab.getSection("Paletas").controls.paletteId,"custom");
+  x.JadeLab.setField("selectionStyle","bad");
+  assert.equal(x.JadeLab.getPreset().controls.selectionStyle,"rim");
+  const partial={format:"HORIZON_JADE_TAB_V1",theme:"oldschool-dark",
+    tab:"Paletas",controls:{paletteId:"obsidian"}};
+  const file=new Blob([JSON.stringify(partial)],{type:"application/json"});
+  file.name="obsidian.json";
+  await x.JadeLab.importFile(file);
+  assert.equal(x.JadeLab.getPreset().controls.paletteId,"obsidian");
+  assert.equal(x.JadeLab.getPreset().controls.accent,
+    x.JadePalettes.profiles.obsidian.colors.accent);
+  const legacy={format:"HORIZON_JADE_LAB_V1",theme:"oldschool-dark",
+    controls:{accent:"#ffcf64",bg:"#140e14"}};
+  const old=new Blob([JSON.stringify(legacy)],{type:"application/json"});
+  old.name="old-jade.json";
+  await x.JadeLab.importFile(old);
+  assert.equal(x.JadeLab.selectedPalette(),"custom");
+  assert.equal(x.JadeLab.getPreset().controls.accent,"#ffcf64");
+});
+
+test("selection is dynamic GPU lighting without fixed left-hand indicator",()=>{
+  const x=sandbox();
+  const css=fs.readFileSync(path.join(root,"styles.css"),"utf8");
+  const dynamicCss=fs.readFileSync(path.join(root,"palette.css"),"utf8");
+  const html=fs.readFileSync(path.join(root,"index.html"),"utf8");
+  assert.doesNotMatch(css,/\.hero:before\s*\{/);
+  assert.match(html,/palette\.css/);
+  assert.match(html,/palettes\.js/);
+  assert.ok(html.indexOf("palettes.js")<html.indexOf("app.js"));
+  assert.match(x.JadeRenderer.fragmentSource,/uniform int uFocusIndex/);
+  assert.match(x.JadeRenderer.fragmentSource,/uniform int uSelectionStyle/);
+  assert.match(x.JadeRenderer.fragmentSource,/bool focused=i==uFocusIndex/);
+  assert.match(dynamicCss,/\[data-selection="rim"\]/);
 });
 
 test("Android manifest is a separate offline app with no broad permissions",()=>{
