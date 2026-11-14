@@ -7,6 +7,7 @@ on:
       - feature/jade-lab-dark-android
       - feature/jade-lab-part2-visual-foundation
       - feature/jade-lab-part2-atmospheric-background
+      - feature/jade-lab-part2-frosted-materials
     paths:
       - 'experiments/jade-lab/**'
       - '.github/workflows/jade-lab-apk.yml'
@@ -93,7 +94,8 @@ jobs:
           with zipfile.ZipFile(p) as z:
               entries=set(z.namelist())
               required={'assets/index.html','assets/styles.css','assets/palette.css',
-                        'assets/palettes.js','assets/renderer.js','assets/app.js'}
+                        'assets/palettes.js','assets/renderer.js','assets/app.js',
+                        'assets/scene.css'}
               assert required<=entries,sorted(required-entries)
           sha=os.environ['GITHUB_SHA']
           name=f'Horizon-Jade-Lab-Dark-{sha[:12]}.apk'
