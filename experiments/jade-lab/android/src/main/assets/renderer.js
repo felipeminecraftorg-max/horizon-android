@@ -462,17 +462,21 @@ void main() {
     gl.uniform2f(uniform.uPointer,cursor[0],cursor[1]);
     gl.uniform1f(uniform.uTime,elapsed);
     gl.uniform1f(uniform.uReduced,preset.reducedMotion?1:0);
+    // Match every shader surface to its *stable* identifier. Hidden module
+    // cards are fully CSS-perspective transformed, so do NOT render flat
+    // axis-aligned GPU material rectangles behind them. CSS backdrop-filter
+    // handles their actual warped silhouette without ghost rectangles.
     const rects=new Float32Array(12*4);
-    let count=0;
-    NAMES.forEach(name=>{
-      const el=document.querySelector('[data-surface="'+name+'"]');
-      if(!el || getComputedStyle(el).display==="none") return;
-      const r=el.getBoundingClientRect();
-      if(r.width<2 || r.height<2 || count>=12)return;
-      rects.set([r.x,r.y,r.width,r.height],count*4);
-      count++;
+    NAMES.forEach((name,index)=>{
+      const element=document.querySelector('[data-surface="'+name+'"]');
+      if(!element)return;
+      if(element.classList?.contains("tile"))return;
+      if(getComputedStyle(element).display==="none")return;
+      const r=element.getBoundingClientRect();
+      if(r.width<2||r.height<2)return;
+      rects.set([r.x,r.y,r.width,r.height],index*4);
     });
-    gl.uniform1i(uniform.uRectCount,count);
+    gl.uniform1i(uniform.uRectCount,NAMES.length);
     const surfaces={Play:"hero",Mods:"mods",Packs:"packs",Shaders:"shaders",
       Files:"files",Skins:"skins",Settings:"settings"};
     const selectedSurface=surfaces[selectedPage]||"hero";
