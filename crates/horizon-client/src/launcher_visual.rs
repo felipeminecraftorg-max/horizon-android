@@ -311,27 +311,20 @@ fn scene(ui: &mut Ui<'_>, r: [f32; 4], corner: f32, sunset: bool) {
     band(y + corner, (h - 2. * corner).max(0.), 0.);
 }
 
-// A dedicated XMB-inspired backdrop for Old School. The existing Graphite
-// wallpaper is intentionally NOT modified: Dark Aero still relies on it.
-// Pixels are generated once and uploaded to the native atlas; there is no
-// per-frame CPU redraw, animation texture upload or external console asset.
+// Original Horizon Jade atmosphere: a stationary graphite-to-jade ambient field.
+// There are no XMB ribbons, animated CPU textures, or console-owned assets.
+// Cached exactly once for every native session.
 fn console_paper_pixel(u: f32, v: f32) -> [u8; 4] {
-    let lateral = (u - 0.48).abs();
-    let soft_light = (-((u - 0.68) / 0.46).powi(2)
-        - ((v - 0.58) / 0.55).powi(2)).exp() * 10.0;
-    let wave_a = 0.68 + 0.11 * (u * 4.15 + 0.28).sin() + 0.06 * (u - 0.5);
-    let wave_b = 0.81 + 0.075 * (u * 5.1 - 0.6).sin() - 0.025 * u;
-    // Wide diffuse ribbons provide atmosphere without bright, cutting
-    // diagonal lines through the control labels.
-    let broad_a = (-((v - wave_a) / 0.13).powi(2)).exp() * 18.0;
-    let broad_b = (-((v - wave_b) / 0.09).powi(2)).exp() * 11.0;
-    let satin_edge = (-((v - wave_a - 0.016) / 0.024).powi(2)).exp() * 6.0;
-    let fade = (1.0 - lateral * 0.30).clamp(0.68, 1.0);
-    let light = (soft_light + broad_a + broad_b + satin_edge) * fade;
+    let u = u.clamp(0.0, 1.0);
+    let v = v.clamp(0.0, 1.0);
+    let glow = (-((u - 0.26) / 0.55).powi(2)
+        - ((v - 0.35) / 0.75).powi(2)).exp();
+    let lower = (v * v).clamp(0.0, 1.0);
+    let grain = ((u * 131.2 + v * 73.4).sin() * 0.5 + 0.5) * 0.7;
     [
-        (8.0 + light * 0.73).clamp(0.0, 255.0) as u8,
-        (12.0 + light * 0.85).clamp(0.0, 255.0) as u8,
-        (22.0 + light * 1.05).clamp(0.0, 255.0) as u8,
+        (19.0 + glow * 3.0 - lower * 3.0 + grain) as u8,
+        (24.0 + glow * 13.0 - lower * 5.0 + grain) as u8,
+        (21.0 + glow * 6.0 - lower * 4.0 + grain) as u8,
         255,
     ]
 }
@@ -340,8 +333,8 @@ thread_local! {
     static CONSOLE_PAPER: RefCell<Option<Vec<u8>>> = const { RefCell::new(None) };
 }
 
-/// Draw the Old School console's private, low-glare background.
-/// Keep Liquid Glass and user-selected alternate wallpapers untouched.
+/// Draw the cached Jade background. Wallpaper generation does not touch
+/// Liquid Glass or the Dark Aero / Graphite asset family.
 pub fn console_background(ui: &mut Ui<'_>, r: [f32; 4]) {
     CONSOLE_PAPER.with(|paper| {
         let mut paper = paper.borrow_mut();
@@ -358,7 +351,7 @@ pub fn console_background(ui: &mut Ui<'_>, r: [f32; 4]) {
             pixels
         });
         if let Some(t) = super::with_cache(ui.atlas, |cache| {
-            cache.image(ui.atlas, "launcher-wallpaper:oldschool-console-v2",
+            cache.image(ui.atlas, "launcher-wallpaper:horizon-jade-v1",
                 TEX_W, TEX_H, pixels)
         }) {
             let [x, y, w, h] = r;
@@ -367,7 +360,7 @@ pub fn console_background(ui: &mut Ui<'_>, r: [f32; 4]) {
                 t.u0, t.v0, t.u1, t.v1, u32::MAX,
             );
         } else {
-            ui.fill(r[0], r[1], r[2], r[3], color::hex(0x080C16, 255));
+            ui.fill(r[0], r[1], r[2], r[3], color::hex(0x141816, 255));
         }
     });
 }
@@ -940,8 +933,8 @@ impl Layout {
 }
 
 
-/// Late-2000s console interface: no sidebar, no oversized rounded capsules.
-/// Tabs form a real horizontal navigation row; home supplies a tile dashboard.
+/// Original Horizon Jade navigation: one clean row of category tabs, not
+/// the horizontal icon-over-label XMB or a reproduction of Microsoft UI.
 #[allow(clippy::too_many_arguments)]
 fn shell_console(
     ui: &mut Ui<'_>,
@@ -956,55 +949,54 @@ fn shell_console(
     let th = active_theme();
     let (w, h) = (ui.w, ui.h);
     let layout = Layout::new(w, h);
-    ui.horizon_logo(24., 15., 30.);
-    ui.text(Face::ConsoleDisplay, 20., 62., 12., th.text_primary, "Horizon");
-    ui.text(Face::Regular, 9.5, 62., 38., th.text_muted, version);
 
-    let aw = (w * 0.22).clamp(138., 196.);
-    let account_r = [w - aw - 66., 13., aw, 39.];
-    ui.rounded(account_r[0], account_r[1], aw, 39., 9., color::hex(0xECF3FF, 27));
-    ui.stroke_rounded(account_r[0], account_r[1], aw, 39., 9., 0.8, color::hex(0xFFFFFF, 53));
-    ui.avatar_head_2d(account_r[0] + 6., 19., 27., account);
+    // The account and quick-settings actions remain separate large hitboxes.
+    ui.rounded(18., 10., w - 36., 54., 12., th.header_bg);
+    ui.stroke_rounded(18., 10., w - 36., 54., 12., 0.8, th.border);
+    ui.horizon_logo(30., 22., 25.);
+    ui.text(Face::ConsoleDisplay, 20., 64., 15., th.text_primary, "Horizon");
+    ui.text(Face::Regular, 10., 65., 40., th.text_muted, version);
+
+    let aw = (w * 0.22).clamp(138., 208.);
+    let account_r = [w - aw - 67., 17., aw, 42.];
+    ui.rounded(account_r[0], account_r[1], aw, 42., 10., th.surface_bright);
+    ui.avatar_head_2d(account_r[0] + 7., 22., 27., account);
     if signed_in {
-        ui.rounded(account_r[0] + 29., 40., 5., 5., 2.5, th.success);
+        ui.rounded(account_r[0] + 29., 43., 6., 6., 3., th.success);
     }
-    let name = ui.fit_text(Face::Medium, 12., account, aw - 51.);
-    ui.text(Face::Medium, 12., account_r[0] + 42., 24., th.text_primary, &name);
+    let name = ui.fit_text(Face::Medium, 12., account, aw - 50.);
+    ui.text(Face::Medium, 12., account_r[0] + 42., 27., th.text_primary, &name);
     target(account_r, ShellAction::Account);
-    let settings = [w - 53., 13., 38., 39.];
-    ui.icon(Icon::Gear, settings[0] + 10., settings[1] + 9., 19., th.text_primary);
-    target(settings, ShellAction::Appearance);
-    ui.fill(24., 117., w - 48., 1., color::hex(0xD4D8EB, 72));
 
-    // XMB-inspired focus is an understated channel highlight, not a
-    // second chrome push button behind every selected category.
-    // Its spring follows visual focus only; hitboxes never move.
+    let settings = [w - 58., 17., 42., 42.];
+    ui.rounded(settings[0], settings[1], settings[2], settings[3], 10., th.surface_bright);
+    ui.icon(Icon::Gear, settings[0] + 11., settings[1] + 11., 20., th.text_primary);
+    target(settings, ShellAction::Appearance);
+
+    // The selected tab is an inset block with a jade baseline. Only the
+    // indicator animates: targets are stationary through the transition.
+    ui.rounded(24., 72., w - 48., 46., 10., th.surface);
     if !items.is_empty() {
         let step = (w - 48.) / items.len() as f32;
-        let fx = focus_x.clamp(24., w - 24. - step);
-        ui.rounded(fx + 8., 77., (step - 16.).max(25.), 33., 7.,
-            color::hex(0xAFC3D8, 22));
-        ui.fill(fx + step * 0.24, 115., step * 0.52, 1.5,
-            color::hex(0xD7E9FF, 226));
+        let fx = focus_x.clamp(24., (w - 24. - step).max(24.));
+        let focus_rect = [fx + 3., 76., (step - 6.).max(20.), 38.];
+        ui.rounded(focus_rect[0], focus_rect[1], focus_rect[2], focus_rect[3],
+            8., th.surface_selected);
+        // The small focused console tab receives actual per-fragment GGX
+        // shading from the native WGSL material, not a pre-baked highlight.
+        // Liquid Glass never enters this path; graphics effects can be disabled.
+        if th.jade_gpu_fx && !th.is_light {
+            ui.backdrop_lens(focus_rect, 8., color::hex(0x66C77A, 0), [0.0, 0.0]);
+        }
+        ui.rounded(fx + step * 0.20, 115., step * 0.60, 2.5, 1.25, th.accent);
     }
     for (i, (label, icon)) in items.iter().enumerate() {
         let tab = layout.nav_rect(w, h, i, items.len());
         let chosen = i == selected;
-        let foreground = if chosen { th.text_primary } else { th.text_muted };
-        // XMB-like two-level channel: small original outline glyph above
-        // a restrained label. Every icon routes through the Old School set
-        // while hit-testing keeps the existing 44dp control rectangle.
-        ui.icon(*icon, tab[0] + (tab[2] - 17.) * 0.5,
-            tab[1] + 2., 17., foreground);
-        let fitted = ui.fit_text(Face::ConsoleMedium, 10.5, label, tab[2] - 12.);
-        let tw = ui.measure(Face::ConsoleMedium, 10.5, &fitted);
-        ui.text(
-            Face::ConsoleMedium, 10.5,
-            tab[0] + (tab[2] - tw) * 0.5,
-            tab[1] + 23.,
-            foreground,
-            &fitted,
-        );
+        let ink = if chosen { th.text_primary } else { th.text_muted };
+        ui.icon(*icon, tab[0] + 10., tab[1] + 13., 18., ink);
+        let fitted = ui.fit_text(Face::ConsoleMedium, 11.5, label, (tab[2] - 39.).max(12.));
+        ui.text(Face::ConsoleMedium, 11.5, tab[0] + 33., tab[1] + 14., ink, &fitted);
         target(tab, ShellAction::Page(i));
     }
     layout
@@ -1182,12 +1174,12 @@ fn console_tile_tone(accent: u32) -> u32 {
         (((accent >> shift & 0xFF) as f32 * 0.29 + base * 0.71).round()
             .clamp(0., 255.)) as u32
     };
-    (shade(16, 21.) << 16) | (shade(8, 27.) << 8) | shade(0, 40.)
+    (shade(16, 21.) << 16) | (shade(8, 31.) << 8) | shade(0, 24.)
 }
 
-/// The Old School is a console dashboard, not a tinted copy of Liquid Glass.
-/// One strong game hero and a deliberately asymmetric, fixed-hitbox 3-row mosaic
-/// produce hierarchy without sacrificing any of the original eight actions.
+/// Horizon Jade Home: a game-first NXE-inspired hero and an intentionally
+/// asymmetric Metro-inspired utility mosaic. No Xbox/XMB art or interactions.
+/// All eight original actions retain stable, non-overlapping hitboxes.
 fn home_old_school(
     ui: &mut Ui<'_>,
     rect: [f32; 4],
@@ -1196,126 +1188,112 @@ fn home_old_school(
 ) {
     let [_, _, w, h] = rect;
     if w <= 0. || h <= 0. { return; }
+    let th = active_theme();
     let layout = ConsoleDashboardLayout::new(rect);
     let [hx, hy, hw, hh] = layout.hero;
+    let hero_bg = if th.is_light { 0xFCFDFB } else { 0x17241D };
+    let soft = if th.is_light { 0x5C645D } else { 0xB8C9BE };
+    let control_bg = if th.is_light { 0xE8ECE7 } else { 0x29362D };
 
-    // Quiet editorial hero: a single opaque/satin layer prevents wallpaper
-    // ribbons and previously drawn labels from passing through body text.
-    ui.rounded(hx, hy, hw, hh, 16., color::hex(0x111A2A, 230));
-    ui.stroke_rounded(hx, hy, hw, hh, 16., 0.8, color::hex(0xC8D4E7, 65));
-    ui.fill(hx + 21., hy + 15., (hw - 42.).max(0.), 1.,
-        color::hex(0xBBCDE4, 43));
-
-    ui.text(Face::Medium, 10., hx + 22., hy + 20.,
-        color::hex(0xA6B7CB, 205), "GAME LIBRARY / 01");
-    let heading_size = if hw < 390. { 27. } else { 32. };
+    // One quiet primary card. Layout and color, not faux depth and stacking,
+    // communicate the selected game. Its surface stays solid over the backdrop.
+    ui.rounded(hx, hy, hw, hh, 17., color::hex(hero_bg, 255));
+    ui.stroke_rounded(hx, hy, hw, hh, 17., 1.0, th.border);
+    ui.rounded(hx + 1., hy + 18., 3., (hh - 36.).max(1.), 1.5, th.accent);
+    ui.text(Face::Medium, 10.5, hx + 22., hy + 17.,
+        color::hex(soft, 255), "READY TO PLAY");
+    let heading_size = if hw < 365. { 27. } else { 33. };
     let heading = ui.fit_text(Face::ConsoleDisplay, heading_size, "MINECRAFT", hw - 43.);
-    ui.text(Face::ConsoleDisplay, heading_size, hx + 22., hy + 43.,
-        color::hex(0xF2F5FC, 255), &heading);
-
-    let ready = if view.installed { "Ready to play" } else { "Installation required" };
-    if hh < 192. {
-        // Portrait and short landscape: fit the complete state on one line,
-        // keeping a safe gap above Play and Profile.
-        let status = format!("26.3  /  {ready}");
-        let status = ui.fit_text(Face::Medium, 12., &status, hw - 44.);
-        ui.text(Face::Medium, 12., hx + 23., hy + 88.,
-            color::hex(0xC3D1E0, 237), &status);
+    ui.text(Face::ConsoleDisplay, heading_size, hx + 22., hy + 41.,
+        th.text_primary, &heading);
+    let ready = if view.installed { "Ready to launch" } else { "Install needed" };
+    if hh < 225. {
+        let status = format!("JAVA 26.3  /  {ready}");
+        let status = ui.fit_text(Face::Medium, 11.5, &status, hw - 47.);
+        ui.text(Face::Medium, 11.5, hx + 23., hy + 88., th.text_muted, &status);
     } else {
-        ui.text(Face::Medium, 15., hx + 23., hy + 89.,
-            color::hex(0xDAE3EE, 245), "JAVA EDITION 26.3");
-        ui.fill(hx + 23., hy + 117., 5., 5.,
-            color::hex(if view.installed { 0x92D2AB } else { 0xD9AA78 }, 238));
-        ui.text(Face::Regular, 12., hx + 38., hy + 111.,
-            color::hex(0xB8C7D7, 231), ready);
-        if hh > 265. {
-            let renderer = ui.fit_text(Face::Regular, 10., view.renderer, hw - 50.);
-            ui.text(Face::Regular, 10., hx + 23., hy + 149.,
-                color::hex(0x91A2B8, 183), &renderer);
+        ui.text(Face::Medium, 14., hx + 23., hy + 95.,
+            th.text_primary, "JAVA EDITION 26.3");
+        ui.rounded(hx + 23., hy + 124., 6., 6., 3.,
+            if view.installed { th.success } else { color::hex(0xD7A65E, 255) });
+        ui.text(Face::Regular, 12., hx + 37., hy + 119.,
+            th.text_muted, ready);
+        if hh > 262. {
+            let renderer = ui.fit_text(Face::Regular, 11., view.renderer, hw - 50.);
+            ui.text(Face::Regular, 11., hx + 23., hy + 151., th.text_muted, &renderer);
         }
     }
 
-    // Fixed footer dock. The primary action is never covered by a floating
-    // profile chip; both are sizeable, independent and always clickable.
-    let play = [hx + 14., hy + hh - 62., hw - 155., 48.];
-    let profile = [hx + hw - 124., hy + hh - 62., 110., 48.];
-    ui.fill(hx + 14., play[1] - 10., (hw - 28.).max(0.), 1.,
-        color::hex(0xA8B8CD, 42));
-
+    // Main action and profile chooser use separate large touch regions.
+    let play = [hx + 14., hy + hh - 62., hw - 157., 48.];
+    let profile = [hx + hw - 125., hy + hh - 62., 111., 48.];
     ui.rounded(play[0], play[1], play[2], play[3], 10.,
-        color::hex(0x426853, 242));
-    ui.fill(play[0] + 11., play[1] + 3., (play[2] - 22.).max(0.), 1.,
-        color::hex(0xC8F5D8, 100));
-    ui.icon(Icon::Play, play[0] + 13., play[1] + 12., 24.,
-        color::hex(0xF5FFF9, 255));
-    let label = if view.launching { "Starting..." } else if view.installed {
+        color::hex(0x176B35, 255));
+    ui.icon(Icon::Play, play[0] + 11., play[1] + 12., 24.,
+        color::hex(0xFFFFFF, 255));
+    let play_label = if view.launching { "Starting..." } else if view.installed {
         "Play Minecraft"
     } else {
         "Install Minecraft"
     };
-    let label = ui.fit_text(Face::Medium, if hw < 370. { 14. } else { 17. },
-        label, (play[2] - 50.).max(0.));
-    ui.text(Face::Medium, if hw < 370. { 14. } else { 17. },
-        play[0] + 44., play[1] + 14.,
-        color::hex(0xF6FFF8, 255), &label);
+    let size = if hw < 365. { 13.5 } else { 16. };
+    let label = ui.fit_text(Face::Medium, size, play_label, (play[2] - 46.).max(12.));
+    ui.text(Face::Medium, size, play[0] + 42., play[1] + 15.,
+        color::hex(0xFFFFFF, 255), &label);
     if !view.launching { target(play, HomeAction::Play); }
 
     ui.rounded(profile[0], profile[1], profile[2], profile[3], 10.,
-        color::hex(0x263248, 240));
+        color::hex(control_bg, 255));
+    ui.stroke_rounded(profile[0], profile[1], profile[2], profile[3], 10., 0.7, th.border);
     let profile_name = ui.fit_text(Face::Medium, 11.,
         &format!("Profile {}", view.profile + 1), profile[2] - 27.);
-    ui.text(Face::Medium, 11., profile[0] + 11., profile[1] + 16.,
-        color::hex(0xE4EBF6, 242), &profile_name);
+    ui.text(Face::Medium, 11., profile[0] + 10., profile[1] + 16.,
+        th.text_primary, &profile_name);
     ui.icon(Icon::ChevronDown, profile[0] + profile[2] - 19.,
-        profile[1] + 16., 12., color::hex(0xBBC9DC, 238));
+        profile[1] + 17., 12., th.text_muted);
     target(profile, HomeAction::Profile);
 
-    // Xbox-like varied tile spans without Xbox artwork or branding.
-    // Wide tiles read horizontally; compact tiles use icon-over-label.
-    // All six existing destinations retain exactly the same actions.
+    // Muted category tints (not an all-green dashboard). Every card routes
+    // to its existing page; icon/label never create their own competing hits.
     let shortcuts = [
-        ("Mods", Icon::Mods, HomeAction::Mods, 0x755A83_u32, "EXTENSIONS"),
-        ("Packs", Icon::Packs, HomeAction::Packs, 0x496D91_u32, "ASSETS"),
-        ("Shaders", Icon::Shaders, HomeAction::Shaders, 0x907451_u32, "VISUALS"),
-        ("My files", Icon::Folder, HomeAction::Files, 0x477F8E_u32, "STORAGE"),
-        ("Skins", Icon::Person, HomeAction::Skins, 0x4D8570_u32, "IDENTITY"),
-        ("Settings", Icon::Gear, HomeAction::Settings, 0x626A83_u32, "SYSTEM"),
+        ("Mods", Icon::Mods, HomeAction::Mods, 0x4E886B_u32, "EXTENSIONS"),
+        ("Packs", Icon::Packs, HomeAction::Packs, 0x537383_u32, "ASSETS"),
+        ("Shaders", Icon::Shaders, HomeAction::Shaders, 0x8D7656_u32, "VISUALS"),
+        ("My files", Icon::Folder, HomeAction::Files, 0x4A807B_u32, "STORAGE"),
+        ("Skins", Icon::Person, HomeAction::Skins, 0x5A8273_u32, "IDENTITY"),
+        ("Settings", Icon::Gear, HomeAction::Settings, 0x757A73_u32, "SYSTEM"),
     ];
     for (i, (name, icon, action, tint, descriptor)) in shortcuts.into_iter().enumerate() {
         let card = layout.shortcuts[i];
         let [cx, cy, cw, ch] = card;
         if cw <= 1. || ch <= 1. { continue; }
-        // One satin colored surface. No nested lens, thick bevel, duplicated
-        // border, or bright reflection competing with labels and touch targets.
-        ui.rounded(cx, cy, cw, ch, 9., color::hex(console_tile_tone(tint), 243));
-        ui.stroke_rounded(cx, cy, cw, ch, 9., 0.7,
-            color::hex(0xCBD5E3, 34));
-        // A slim identity rail retains each category's muted tint.
-        ui.fill(cx + 3., cy + 11., 2., (ch - 22.).max(0.),
-            color::hex(tint, 158));
-        ui.fill(cx + 12., cy + 3., (cw - 24.).max(0.), 1.,
-            color::hex(0xD4DDEB, 35));
-
-        let wide = cw > ch * 1.75;
+        let tile_bg = if th.is_light { 0xE8ECE7 } else { console_tile_tone(tint) };
+        let tile_text = if th.is_light { th.text_primary } else { color::hex(0xF4F7F3, 255) };
+        let tile_muted = if th.is_light { th.text_muted } else { color::hex(0xC1CEC4, 255) };
+        ui.rounded(cx, cy, cw, ch, 10., color::hex(tile_bg, 255));
+        // Hovered tiles use the live GPU material. This is an ordered,
+        // clipped backdrop pass; PNG pictograms and labels draw afterwards.
+        let hovered = ui.cursor.0 >= cx && ui.cursor.0 < cx + cw
+            && ui.cursor.1 >= cy && ui.cursor.1 < cy + ch;
+        if hovered && th.jade_gpu_fx && !th.is_light {
+            ui.backdrop_lens(card, 10., color::hex(0x66C77A, 0), [0.0, 0.0]);
+        }
+        ui.stroke_rounded(cx, cy, cw, ch, 10., 0.8, th.border);
+        ui.rounded(cx + 5., cy + 10., 3., (ch - 20.).max(1.), 1.5,
+            color::hex(tint, 255));
+        let wide = cw > ch * 1.70;
         if wide {
-            let caption = ui.fit_text(Face::Medium, 9., descriptor, (cw - 68.).max(30.));
-            ui.text(Face::Medium, 9., cx + 15., cy + 12.,
-                color::hex(0xBCC8D8, 206), &caption);
-            let fitted = ui.fit_text(Face::SemiBold, 17., name, (cw - 71.).max(30.));
-            ui.text(Face::SemiBold, 17., cx + 15., cy + ch - 34.,
-                color::hex(0xF2F6FD, 251), &fitted);
-            ui.icon(icon, cx + cw - 48., cy + (ch - 30.) * 0.5,
-                30., color::hex(0xEDF2FC, 241));
+            let caption = ui.fit_text(Face::Medium, 9.5, descriptor, (cw - 69.).max(18.));
+            ui.text(Face::Medium, 9.5, cx + 17., cy + 9., tile_muted, &caption);
+            let fitted = ui.fit_text(Face::SemiBold, 16., name, (cw - 72.).max(18.));
+            ui.text(Face::SemiBold, 16., cx + 17., cy + ch - 31., tile_text, &fitted);
+            ui.icon(icon, cx + cw - 46., cy + (ch - 28.) * 0.5, 28., tile_text);
         } else {
-            let icon_size = (ch * 0.35).clamp(18., 28.);
-            ui.icon(icon, cx + (cw - icon_size) * 0.5,
-                cy + (ch * 0.15), icon_size,
-                color::hex(0xF2F6FD, 245));
-            let fitted = ui.fit_text(Face::Medium, if cw < 98. { 11. } else { 13. },
-                name, (cw - 10.).max(24.));
-            ui.centered_fit(Face::Medium, if cw < 98. { 11. } else { 13. },
-                [cx + 5., cy + ch - 23., cw - 10., 17.],
-                color::hex(0xF2F5FB, 253), &fitted);
+            let icon_size = (ch * 0.35).clamp(18., 26.);
+            ui.icon(icon, cx + (cw - icon_size) * 0.5, cy + 8., icon_size, tile_text);
+            ui.centered_fit(Face::Medium, if cw < 95. { 10.5 } else { 12.5 },
+                [cx + 5., cy + ch - 24., cw - 10., 19.],
+                tile_text, name);
         }
         target(card, action);
     }
@@ -2057,8 +2035,9 @@ mod tests {
         let mut cfg = LauncherThemeConfig::default();
         cfg.apply_preset(ThemePreset::OldSchool);
         assert_eq!(cfg.resolve().experience, ExperiencePreset::OldSchool);
-        assert_eq!(cfg.resolve().material, Material::Aero);
-        assert_eq!(cfg.resolve().wallpaper, Wallpaper::Graphite);
+        assert_eq!(cfg.resolve().material, Material::Opaque);
+        assert_eq!(cfg.resolve().wallpaper, Wallpaper::None);
+        assert!(cfg.resolve().jade_gpu_fx);
         set_active_for_test(&cfg);
         for (w, h) in [(340., 640.), (900., 480.)] {
             let layout = Layout::new(w, h);
