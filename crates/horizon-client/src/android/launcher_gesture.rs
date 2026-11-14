@@ -1,4 +1,5 @@
 //! Track total drag distance separately from per-event scroll deltas.
+use std::time::{Duration, Instant};
 /// One pointer owns a gesture. A release can activate only the same target
 /// that received its press; a second finger cannot replace or finish it.
 pub(super) struct TapGate<T> {
@@ -70,6 +71,7 @@ pub(super) fn console_nav_zone(point: [f32; 2], viewport: [f32; 2]) -> bool {
 pub(super) struct Drag {
     origin: [f64; 2],
     previous_y: f64,
+    pressed_at: Instant,
     pub(super) moved: bool,
 }
 
@@ -78,12 +80,22 @@ impl Drag {
         Self {
             origin: [x, y],
             previous_y: y,
+            pressed_at: Instant::now(),
             moved: false,
         }
     }
 
     pub(super) fn origin_y(&self) -> f64 {
         self.origin[1]
+    }
+
+    /// A long press on an untouched category strip opens the Horizon quick
+    /// panel; actual activation is dispatched only on the owning finger's
+    /// release, avoiding timers and accidental duplicate button presses.
+    pub(super) fn console_long_press(&self, density: f64, viewport: [f32; 2]) -> bool {
+        !self.moved
+            && self.originated_in_console_nav(density, viewport)
+            && self.pressed_at.elapsed() >= Duration::from_millis(540)
     }
 
     pub(super) fn originated_in_console_nav(
@@ -209,6 +221,18 @@ mod tests {
         assert_eq!(vertical.release_console_swipe(185., 155., 1., [900., 480.]), None);
         let short = Drag::new(240., 88.);
         assert_eq!(short.release_console_swipe(198., 88., 1., [900., 480.]), None);
+    }
+
+    #[test]
+    fn console_long_press_requires_nav_origin_and_stationary_pointer() {
+        let mut hold = Drag::new(200., 91.);
+        hold.pressed_at -= Duration::from_millis(580);
+        assert!(hold.console_long_press(1., [900., 480.]));
+        hold.update(260., 91., 1.);
+        assert!(!hold.console_long_press(1., [900., 480.]));
+        let mut content = Drag::new(200., 245.);
+        content.pressed_at -= Duration::from_millis(580);
+        assert!(!content.console_long_press(1., [900., 480.]));
     }
 
     #[test]
