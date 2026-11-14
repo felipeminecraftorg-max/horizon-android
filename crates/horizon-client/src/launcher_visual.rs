@@ -311,27 +311,20 @@ fn scene(ui: &mut Ui<'_>, r: [f32; 4], corner: f32, sunset: bool) {
     band(y + corner, (h - 2. * corner).max(0.), 0.);
 }
 
-// A dedicated XMB-inspired backdrop for Old School. The existing Graphite
-// wallpaper is intentionally NOT modified: Dark Aero still relies on it.
-// Pixels are generated once and uploaded to the native atlas; there is no
-// per-frame CPU redraw, animation texture upload or external console asset.
+// Original Horizon Jade atmosphere: a stationary graphite-to-jade ambient field.
+// There are no XMB ribbons, animated CPU textures, or console-owned assets.
+// Cached exactly once for every native session.
 fn console_paper_pixel(u: f32, v: f32) -> [u8; 4] {
-    let lateral = (u - 0.48).abs();
-    let soft_light = (-((u - 0.68) / 0.46).powi(2)
-        - ((v - 0.58) / 0.55).powi(2)).exp() * 10.0;
-    let wave_a = 0.68 + 0.11 * (u * 4.15 + 0.28).sin() + 0.06 * (u - 0.5);
-    let wave_b = 0.81 + 0.075 * (u * 5.1 - 0.6).sin() - 0.025 * u;
-    // Wide diffuse ribbons provide atmosphere without bright, cutting
-    // diagonal lines through the control labels.
-    let broad_a = (-((v - wave_a) / 0.13).powi(2)).exp() * 18.0;
-    let broad_b = (-((v - wave_b) / 0.09).powi(2)).exp() * 11.0;
-    let satin_edge = (-((v - wave_a - 0.016) / 0.024).powi(2)).exp() * 6.0;
-    let fade = (1.0 - lateral * 0.30).clamp(0.68, 1.0);
-    let light = (soft_light + broad_a + broad_b + satin_edge) * fade;
+    let u = u.clamp(0.0, 1.0);
+    let v = v.clamp(0.0, 1.0);
+    let glow = (-((u - 0.26) / 0.55).powi(2)
+        - ((v - 0.35) / 0.75).powi(2)).exp();
+    let lower = (v * v).clamp(0.0, 1.0);
+    let grain = ((u * 131.2 + v * 73.4).sin() * 0.5 + 0.5) * 0.7;
     [
-        (8.0 + light * 0.73).clamp(0.0, 255.0) as u8,
-        (12.0 + light * 0.85).clamp(0.0, 255.0) as u8,
-        (22.0 + light * 1.05).clamp(0.0, 255.0) as u8,
+        (19.0 + glow * 3.0 - lower * 3.0 + grain) as u8,
+        (24.0 + glow * 13.0 - lower * 5.0 + grain) as u8,
+        (21.0 + glow * 6.0 - lower * 4.0 + grain) as u8,
         255,
     ]
 }
@@ -340,8 +333,8 @@ thread_local! {
     static CONSOLE_PAPER: RefCell<Option<Vec<u8>>> = const { RefCell::new(None) };
 }
 
-/// Draw the Old School console's private, low-glare background.
-/// Keep Liquid Glass and user-selected alternate wallpapers untouched.
+/// Draw the cached Jade background. Wallpaper generation does not touch
+/// Liquid Glass or the Dark Aero / Graphite asset family.
 pub fn console_background(ui: &mut Ui<'_>, r: [f32; 4]) {
     CONSOLE_PAPER.with(|paper| {
         let mut paper = paper.borrow_mut();
@@ -358,7 +351,7 @@ pub fn console_background(ui: &mut Ui<'_>, r: [f32; 4]) {
             pixels
         });
         if let Some(t) = super::with_cache(ui.atlas, |cache| {
-            cache.image(ui.atlas, "launcher-wallpaper:oldschool-console-v2",
+            cache.image(ui.atlas, "launcher-wallpaper:horizon-jade-v1",
                 TEX_W, TEX_H, pixels)
         }) {
             let [x, y, w, h] = r;
@@ -367,7 +360,7 @@ pub fn console_background(ui: &mut Ui<'_>, r: [f32; 4]) {
                 t.u0, t.v0, t.u1, t.v1, u32::MAX,
             );
         } else {
-            ui.fill(r[0], r[1], r[2], r[3], color::hex(0x080C16, 255));
+            ui.fill(r[0], r[1], r[2], r[3], color::hex(0x141816, 255));
         }
     });
 }
@@ -940,8 +933,8 @@ impl Layout {
 }
 
 
-/// Late-2000s console interface: no sidebar, no oversized rounded capsules.
-/// Tabs form a real horizontal navigation row; home supplies a tile dashboard.
+/// Original Horizon Jade navigation: one clean row of category tabs, not
+/// the horizontal icon-over-label XMB or a reproduction of Microsoft UI.
 #[allow(clippy::too_many_arguments)]
 fn shell_console(
     ui: &mut Ui<'_>,
@@ -956,55 +949,46 @@ fn shell_console(
     let th = active_theme();
     let (w, h) = (ui.w, ui.h);
     let layout = Layout::new(w, h);
-    ui.horizon_logo(24., 15., 30.);
-    ui.text(Face::ConsoleDisplay, 20., 62., 12., th.text_primary, "Horizon");
-    ui.text(Face::Regular, 9.5, 62., 38., th.text_muted, version);
 
-    let aw = (w * 0.22).clamp(138., 196.);
-    let account_r = [w - aw - 66., 13., aw, 39.];
-    ui.rounded(account_r[0], account_r[1], aw, 39., 9., color::hex(0xECF3FF, 27));
-    ui.stroke_rounded(account_r[0], account_r[1], aw, 39., 9., 0.8, color::hex(0xFFFFFF, 53));
-    ui.avatar_head_2d(account_r[0] + 6., 19., 27., account);
+    // The account and quick-settings actions remain separate large hitboxes.
+    ui.rounded(18., 10., w - 36., 54., 12., th.header_bg);
+    ui.stroke_rounded(18., 10., w - 36., 54., 12., 0.8, th.border);
+    ui.horizon_logo(30., 22., 25.);
+    ui.text(Face::ConsoleDisplay, 20., 64., 15., th.text_primary, "Horizon");
+    ui.text(Face::Regular, 10., 65., 40., th.text_muted, version);
+
+    let aw = (w * 0.22).clamp(138., 208.);
+    let account_r = [w - aw - 67., 17., aw, 42.];
+    ui.rounded(account_r[0], account_r[1], aw, 42., 10., th.surface_high);
+    ui.avatar_head_2d(account_r[0] + 7., 22., 27., account);
     if signed_in {
-        ui.rounded(account_r[0] + 29., 40., 5., 5., 2.5, th.success);
+        ui.rounded(account_r[0] + 29., 43., 6., 6., 3., th.success);
     }
-    let name = ui.fit_text(Face::Medium, 12., account, aw - 51.);
-    ui.text(Face::Medium, 12., account_r[0] + 42., 24., th.text_primary, &name);
+    let name = ui.fit_text(Face::Medium, 12., account, aw - 50.);
+    ui.text(Face::Medium, 12., account_r[0] + 42., 27., th.text_primary, &name);
     target(account_r, ShellAction::Account);
-    let settings = [w - 53., 13., 38., 39.];
-    ui.icon(Icon::Gear, settings[0] + 10., settings[1] + 9., 19., th.text_primary);
-    target(settings, ShellAction::Appearance);
-    ui.fill(24., 117., w - 48., 1., color::hex(0xD4D8EB, 72));
 
-    // XMB-inspired focus is an understated channel highlight, not a
-    // second chrome push button behind every selected category.
-    // Its spring follows visual focus only; hitboxes never move.
+    let settings = [w - 58., 17., 42., 42.];
+    ui.rounded(settings[0], settings[1], settings[2], settings[3], 10., th.surface_high);
+    ui.icon(Icon::Gear, settings[0] + 11., settings[1] + 11., 20., th.text_primary);
+    target(settings, ShellAction::Appearance);
+
+    // The selected tab is an inset block with a jade baseline. Only the
+    // indicator animates: targets are stationary through the transition.
+    ui.rounded(24., 72., w - 48., 46., 10., th.surface);
     if !items.is_empty() {
         let step = (w - 48.) / items.len() as f32;
-        let fx = focus_x.clamp(24., w - 24. - step);
-        ui.rounded(fx + 8., 77., (step - 16.).max(25.), 33., 7.,
-            color::hex(0xAFC3D8, 22));
-        ui.fill(fx + step * 0.24, 115., step * 0.52, 1.5,
-            color::hex(0xD7E9FF, 226));
+        let fx = focus_x.clamp(24., (w - 24. - step).max(24.));
+        ui.rounded(fx + 3., 76., (step - 6.).max(20.), 38., 8., th.surface_selected);
+        ui.rounded(fx + step * 0.20, 115., step * 0.60, 2.5, 1.25, th.accent);
     }
     for (i, (label, icon)) in items.iter().enumerate() {
         let tab = layout.nav_rect(w, h, i, items.len());
         let chosen = i == selected;
-        let foreground = if chosen { th.text_primary } else { th.text_muted };
-        // XMB-like two-level channel: small original outline glyph above
-        // a restrained label. Every icon routes through the Old School set
-        // while hit-testing keeps the existing 44dp control rectangle.
-        ui.icon(*icon, tab[0] + (tab[2] - 17.) * 0.5,
-            tab[1] + 2., 17., foreground);
-        let fitted = ui.fit_text(Face::ConsoleMedium, 10.5, label, tab[2] - 12.);
-        let tw = ui.measure(Face::ConsoleMedium, 10.5, &fitted);
-        ui.text(
-            Face::ConsoleMedium, 10.5,
-            tab[0] + (tab[2] - tw) * 0.5,
-            tab[1] + 23.,
-            foreground,
-            &fitted,
-        );
+        let ink = if chosen { th.text_primary } else { th.text_muted };
+        ui.icon(*icon, tab[0] + 10., tab[1] + 13., 18., ink);
+        let fitted = ui.fit_text(Face::ConsoleMedium, 11.5, label, (tab[2] - 39.).max(12.));
+        ui.text(Face::ConsoleMedium, 11.5, tab[0] + 33., tab[1] + 14., ink, &fitted);
         target(tab, ShellAction::Page(i));
     }
     layout
