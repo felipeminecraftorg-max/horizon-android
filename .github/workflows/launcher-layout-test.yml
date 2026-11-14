@@ -9,6 +9,8 @@ on:
       - 'crates/horizon-client-render/src/hud/glass.rs'
       - 'crates/horizon-client-render/src/audio.rs'
       - 'crates/horizon-client/src/android/launcher_pages.rs'
+      - 'crates/horizon-client/src/android/launcher_gesture.rs'
+      - 'crates/horizon-client/src/android/launcher.rs'
       - 'crates/horizon-client/src/ui_theme.rs'
       - '.github/workflows/launcher-layout-test.yml'
   workflow_dispatch:
@@ -38,6 +40,7 @@ jobs:
           rustup show
           cargo test -p horizon-client --lib launcher_visual::tests -- --test-threads=1
           cargo test -p horizon-client --lib ui_theme::tests -- --test-threads=1
+          cargo test -p horizon-client --lib ui_theme::launcher_gesture_tests::tests -- --test-threads=1
           cargo test -p horizon-client --lib launcher_preset_pack::tests
           cargo test -p horizon-client-render --lib physical_glass_shader_validates_with_naga
           cargo check -p horizon-client-render --lib
