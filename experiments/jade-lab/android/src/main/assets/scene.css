@@ -81,8 +81,9 @@
   background:
     radial-gradient(ellipse at 19% 0%,rgba(255,255,255,.10),transparent 72%),
     linear-gradient(135deg,
-      color-mix(in srgb,var(--surface) 62%,transparent),
-      color-mix(in srgb,var(--bg) 76%,transparent))!important;
+      rgba(var(--accent-rgb),var(--scene-glass-opacity,.13)),
+      color-mix(in srgb,var(--surface) 61%,transparent) 57%,
+      color-mix(in srgb,var(--bg) 74%,transparent))!important;
   backdrop-filter:blur(var(--scene-glass-blur,9px)) saturate(1.14);
   -webkit-backdrop-filter:blur(var(--scene-glass-blur,9px)) saturate(1.14);
   transform-style:preserve-3d;
@@ -167,7 +168,7 @@
   margin-left:-46px;transform-style:preserve-3d;
   transform:rotateY(-17deg) rotateX(3deg) translateY(0);
   filter:drop-shadow(0 14px 10px rgba(0,0,0,.3));
-  animation:avatar-idle calc(5s / max(.35,var(--avatar-speed,1))) ease-in-out infinite}
+  animation:avatar-idle var(--avatar-idle-duration,5s) ease-in-out infinite}
 .avatar-head{position:absolute;left:25px;top:0;width:42px;height:44px;
   transform-style:preserve-3d;transform:translateZ(17px)}
 .avatar-head-front{position:absolute;inset:0;border-radius:6px 6px 9px 9px;
