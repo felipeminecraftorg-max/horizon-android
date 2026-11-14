@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#0b1110">
   <title>Horizon Jade Lab · Dark</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="palette.css">
 </head>
 <body>
   <canvas id="gpu" aria-label="Prévia de shaders Jade em tempo real"></canvas>
@@ -29,7 +30,7 @@
       <button class="channel" data-page="Skins"><span>♧</span><b>Skins</b></button>
     </nav>
     <div class="dashboard">
-      <article class="hero surface" data-surface="hero">
+      <article class="hero surface is-selected" data-surface="hero">
         <div class="hero-eyebrow"><span class="status-spark"></span><span id="hero-eyebrow">READY TO PLAY</span></div>
         <div class="hero-content"><h1 id="hero-title">MINECRAFT</h1><p id="hero-subtitle">JAVA EDITION 26.3</p>
           <p class="substatus" id="hero-status">● Install needed</p></div>
@@ -73,6 +74,7 @@
 
   <input id="import-file" type="file" accept=".json,.zip,application/json,application/zip" hidden>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="palettes.js"></script>
   <script src="renderer.js"></script>
   <script src="app.js"></script>
 </body>
