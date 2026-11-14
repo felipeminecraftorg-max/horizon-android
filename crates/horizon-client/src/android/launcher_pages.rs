@@ -1166,12 +1166,9 @@ impl Launcher {
         };
         let (w, h) = (ui.w, ui.h);
         let active_th = horizon_client::ui_theme::active_theme();
-        if active_th.experience == horizon_client::ui_theme::ExperiencePreset::OldSchool
-            && active_th.wallpaper == visual::Wallpaper::Graphite
-        {
-            // Only Old School's default Graphite dashboard gets the new muted
-            // console waves. Dark Aero, Liquid Glass and deliberately selected
-            // alternative wallpapers retain their original rendering.
+        if active_th.experience == horizon_client::ui_theme::ExperiencePreset::OldSchool {
+            // Horizon Jade has its own cached ambient surface and independent
+            // design tokens. Never route Liquid Glass / Dark Aero into this path.
             visual::console_background(&mut ui, [0., 0., w, h]);
         } else {
             ui.draw_theme_background(0.0, 0.0, w, h, &active_th);
