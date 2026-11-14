@@ -1066,8 +1066,18 @@ impl ApplicationHandler for Launcher {
         {
             window.request_redraw();
         }
+        // The console UI schedules animation frames at the requested panel
+        // refresh rate (60/90/120Hz), while idling at a low polling rate.
+        // Liquid Glass and the other presets keep their own existing cadence.
+        let jade = self.catalog.config.theme.preset
+            == horizon_client::ui_theme::ThemePreset::OldSchool;
+        let jade_refresh_hz = if self.catalog.config.device.display_hz == 0 {
+            60_u64
+        } else {
+            u64::from(self.catalog.config.device.display_hz).clamp(60, 120)
+        };
         let frame_ms = if animating {
-            16
+            if jade { (1000 / jade_refresh_hz).max(8) } else { 16 }
         } else if working {
             100
         } else {
