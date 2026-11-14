@@ -24,6 +24,11 @@ uniform vec4 uMotion;
 uniform vec4 uDetail;
 uniform int uFocusIndex;
 uniform int uSelectionStyle;
+// The backdrop uses independent uniforms to avoid changing the material ABI.
+uniform vec4 uBackdropShape;  // style, brightness, scale, curvature
+uniform vec4 uBackdropLayers; // count, width, softness, flow rate
+uniform vec4 uBackdropLight;  // halo, depth, centerX, centerY
+uniform vec4 uBackdropDetail; // texture, parallax, edge gleam, color contrast
 
 float hash12(vec2 p) {
   vec3 p3=fract(vec3(p.xyx)*0.1031);
@@ -53,28 +58,111 @@ float ggxG(float nv,float nl,float rough) {
 vec3 tonemap(vec3 c) {
   return clamp(pow(max(c,vec3(0.0)),vec3(0.91)),0.0,1.0);
 }
+
+// Ribbon signed distance. A single coherent, continuous curve is layered
+// rather than drawing a copyrighted console wallpaper or static PNG.
+float ribbonHeight(float x,float idx,float time,float scale,float bend) {
+  float p=x*scale;
+  return .53+(idx-1.5)*.144
+      + bend*(.11*sin(p*3.5-idx*.66+time*.19)
+              + .046*sin(p*6.4+idx*1.25-time*.11));
+}
+vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
+  float style=uBackdropShape.x;
+  float power=uBackdropShape.y;
+  float scale=uBackdropShape.z;
+  float bend=uBackdropShape.w;
+  float count=uBackdropLayers.x;
+  float width=uBackdropLayers.y;
+  float softness=uBackdropLayers.z;
+  float flow=time*uBackdropLayers.w;
+
+  vec2 center=uBackdropLight.zw+(mouse-vec2(.5)) *
+    (.034*uBackdropDetail.y);
+  float grad=radial(uv,center,vec2(.85,.67));
+  float opposite=radial(uv,center+vec2(.44,-.31),vec2(.8,.72));
+  float depth=uBackdropLight.y;
+  vec3 ink=uPalette[0].rgb;
+  vec3 col=mix(ink,uPalette[1].rgb,clamp(grad*depth*.55,0.0,.49));
+  col+=uPalette[3].rgb*opposite*depth*.016;
+  col+=uPalette[2].rgb*grad*depth*.038;
+
+  // Soft, spatially located ambient light; this is distinct from tile GGX.
+  float lightPool=radial(uv,center+vec2(-.16,.18),vec2(.69,.64));
+  col+=mix(uPalette[2].rgb,uPalette[3].rgb,.32)*
+        lightPool*uBackdropLight.x*power*.052;
+  col+=uPalette[4].rgb*
+        radial(uv,center+vec2(.58,-.31),vec2(.8,.62))*
+        power*uBackdropDetail.w*.014;
+
+  if(style<3.5){
+    // Four constant-bound layers are safe in WebGL2 ES; the loop is masked
+    // by a user-controlled integer uniform so low-power phones may use one.
+    for(int layer=0;layer<4;layer++){
+      if(float(layer)>=count)continue;
+      float i=float(layer);
+      vec2 pos=uv;
+      float t=flow*(.33+.11*i);
+      float y=ribbonHeight(pos.x,i,t,scale,bend);
+      if(style>1.5){
+        // Satin: diagonal soft bands with very restrained movement.
+        y=pos.x*(.26+.035*i)+.22+(i-1.5)*.12+
+          bend*.09*sin(pos.x*scale*3.4+t+i*.8);
+      }else if(style>0.5){
+        // Aurora: larger vertical atmospheric curtains, not hard streaks.
+        y=.40+(i-1.5)*.11+bend*.14*sin(pos.x*scale*2.1+t+i*.5);
+      }
+      float d=(pos.y-y);
+      float spread=max(.012,(.018+width*.071)*softness);
+      float envelope=exp(-pow(d/spread,2.0));
+      float illuminated=exp(-pow((d-spread*.53)/max(spread*.55,.01),2.0));
+      float under=exp(-pow((d+spread*.62)/max(spread*.89,.012),2.0));
+      float horizonFade=smoothstep(-.16,.13,pos.x)*
+                        (1.0-smoothstep(.86,1.12,pos.x));
+      // Light follows the band curvature, producing a pearl-like highlight.
+      float turn=.58+.42*sin(pos.x*scale*3.9+i*1.64-flow*.28);
+      vec3 spectral=layer==0?uPalette[3].rgb:
+                    layer==1?uPalette[2].rgb:
+                    layer==2?uPalette[4].rgb:uPalette[3].rgb;
+      float weight=(.78-.10*i)*power*horizonFade*uAtmos.y;
+      col+=spectral*envelope*weight*(.026+.025*turn);
+      col+=mix(spectral,vec3(.77,.84,.91),.21)*
+           illuminated*weight*uBackdropDetail.z*.018;
+      col-=ink*under*weight*.18;
+    }
+  }else if(style<4.5){
+    // Halo: concentric diffuse fields and a short off-axis cold reflection.
+    for(int i=0;i<3;i++){
+      float layer=float(i);
+      vec2 c=center+vec2(.16*layer-.14,-.12*layer+.10);
+      float rad=length((uv-c)*vec2(1.0,1.20));
+      float rim=exp(-pow((rad-(.25+.14*layer))/
+         max(.03,.05*softness),2.0));
+      vec3 spectral=i==0?uPalette[2].rgb:
+                     i==1?uPalette[3].rgb:uPalette[4].rgb;
+      col+=spectral*rim*power*uAtmos.y*.038;
+    }
+  }
+  // Mapped background texture is kept lower contrast than text-bearing tiles.
+  // The grain is stable across frames; no high-frequency flicker or shimmer.
+  float coarse=hash12(floor(p*.37));
+  float fine=hash12(floor(p*.91));
+  float grain=(coarse*.32+fine*.68-.50)*
+      (uAtmos.z+uBackdropDetail.x*.65)*.036;
+  col+=grain;
+  float vignette=length((uv-.5)*vec2(1.04,.95));
+  col*=1.0-smoothstep(.18,.79,vignette)*uAtmos.w*.56;
+  return max(col,vec3(0.0));
+}
 void main() {
   vec2 p=vec2(gl_FragCoord.x/uResolution.x,1.0-gl_FragCoord.y/uResolution.y)*uViewport;
   vec2 uv=p/max(uViewport,vec2(1.0));
-  vec3 bg=uPalette[0].rgb;
+  // Physical viewport coordinates remain independent from render scale.
+  // Reduced motion freezes time, while cursor-driven lighting remains alive.
   float tt=uTime*uMotion.x*(1.0-uReduced);
-  float fog=radial(uv,vec2(0.29+0.025*sin(tt*.12),0.61),vec2(.7,.8));
-  float leftGlow=radial(uv,vec2(.86,.39),vec2(.9,.65));
-  bg=mix(bg,uPalette[1].rgb,clamp(fog*uAtmos.x*.59,0.0,.54));
-  bg+=uPalette[2].rgb*fog*uAtmos.x*.058;
-  bg+=uPalette[3].rgb*leftGlow*uAtmos.x*.021;
-  // Broad layered energy ribbons, not random moving particles.
-  float wave=sin(uv.y*9.4+uv.x*5.2+tt*.29+sin(uv.x*6.0)*.52);
-  float wave2=sin(uv.y*14.0-uv.x*5.1-tt*.23);
-  bg+=uPalette[2].rgb*max(0.0,wave)*uAtmos.y*.012;
-  bg+=uPalette[3].rgb*max(0.0,wave2)*uAtmos.y*.008;
-  float nv=length((uv-vec2(.5)) * vec2(.95,1.05));
-  bg*=1.0-uAtmos.w*smoothstep(.24,.78,nv)*.51;
-  float n=hash12(floor(p*1.18+vec2(fract(tt*.07)*37.0)));
-  bg+=(n-.5)*uAtmos.z*.035;
-
-  vec3 result=bg;
-  vec2 cursor=(uPointer-.5*uViewport)/max(uViewport,vec2(1.0));
+  vec2 cursor=uPointer/max(uViewport,vec2(1.0));
+  vec3 result=renderBackdrop(uv,p,tt,cursor);
+  cursor-=vec2(.5);
   float angle=uLight.x*3.14159265/180.0;
   vec3 light=normalize(vec3(cos(angle)*.87+cursor.x*uMotion.z,
         sin(angle)*.87-cursor.y*uMotion.z,uLight.y+.26));
@@ -223,7 +311,8 @@ void main() {
       gl.useProgram(program);
       const keys = ["uResolution","uViewport","uPointer","uTime","uReduced","uRectCount",
         "uRects[0]","uPalette[0]","uAtmos","uLight","uMaterial","uSurface","uMotion","uDetail",
-        "uFocusIndex","uSelectionStyle"];
+        "uFocusIndex","uSelectionStyle","uBackdropShape",
+        "uBackdropLayers","uBackdropLight","uBackdropDetail"];
       keys.forEach(k => { uniform[k] = gl.getUniformLocation(program, k); });
       buffer = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -314,6 +403,23 @@ void main() {
     vec4("uSurface",[preset.depth,preset.ao,preset.edgeLight,preset.heroGlow]);
     vec4("uMotion",[preset.speed,preset.pulse,preset.parallax,preset.bloom]);
     vec4("uDetail",[preset.diffusion,preset.contrast,preset.saturation,0]);
+    const styles=["ribbons","aurora","satin","halo","minimal"];
+    vec4("uBackdropShape",[
+      Math.max(0,styles.indexOf(preset.backgroundStyle)),
+      preset.backgroundIntensity,preset.backgroundScale,preset.ribbonCurve
+    ]);
+    vec4("uBackdropLayers",[
+      preset.ribbonLayers,preset.ribbonWidth,preset.ribbonSoftness,
+      preset.backgroundFlow
+    ]);
+    vec4("uBackdropLight",[
+      preset.backgroundGlow,preset.gradientDepth,
+      preset.backgroundCenterX,preset.backgroundCenterY
+    ]);
+    vec4("uBackdropDetail",[
+      preset.backgroundGrain,preset.backgroundParallax,
+      preset.ribbonGleam,preset.backgroundContrast
+    ]);
     gl.drawArrays(gl.TRIANGLES,0,6);
   }
   function setPreset(p) {
