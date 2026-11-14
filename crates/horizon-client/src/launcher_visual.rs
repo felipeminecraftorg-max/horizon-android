@@ -1045,7 +1045,7 @@ fn shell_console(
         // shading from the native WGSL material, not a pre-baked highlight.
         // Liquid Glass never enters this path; graphics effects can be disabled.
         if th.jade_gpu_fx && !th.is_light {
-            ui.backdrop_lens(focus_rect, 8., color::hex(0x66C77A, 0), [0.0, 0.0]);
+            ui.backdrop_lens(focus_rect, 8., color::with_alpha(th.accent, 0.), [0.0, 0.0]);
         }
         ui.rounded(fx + step * 0.20, 115., step * 0.60, 2.5, 1.25, th.accent);
     }
@@ -1371,7 +1371,7 @@ fn home_old_school(
         let hovered = ui.cursor.0 >= cx && ui.cursor.0 < cx + cw
             && ui.cursor.1 >= cy && ui.cursor.1 < cy + ch;
         if hovered && th.jade_gpu_fx && !th.is_light {
-            ui.backdrop_lens(card, 10., color::hex(0x66C77A, 0), [0.0, 0.0]);
+            ui.backdrop_lens(card, 10., color::with_alpha(th.accent, 0.), [0.0, 0.0]);
         }
         ui.stroke_rounded(cx, cy, cw, ch, 10., 0.8, th.border);
         ui.rounded(cx + 5., cy + 10., 3., (ch - 20.).max(1.), 1.5,
@@ -1978,6 +1978,29 @@ mod tests {
         set_active_for_test(&theme);
         let other = Layout::new(360., 800.);
         assert!(!other.console);
+    }
+
+    #[test]
+    fn jade_custom_accents_are_visible_without_replacing_console_surfaces() {
+        let mut cfg = LauncherThemeConfig::default();
+        cfg.apply_preset(ThemePreset::OldSchool);
+        let normal = cfg.resolve();
+        cfg.custom_accent_hex = "#327DE8".into();
+        let custom = cfg.resolve();
+        assert_ne!(custom.accent, normal.accent);
+        assert_eq!(custom.bg_solid, normal.bg_solid);
+        assert_eq!(custom.surface, normal.surface);
+        assert_eq!(custom.material, Material::Opaque);
+        assert!(custom.jade_gpu_fx);
+
+        cfg.appearance = ThemeAppearance::Light;
+        let light = cfg.resolve();
+        assert!(light.is_light);
+        assert_ne!(light.accent, normal.accent);
+
+        cfg.apply_preset(ThemePreset::LiquidGlass);
+        assert!(!cfg.resolve().jade_gpu_fx);
+        assert_eq!(cfg.resolve().material, Material::Glass);
     }
 
     #[test]
