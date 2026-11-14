@@ -117,13 +117,45 @@
       backgroundCenterX:.46,backgroundCenterY:.31,backgroundParallax:.10
     }
   };
+  // Optical personality complements each palette's atmosphere. These are
+  // independent visual decisions, not simple color replacements.
+  const GLASS={
+    jade:{glassStyle:"frosted",glassQuality:"balanced",glassOpacity:.38,
+      glassBlur:.69,glassTransmission:.78,glassTint:.35,
+      glassScatter:.42,glassFresnel:.58,glassRim:.64,
+      glassGrain:.15,glassHighlight:.62,glassShadow:.52},
+    amethyst:{glassStyle:"tinted",glassQuality:"balanced",glassOpacity:.31,
+      glassBlur:.84,glassTransmission:.89,glassTint:.73,
+      glassScatter:.72,glassFresnel:.76,glassRim:.88,
+      glassGrain:.11,glassHighlight:.76,glassShadow:.48},
+    azure:{glassStyle:"frosted",glassQuality:"balanced",glassOpacity:.29,
+      glassBlur:.57,glassTransmission:.91,glassTint:.29,
+      glassScatter:.32,glassFresnel:.94,glassRim:.89,
+      glassGrain:.07,glassHighlight:.97,glassShadow:.40},
+    graphite:{glassStyle:"matte",glassQuality:"fast",glassOpacity:.68,
+      glassBlur:.37,glassTransmission:.31,glassTint:.40,
+      glassScatter:.21,glassFresnel:.45,glassRim:.39,
+      glassGrain:.29,glassHighlight:.40,glassShadow:.72},
+    obsidian:{glassStyle:"tinted",glassQuality:"balanced",glassOpacity:.51,
+      glassBlur:.62,glassTransmission:.65,glassTint:.37,
+      glassScatter:.17,glassFresnel:1.13,glassRim:1.01,
+      glassGrain:.11,glassHighlight:.81,glassShadow:.77},
+    cobalt:{glassStyle:"tinted",glassQuality:"balanced",glassOpacity:.32,
+      glassBlur:.80,glassTransmission:.86,glassTint:.62,
+      glassScatter:.51,glassFresnel:.85,glassRim:.94,
+      glassGrain:.12,glassHighlight:.78,glassShadow:.51},
+    smoke:{glassStyle:"matte",glassQuality:"fast",glassOpacity:.69,
+      glassBlur:.43,glassTransmission:.29,glassTint:.54,
+      glassScatter:.16,glassFresnel:.37,glassRim:.31,
+      glassGrain:.33,glassHighlight:.33,glassShadow:.69}
+  };
   const IDS=Object.freeze(Object.keys(PROFILES));
   const COLOR_FIELDS=Object.freeze(["bg","surface","accent","cool","warm"]);
   const merge=(base,id)=>{
     if(!Object.prototype.hasOwnProperty.call(PROFILES,id))return null;
     const p=PROFILES[id];
     return Object.assign({},base,p.colors,p.atmosphere,p.lighting,p.material,
-      BACKDROPS[id],{paletteId:id});
+      BACKDROPS[id],GLASS[id],{paletteId:id});
   };
   const luminance=hex=>{
     const rgb=[1,3,5].map(i=>parseInt(hex.substring(i,i+2),16)/255);
@@ -143,7 +175,8 @@
       atmosphere:Object.freeze({...p.atmosphere}),
       lighting:Object.freeze({...p.lighting}),
       material:Object.freeze({...p.material}),
-      backdrop:Object.freeze({...BACKDROPS[id]})
+      backdrop:Object.freeze({...BACKDROPS[id]}),
+      glass:Object.freeze({...GLASS[id]})
     })];
   }));
   window.JadePalettes=Object.freeze({
