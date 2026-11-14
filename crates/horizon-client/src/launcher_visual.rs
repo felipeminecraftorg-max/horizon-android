@@ -1993,7 +1993,7 @@ mod tests {
         assert_eq!(custom.material, Material::Opaque);
         assert!(custom.jade_gpu_fx);
 
-        cfg.appearance = ThemeAppearance::Light;
+        cfg.appearance = super::super::ThemeAppearance::Light;
         let light = cfg.resolve();
         assert!(light.is_light);
         assert_ne!(light.accent, normal.accent);
