@@ -959,7 +959,7 @@ fn shell_console(
 
     let aw = (w * 0.22).clamp(138., 208.);
     let account_r = [w - aw - 67., 17., aw, 42.];
-    ui.rounded(account_r[0], account_r[1], aw, 42., 10., th.surface_high);
+    ui.rounded(account_r[0], account_r[1], aw, 42., 10., th.surface_bright);
     ui.avatar_head_2d(account_r[0] + 7., 22., 27., account);
     if signed_in {
         ui.rounded(account_r[0] + 29., 43., 6., 6., 3., th.success);
@@ -969,7 +969,7 @@ fn shell_console(
     target(account_r, ShellAction::Account);
 
     let settings = [w - 58., 17., 42., 42.];
-    ui.rounded(settings[0], settings[1], settings[2], settings[3], 10., th.surface_high);
+    ui.rounded(settings[0], settings[1], settings[2], settings[3], 10., th.surface_bright);
     ui.icon(Icon::Gear, settings[0] + 11., settings[1] + 11., 20., th.text_primary);
     target(settings, ShellAction::Appearance);
 
