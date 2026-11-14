@@ -63,6 +63,8 @@ pub(super) struct Launcher {
     list_targets: Vec<([f32; 4], pages::Action)>,
     list_view: Option<[f32; 3]>,
     pending_focus: Option<pages::Action>,
+    /// Jade-only touch/controller quick access sheet. Not an Xbox asset or UI.
+    quick_panel_open: bool,
     drag: Option<gesture::Drag>,
     chooser: Option<chooser::Chooser>,
     exit_confirmation: bool,
@@ -246,6 +248,7 @@ impl Launcher {
             list_targets: vec![],
             list_view: None,
             pending_focus: None,
+            quick_panel_open: false,
             drag: None,
             chooser: None,
             exit_confirmation: false,
@@ -385,6 +388,14 @@ impl Launcher {
     }
 
     fn request_back(&mut self) {
+        if self.quick_panel_open {
+            self.quick_panel_open = false;
+            self.focus = None;
+            self.pending_focus = None;
+            self.targets.clear();
+            self.jade_navigation_cue("back");
+            return;
+        }
         if self.catalog.page == Page::Settings
             && self.catalog.settings_category == crate::catalog::SettingsCategory::Theme
             && self.theme_advanced
@@ -442,6 +453,14 @@ impl Launcher {
                 };
             self.catalog.scroll = 0.0;
             self.anim.trigger_page_transition();
+        } else if self.catalog.editing.is_none()
+            && self.catalog.page != Page::Play
+            && horizon_client::ui_theme::active_theme().experience
+                == horizon_client::ui_theme::ExperiencePreset::OldSchool
+        {
+            // Controller B, Android Back and keyboard Escape share one
+            // predictable console journey: subview -> Home -> exit prompt.
+            self.select_launcher_page(Page::Play);
         } else if self.catalog.editing.take().is_none() {
             self.exit_confirmation = true;
         }
@@ -1047,8 +1066,18 @@ impl ApplicationHandler for Launcher {
         {
             window.request_redraw();
         }
+        // The console UI schedules animation frames at the requested panel
+        // refresh rate (60/90/120Hz), while idling at a low polling rate.
+        // Liquid Glass and the other presets keep their own existing cadence.
+        let jade = self.catalog.config.theme.preset
+            == horizon_client::ui_theme::ThemePreset::OldSchool;
+        let jade_refresh_hz = if self.catalog.config.device.display_hz == 0 {
+            60_u64
+        } else {
+            u64::from(self.catalog.config.device.display_hz).clamp(60, 120)
+        };
         let frame_ms = if animating {
-            16
+            if jade { (1000 / jade_refresh_hz).max(8) } else { 16 }
         } else if working {
             100
         } else {
@@ -1066,6 +1095,68 @@ impl ApplicationHandler for Launcher {
 }
 
 impl Launcher {
+    /// Console gestures and shoulder shortcuts are disabled over any modal,
+    /// keyboard edit, skin editor or OS-level overlay. This prevents navigation
+    /// from stealing a save, sign-in or file selection interaction.
+    pub(super) fn jade_nav_ready(&self) -> bool {
+        horizon_client::ui_theme::active_theme().experience
+            == horizon_client::ui_theme::ExperiencePreset::OldSchool
+            && self.anim.intro_done
+            && !self.quick_panel_open
+            && self.catalog.editing.is_none()
+            && self.control_editor.is_none()
+            && self.catalog.project_modal.is_none()
+            && self.catalog.fm_modal.is_none()
+            && self.chooser.is_none()
+            && !self.login.visible
+            && !self.status_details
+            && !self.diagnostics_modal_open
+            && !self.exit_confirmation
+            && self.session_worker.is_none()
+            && !crate::platform::active()
+    }
+
+    /// Purely original Jade UI chime, reserved for swipes, shoulder tabs and
+    /// quick access opening. Tap actions keep the user's bundled SFX pack.
+    pub(super) fn jade_navigation_cue(&mut self, cue: &'static str) {
+        if !self.catalog.config.theme.interface_sounds
+            || self.catalog.config.theme.preset
+                != horizon_client::ui_theme::ThemePreset::OldSchool
+        {
+            return;
+        }
+        let audio = self.audio.get_or_insert_with(|| {
+            let mut audio = horizon_client::audio::Audio::new(
+                &self.home.join(".local/horizon-client/26.3"),
+            );
+            let settings = horizon_client::settings::Settings::load(
+                &self.catalog.config.game_home(&self.home).join("options.txt"),
+            );
+            audio.master = settings.volumes[0];
+            let mut volumes = settings.volumes;
+            volumes[0] = 1.0;
+            horizon_client::settings::set_source_volumes(volumes);
+            audio
+        });
+        audio.play_jade_ui_sfx(cue, 0.16);
+    }
+
+    pub(super) fn toggle_jade_panel(&mut self) {
+        if self.quick_panel_open {
+            self.quick_panel_open = false;
+            self.pending_focus = None;
+            self.focus = None;
+            self.jade_navigation_cue("back");
+        } else if self.jade_nav_ready() {
+            self.quick_panel_open = true;
+            self.pending_focus = Some(pages::Action::CloseQuickPanel);
+            self.focus = None;
+            self.taps.cancel();
+            self.drag = None;
+            self.jade_navigation_cue("panel");
+        }
+    }
+
     fn controller_frame(&mut self, events: &ActiveEventLoop) -> Result<()> {
         use horizon_client::gamepad::Button;
         use winit::keyboard::{Key, NamedKey};
@@ -1107,19 +1198,17 @@ impl Launcher {
                 if self.controller_repeat.is_none_or(|(old, _, _)| old != b) {
                     self.controller_repeat = Some((b, now, false));
                 }
+            } else if b == Button::LeftBumper {
+                self.cycle_jade_page(-1);
+            } else if b == Button::RightBumper {
+                self.cycle_jade_page(1);
+            } else if b == Button::Start {
+                self.toggle_jade_panel();
             } else if b == Button::South {
                 self.activate(events)?;
             } else if b == Button::East {
-                crate::platform::hide();
-                self.catalog.editing = None;
-                if self.chooser.take().is_none() {
-                    if self.login.visible {
-                        self.login.visible = false;
-                    } else {
-                        self.catalog.page = Page::Play;
-                    }
-                }
-                self.focus = None;
+                // Use the exact same hierarchical Back path as Android and Esc.
+                self.request_back();
             }
         }
         Ok(())

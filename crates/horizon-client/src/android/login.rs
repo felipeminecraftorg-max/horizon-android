@@ -1,7 +1,7 @@
 //! Native account panel; authentication is shared with the desktop launcher.
 use super::pages::{Action, button};
 use crate::account::{self, Account, Accounts, Secrets, SignIn, SignInState};
-use horizon_client::ui_theme::{Face, Icon, Ui, color};
+use horizon_client::ui_theme::{ExperiencePreset, Face, Icon, Ui, color, launcher_visual as visual};
 
 fn login_surface() -> u32 {
     horizon_client::ui_theme::active_theme().surface
@@ -268,19 +268,13 @@ impl Login {
         action: Action,
     ) {
         let [x, y, w, h] = rect;
-        ui.rounded(x, y, w, h, 14.0, login_surface());
-        ui.border(
-            x,
-            y,
-            w,
-            h,
-            14.0,
-            if current {
-                login_accent()
-            } else {
-                login_border()
-            },
-        );
+        if horizon_client::ui_theme::active_theme().experience == ExperiencePreset::OldSchool {
+            visual::component_card(ui, rect, current);
+        } else {
+            ui.rounded(x, y, w, h, 14.0, login_surface());
+            ui.border(x, y, w, h, 14.0,
+                if current { login_accent() } else { login_border() });
+        }
         let avatar = (h - 12.0).clamp(30.0, 40.0);
         ui.avatar_head_2d(x + 10.0, y + (h - avatar) * 0.5, avatar, name);
         let tx = x + avatar + 22.0;
@@ -339,6 +333,8 @@ impl Login {
             }
         }
         let theme = horizon_client::ui_theme::active_theme();
+        let jade = theme.experience == ExperiencePreset::OldSchool;
+        let modal_radius = if jade { 12.0 } else { 26.0 };
         ui.fill(
             0.0,
             0.0,
@@ -351,11 +347,16 @@ impl Login {
             y + 8.0,
             w,
             h,
-            26.0,
+            modal_radius,
             color::hex(0x000000, (90.0 * modal_t) as u8),
         );
-        ui.rounded(x, y, w, h, 26.0, theme.bg_solid);
-        ui.border(x, y, w, h, 26.0, login_border());
+        ui.rounded(x, y, w, h, modal_radius, theme.bg_solid);
+        ui.border(x, y, w, h, modal_radius, login_border());
+        if jade {
+            // An independent jade header rail distinguishes the console account
+            // panel from the round Liquid Glass sheets, without touching auth.
+            ui.rounded(x + 20., y + 6., (w - 40.).max(0.), 3., 1.5, theme.accent);
+        }
 
         let (title, subtitle): (&str, String) = if self.providers {
             ("Accounts", "Choose how you want to play".into())
@@ -482,8 +483,12 @@ impl Login {
             {
                 let cx = x + 20.0 + (i % 2) as f32 * (cw + gap);
                 let cy = content_y + (i / 2) as f32 * (ch + gap);
-                ui.rounded(cx, cy, cw, ch, 16.0, login_surface());
-                ui.border(cx, cy, cw, ch, 16.0, login_border());
+                if jade {
+                    visual::component_card(ui, [cx, cy, cw, ch], false);
+                } else {
+                    ui.rounded(cx, cy, cw, ch, 16.0, login_surface());
+                    ui.border(cx, cy, cw, ch, 16.0, login_border());
+                }
                 ui.rounded(cx + 14.0, cy + 14.0, 34.0, 34.0, 11.0, login_accent_soft());
                 ui.text(
                     Face::SemiBold,
@@ -758,8 +763,12 @@ impl Login {
         // Microsoft
         let card_h = 84.0;
         let card = [x + 20.0, content_y, w - 40.0, card_h];
-        ui.rounded(card[0], card[1], card[2], card[3], 16.0, login_surface());
-        ui.border(card[0], card[1], card[2], card[3], 16.0, login_border());
+        if jade {
+            visual::component_card(ui, card, false);
+        } else {
+            ui.rounded(card[0], card[1], card[2], card[3], 16.0, login_surface());
+            ui.border(card[0], card[1], card[2], card[3], 16.0, login_border());
+        }
         let display_name = self.profile.as_deref().unwrap_or(offline_name);
         ui.avatar_head_2d(card[0] + 14.0, card[1] + 14.0, 56.0, display_name);
         let name_x = card[0] + 84.0;

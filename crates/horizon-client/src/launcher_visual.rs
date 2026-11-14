@@ -311,27 +311,20 @@ fn scene(ui: &mut Ui<'_>, r: [f32; 4], corner: f32, sunset: bool) {
     band(y + corner, (h - 2. * corner).max(0.), 0.);
 }
 
-// A dedicated XMB-inspired backdrop for Old School. The existing Graphite
-// wallpaper is intentionally NOT modified: Dark Aero still relies on it.
-// Pixels are generated once and uploaded to the native atlas; there is no
-// per-frame CPU redraw, animation texture upload or external console asset.
+// Original Horizon Jade atmosphere: a stationary graphite-to-jade ambient field.
+// There are no XMB ribbons, animated CPU textures, or console-owned assets.
+// Cached exactly once for every native session.
 fn console_paper_pixel(u: f32, v: f32) -> [u8; 4] {
-    let lateral = (u - 0.48).abs();
-    let soft_light = (-((u - 0.68) / 0.46).powi(2)
-        - ((v - 0.58) / 0.55).powi(2)).exp() * 10.0;
-    let wave_a = 0.68 + 0.11 * (u * 4.15 + 0.28).sin() + 0.06 * (u - 0.5);
-    let wave_b = 0.81 + 0.075 * (u * 5.1 - 0.6).sin() - 0.025 * u;
-    // Wide diffuse ribbons provide atmosphere without bright, cutting
-    // diagonal lines through the control labels.
-    let broad_a = (-((v - wave_a) / 0.13).powi(2)).exp() * 18.0;
-    let broad_b = (-((v - wave_b) / 0.09).powi(2)).exp() * 11.0;
-    let satin_edge = (-((v - wave_a - 0.016) / 0.024).powi(2)).exp() * 6.0;
-    let fade = (1.0 - lateral * 0.30).clamp(0.68, 1.0);
-    let light = (soft_light + broad_a + broad_b + satin_edge) * fade;
+    let u = u.clamp(0.0, 1.0);
+    let v = v.clamp(0.0, 1.0);
+    let glow = (-((u - 0.26) / 0.55).powi(2)
+        - ((v - 0.35) / 0.75).powi(2)).exp();
+    let lower = (v * v).clamp(0.0, 1.0);
+    let grain = ((u * 131.2 + v * 73.4).sin() * 0.5 + 0.5) * 0.7;
     [
-        (8.0 + light * 0.73).clamp(0.0, 255.0) as u8,
-        (12.0 + light * 0.85).clamp(0.0, 255.0) as u8,
-        (22.0 + light * 1.05).clamp(0.0, 255.0) as u8,
+        (19.0 + glow * 3.0 - lower * 3.0 + grain) as u8,
+        (24.0 + glow * 13.0 - lower * 5.0 + grain) as u8,
+        (21.0 + glow * 6.0 - lower * 4.0 + grain) as u8,
         255,
     ]
 }
@@ -340,8 +333,8 @@ thread_local! {
     static CONSOLE_PAPER: RefCell<Option<Vec<u8>>> = const { RefCell::new(None) };
 }
 
-/// Draw the Old School console's private, low-glare background.
-/// Keep Liquid Glass and user-selected alternate wallpapers untouched.
+/// Draw the cached Jade background. Wallpaper generation does not touch
+/// Liquid Glass or the Dark Aero / Graphite asset family.
 pub fn console_background(ui: &mut Ui<'_>, r: [f32; 4]) {
     CONSOLE_PAPER.with(|paper| {
         let mut paper = paper.borrow_mut();
@@ -358,7 +351,7 @@ pub fn console_background(ui: &mut Ui<'_>, r: [f32; 4]) {
             pixels
         });
         if let Some(t) = super::with_cache(ui.atlas, |cache| {
-            cache.image(ui.atlas, "launcher-wallpaper:oldschool-console-v2",
+            cache.image(ui.atlas, "launcher-wallpaper:horizon-jade-v1",
                 TEX_W, TEX_H, pixels)
         }) {
             let [x, y, w, h] = r;
@@ -367,7 +360,7 @@ pub fn console_background(ui: &mut Ui<'_>, r: [f32; 4]) {
                 t.u0, t.v0, t.u1, t.v1, u32::MAX,
             );
         } else {
-            ui.fill(r[0], r[1], r[2], r[3], color::hex(0x080C16, 255));
+            ui.fill(r[0], r[1], r[2], r[3], color::hex(0x141816, 255));
         }
     });
 }
@@ -660,20 +653,27 @@ pub fn button(ui: &mut Ui<'_>, rect: [f32; 4], label: &str, icon: Option<Icon>, 
     );
 }
 
-/// Glass Lab V7 components adapted to the native Horizon HUD.
-/// These are actual interactive surfaces: callers keep their existing hitboxes,
-/// state and touch handlers rather than replacing them with visual mockups.
-/// The material in panel() is rasterized by the WGSL backdrop-lens pipeline.
+/// All major Android pages call these primitives. Jade uses a single opaque
+/// surface hierarchy; glass optics remain exclusive to Liquid Glass.
 pub fn component_card(ui: &mut Ui<'_>, rect: [f32; 4], emphasized: bool) {
     let th = active_theme();
     let [x, y, w, h] = rect;
     if th.experience == ExperiencePreset::OldSchool {
-        // A wide settings/catalog card should remain readable, not repeat
-        // previously composited text as a giant refractive lens.
-        ui.rounded(x, y, w, h, 12., color::hex(0x101927, if emphasized { 192 } else { 174 }));
-        ui.stroke_rounded(x, y, w, h, 12., 0.75, color::hex(0xC8DAF0, 65));
-        ui.fill(x + 13., y + 2., (w - 26.).max(0.), 0.8,
-            color::hex(0xEFF5FF, 62));
+        let radius = 10.;
+        ui.rounded(x, y, w, h, radius,
+            if emphasized { th.surface_selected } else { th.surface });
+        let hover = ui.cursor.0 >= x && ui.cursor.0 < x + w
+            && ui.cursor.1 >= y && ui.cursor.1 < y + h;
+        // Only one hovered card gets a live material evaluation; no per-item
+        // reflection pass on hundreds of catalog entries.
+        if hover && th.jade_gpu_fx && !th.is_light && h >= 44. {
+            ui.backdrop_lens(rect, radius, color::with_alpha(th.accent, 0.), [0., 0.]);
+        }
+        ui.stroke_rounded(x, y, w, h, radius, if emphasized { 1.2 } else { 0.85 },
+            if emphasized { th.accent } else { th.border });
+        if emphasized {
+            ui.rounded(x + 4., y + 11., 3., (h - 22.).max(0.), 1.5, th.accent);
+        }
     } else if th.experience == ExperiencePreset::LiquidGlass {
         ui.rounded(x, y, w, h, 15., color::hex(0x162A32, if emphasized { 105 } else { 77 }));
         ui.stroke_rounded(x, y, w, h, 15., 0.8, color::hex(0xE2F7FF, 84));
@@ -682,20 +682,25 @@ pub fn component_card(ui: &mut Ui<'_>, rect: [f32; 4], emphasized: bool) {
     }
 }
 
-/// V7 pill/chip: translucent text-bearing object, small enough for GPU optics.
+/// Chips never put jade-green text on the same jade-green filled accent;
+/// selected controls carry an accent line and preserve primary contrast.
 pub fn component_chip(ui: &mut Ui<'_>, rect: [f32; 4], selected: bool) {
     let th = active_theme();
     let [x, y, w, h] = rect;
+    if th.experience == ExperiencePreset::OldSchool {
+        ui.rounded(x, y, w, h, 7.,
+            if selected { th.surface_selected } else { th.surface });
+        ui.stroke_rounded(x, y, w, h, 7., 0.85,
+            if selected { th.accent } else { th.border });
+        return;
+    }
     if th.experience == ExperiencePreset::Standard {
         ui.rounded(x, y, w, h, h / 2., if selected { th.accent } else { th.surface });
     } else {
-        // The chip's backdrop is a single real lens; the label is emitted
-        // afterwards so glyphs aren't sampled twice by adjacent lenses.
-        panel(ui, rect, if th.experience == ExperiencePreset::OldSchool { 9. } else { h / 2. }, selected);
+        panel(ui, rect, h / 2., selected);
         if selected {
             ui.stroke_rounded(x + 1., y + 1., w - 2., h - 2.,
-                if th.experience == ExperiencePreset::OldSchool { 8. } else { h / 2. - 1. },
-                0.85, color::hex(0xF1F5FF, 137));
+                h / 2. - 1., 0.85, color::hex(0xF1F5FF, 137));
         }
     }
 }
@@ -717,10 +722,10 @@ pub fn optical_calibration_slider(ui: &mut Ui<'_>, rect: [f32; 4],
     let t = fraction.clamp(0., 1.);
     let old = theme.experience == ExperiencePreset::OldSchool;
     ui.rounded(track_x, track_y, track_w, 5., 2.5,
-        color::hex(if old { 0xA0B0C7 } else { 0xE7F5FF }, 60));
+        if old { theme.surface_dim } else { color::hex(0xE7F5FF, 60) });
     if t > 0.005 {
         ui.rounded(track_x, track_y, (track_w * t).max(2.), 5., 2.5,
-            color::hex(if old { 0xD6E3F4 } else { 0xF2FAFF }, 152));
+            if old { theme.accent } else { color::hex(0xF2FAFF, 152) });
     }
     let size = 19.;
     let thumb = [track_x + track_w * t - size * 0.5,
@@ -739,7 +744,25 @@ pub fn component_slider(ui: &mut Ui<'_>, rect: [f32; 4], value: f32, value_label
     let th = active_theme();
     let [x, y, w, h] = rect;
     let old = th.experience == ExperiencePreset::OldSchool;
-    panel(ui, rect, if old { 10. } else { h * 0.5 }, false);
+    if old {
+        ui.rounded(x, y, w, h, 9., th.surface);
+        ui.stroke_rounded(x, y, w, h, 9., 0.8, th.border);
+        let caption = ui.fit_text(Face::SemiBold, 12., value_label, w - 16.);
+        ui.centered_fit(Face::SemiBold, 12.,
+            [x + 6., y + 2., w - 12., 18.], th.text_primary, &caption);
+        let bar_x = x + 10.;
+        let bar_y = y + h - 12.;
+        let bar_w = (w - 20.).max(24.);
+        let t = value.clamp(0., 1.);
+        ui.rounded(bar_x, bar_y, bar_w, 5., 2.5, th.surface_dim);
+        if t > 0. {
+            ui.rounded(bar_x, bar_y, (bar_w * t).max(2.), 5., 2.5, th.accent);
+        }
+        let thumb_x = (bar_x + bar_w * t - 4.5).clamp(bar_x - 1., bar_x + bar_w - 8.);
+        ui.rounded(thumb_x, bar_y - 4., 9., 13., 3.5, th.text_primary);
+        return;
+    }
+    panel(ui, rect, h * 0.5, false);
     let caption = ui.fit_text(Face::SemiBold, 12., value_label, w - 16.);
     ui.centered_fit(Face::SemiBold, 12.,
         [x + 6., y + 2., w - 12., 18.], color::hex(0xF0F5FC, 245), &caption);
@@ -824,32 +847,55 @@ pub fn component_switch(ui: &mut Ui<'_>, x: f32, y: f32, on: bool) {
     let th = active_theme();
     let old = th.experience == ExperiencePreset::OldSchool;
     let rect = [x, y, 52., 28.];
-    panel(ui, rect, if old { 10. } else { 14. }, on);
+    if old {
+        ui.rounded(x, y, 52., 28., 10.,
+            if on { th.accent } else { th.surface_dim });
+        ui.stroke_rounded(x, y, 52., 28., 10., 0.85,
+            if on { th.accent } else { th.border });
+    } else {
+        panel(ui, rect, 14., on);
+    }
     let position = switch_thumb_fraction(x, y, on, th.experience);
     let travel = 4. + 22. * position;
     let thumb_d = 20.;
     ui.rounded(x + travel, y + 4., thumb_d, thumb_d,
         if old { 6. } else { 10. },
-        color::hex(if old { 0xEBEEF3 } else { 0xF7FBFF }, 236));
+        if old { if on { th.on_accent } else { th.text_primary } }
+        else { color::hex(0xF7FBFF, 236) });
     if position > 0.70 {
         ui.icon(Icon::Check, x + travel + 4., y + 8., 12.,
-            color::hex(if old { 0x253243 } else { 0x3E6872 }, 245));
+            if old { th.accent } else { color::hex(0x3E6872, 245) });
     }
 }
 
-/// Track containing *one* active lens; all tab labels remain crisp. The focus
-/// fraction may be supplied by a spring; touch targets are registered by caller.
+/// Segmented controls use a flat Jade selection band with a restrained focus
+/// line. Liquid Glass keeps its own lens-based animation and geometry.
 pub fn component_tabs(ui: &mut Ui<'_>, rect: [f32; 4],
     labels: [&str; 2], focused: f32) {
     let th = active_theme();
     let [x, y, w, h] = rect;
     let old = th.experience == ExperiencePreset::OldSchool;
-    ui.rounded(x, y, w, h, if old { 11. } else { h / 2. },
-        color::hex(if old { 0x171C2D } else { 0xB9D5DE }, if old { 144 } else { 34 }));
+    if old {
+        ui.rounded(x, y, w, h, 9., th.surface);
+        ui.stroke_rounded(x, y, w, h, 9., 0.85, th.border);
+        let part_w = w / 2.;
+        let fx = x + part_w * focused.clamp(0., 1.);
+        ui.rounded(fx + 2., y + 2., (part_w - 4.).max(0.), h - 4.,
+            7., th.surface_selected);
+        ui.rounded(fx + part_w * 0.24, y + h - 3.5, part_w * 0.52,
+            2., 1., th.accent);
+        for (i, label) in labels.into_iter().enumerate() {
+            let selected = (focused - i as f32).abs() < 0.5;
+            ui.centered_fit(Face::Medium, 13.,
+                [x + i as f32 * part_w + 5., y + 2., part_w - 10., h - 4.],
+                if selected { th.text_primary } else { th.text_muted }, label);
+        }
+        return;
+    }
+    ui.rounded(x, y, w, h, h / 2., color::hex(0xB9D5DE, 34));
     let part_w = w / 2.;
     let fx = x + part_w * focused.clamp(0., 1.);
-    panel(ui, [fx + 2., y + 2., part_w - 4., h - 4.],
-        if old { 9. } else { (h - 4.) / 2. }, true);
+    panel(ui, [fx + 2., y + 2., part_w - 4., h - 4.], (h - 4.) / 2., true);
     for (i, label) in labels.into_iter().enumerate() {
         let selected = (focused - i as f32).abs() < 0.5;
         ui.centered_fit(Face::Medium, 13.,
@@ -862,7 +908,13 @@ pub fn component_tabs(ui: &mut Ui<'_>, rect: [f32; 4],
 /// scrolling and navigation never draw glyphs into the lens framebuffer.
 pub fn component_circular_icon(ui: &mut Ui<'_>, rect: [f32; 4], icon: Icon) {
     let th = active_theme();
-    panel(ui, rect, rect[3] / 2., true);
+    let old = th.experience == ExperiencePreset::OldSchool;
+    if old {
+        ui.rounded(rect[0], rect[1], rect[2], rect[3], 9., th.surface_selected);
+        ui.stroke_rounded(rect[0], rect[1], rect[2], rect[3], 9., 0.9, th.accent);
+    } else {
+        panel(ui, rect, rect[3] / 2., true);
+    }
     let size = (rect[3] * 0.46).clamp(16., 24.);
     ui.icon(icon, rect[0] + (rect[2] - size) / 2.,
         rect[1] + (rect[3] - size) / 2., size, th.text_primary);
@@ -940,8 +992,8 @@ impl Layout {
 }
 
 
-/// Late-2000s console interface: no sidebar, no oversized rounded capsules.
-/// Tabs form a real horizontal navigation row; home supplies a tile dashboard.
+/// Original Horizon Jade navigation: one clean row of category tabs, not
+/// the horizontal icon-over-label XMB or a reproduction of Microsoft UI.
 #[allow(clippy::too_many_arguments)]
 fn shell_console(
     ui: &mut Ui<'_>,
@@ -956,55 +1008,54 @@ fn shell_console(
     let th = active_theme();
     let (w, h) = (ui.w, ui.h);
     let layout = Layout::new(w, h);
-    ui.horizon_logo(24., 15., 30.);
-    ui.text(Face::ConsoleDisplay, 20., 62., 12., th.text_primary, "Horizon");
-    ui.text(Face::Regular, 9.5, 62., 38., th.text_muted, version);
 
-    let aw = (w * 0.22).clamp(138., 196.);
-    let account_r = [w - aw - 66., 13., aw, 39.];
-    ui.rounded(account_r[0], account_r[1], aw, 39., 9., color::hex(0xECF3FF, 27));
-    ui.stroke_rounded(account_r[0], account_r[1], aw, 39., 9., 0.8, color::hex(0xFFFFFF, 53));
-    ui.avatar_head_2d(account_r[0] + 6., 19., 27., account);
+    // The account and quick-settings actions remain separate large hitboxes.
+    ui.rounded(18., 10., w - 36., 54., 12., th.header_bg);
+    ui.stroke_rounded(18., 10., w - 36., 54., 12., 0.8, th.border);
+    ui.horizon_logo(30., 22., 25.);
+    ui.text(Face::ConsoleDisplay, 20., 64., 15., th.text_primary, "Horizon");
+    ui.text(Face::Regular, 10., 65., 40., th.text_muted, version);
+
+    let aw = (w * 0.22).clamp(138., 208.);
+    let account_r = [w - aw - 67., 17., aw, 42.];
+    ui.rounded(account_r[0], account_r[1], aw, 42., 10., th.surface_bright);
+    ui.avatar_head_2d(account_r[0] + 7., 22., 27., account);
     if signed_in {
-        ui.rounded(account_r[0] + 29., 40., 5., 5., 2.5, th.success);
+        ui.rounded(account_r[0] + 29., 43., 6., 6., 3., th.success);
     }
-    let name = ui.fit_text(Face::Medium, 12., account, aw - 51.);
-    ui.text(Face::Medium, 12., account_r[0] + 42., 24., th.text_primary, &name);
+    let name = ui.fit_text(Face::Medium, 12., account, aw - 50.);
+    ui.text(Face::Medium, 12., account_r[0] + 42., 27., th.text_primary, &name);
     target(account_r, ShellAction::Account);
-    let settings = [w - 53., 13., 38., 39.];
-    ui.icon(Icon::Gear, settings[0] + 10., settings[1] + 9., 19., th.text_primary);
-    target(settings, ShellAction::Appearance);
-    ui.fill(24., 117., w - 48., 1., color::hex(0xD4D8EB, 72));
 
-    // XMB-inspired focus is an understated channel highlight, not a
-    // second chrome push button behind every selected category.
-    // Its spring follows visual focus only; hitboxes never move.
+    let settings = [w - 58., 17., 42., 42.];
+    ui.rounded(settings[0], settings[1], settings[2], settings[3], 10., th.surface_bright);
+    ui.icon(Icon::Gear, settings[0] + 11., settings[1] + 11., 20., th.text_primary);
+    target(settings, ShellAction::Appearance);
+
+    // The selected tab is an inset block with a jade baseline. Only the
+    // indicator animates: targets are stationary through the transition.
+    ui.rounded(24., 72., w - 48., 46., 10., th.surface);
     if !items.is_empty() {
         let step = (w - 48.) / items.len() as f32;
-        let fx = focus_x.clamp(24., w - 24. - step);
-        ui.rounded(fx + 8., 77., (step - 16.).max(25.), 33., 7.,
-            color::hex(0xAFC3D8, 22));
-        ui.fill(fx + step * 0.24, 115., step * 0.52, 1.5,
-            color::hex(0xD7E9FF, 226));
+        let fx = focus_x.clamp(24., (w - 24. - step).max(24.));
+        let focus_rect = [fx + 3., 76., (step - 6.).max(20.), 38.];
+        ui.rounded(focus_rect[0], focus_rect[1], focus_rect[2], focus_rect[3],
+            8., th.surface_selected);
+        // The small focused console tab receives actual per-fragment GGX
+        // shading from the native WGSL material, not a pre-baked highlight.
+        // Liquid Glass never enters this path; graphics effects can be disabled.
+        if th.jade_gpu_fx && !th.is_light {
+            ui.backdrop_lens(focus_rect, 8., color::with_alpha(th.accent, 0.), [0.0, 0.0]);
+        }
+        ui.rounded(fx + step * 0.20, 115., step * 0.60, 2.5, 1.25, th.accent);
     }
     for (i, (label, icon)) in items.iter().enumerate() {
         let tab = layout.nav_rect(w, h, i, items.len());
         let chosen = i == selected;
-        let foreground = if chosen { th.text_primary } else { th.text_muted };
-        // XMB-like two-level channel: small original outline glyph above
-        // a restrained label. Every icon routes through the Old School set
-        // while hit-testing keeps the existing 44dp control rectangle.
-        ui.icon(*icon, tab[0] + (tab[2] - 17.) * 0.5,
-            tab[1] + 2., 17., foreground);
-        let fitted = ui.fit_text(Face::ConsoleMedium, 10.5, label, tab[2] - 12.);
-        let tw = ui.measure(Face::ConsoleMedium, 10.5, &fitted);
-        ui.text(
-            Face::ConsoleMedium, 10.5,
-            tab[0] + (tab[2] - tw) * 0.5,
-            tab[1] + 23.,
-            foreground,
-            &fitted,
-        );
+        let ink = if chosen { th.text_primary } else { th.text_muted };
+        ui.icon(*icon, tab[0] + 10., tab[1] + 13., 18., ink);
+        let fitted = ui.fit_text(Face::ConsoleMedium, 11.5, label, (tab[2] - 39.).max(12.));
+        ui.text(Face::ConsoleMedium, 11.5, tab[0] + 33., tab[1] + 14., ink, &fitted);
         target(tab, ShellAction::Page(i));
     }
     layout
@@ -1045,6 +1096,7 @@ pub fn shell_animated(
     let th = active_theme();
     let (w, h) = (ui.w, ui.h);
     let layout = Layout::new(w, h);
+    let jade_portrait = layout.console && layout.portrait;
     if layout.console && !layout.portrait {
         return shell_console(ui, items, selected, account, signed_in, version, focus[0], target);
     }
@@ -1053,7 +1105,12 @@ pub fn shell_animated(
     ui.text(Face::Regular, 10.5, 58., 37., th.text_muted, version);
     let aw = if layout.portrait { 118. } else { 166. };
     let account_r = [w - 20. - aw, 12., aw, 44.];
-    panel(ui, account_r, 22., false);
+    if jade_portrait {
+        ui.rounded(account_r[0], account_r[1], account_r[2], account_r[3], 10., th.surface_bright);
+        ui.stroke_rounded(account_r[0], account_r[1], account_r[2], account_r[3], 10., 0.8, th.border);
+    } else {
+        panel(ui, account_r, 22., false);
+    }
     ui.avatar_head_2d(account_r[0] + 6., 20., 28., account);
     if signed_in {
         ui.rounded(account_r[0] + 26., 40., 6., 6., 3., th.success);
@@ -1070,9 +1127,39 @@ pub fn shell_animated(
     ui.icon(Icon::ChevronDown, w - 40., 28., 12., th.text_muted);
     target(account_r, ShellAction::Account);
     let gear = [account_r[0] - 54., 12., 44., 44.];
-    panel(ui, gear, 22., false);
+    if jade_portrait {
+        ui.rounded(gear[0], gear[1], gear[2], gear[3], 10., th.surface_bright);
+        ui.stroke_rounded(gear[0], gear[1], gear[2], gear[3], 10., 0.8, th.border);
+    } else {
+        panel(ui, gear, 22., false);
+    }
     ui.icon(Icon::Gear, gear[0] + 12., 24., 20., th.text_primary);
     target(gear, ShellAction::Appearance);
+    if jade_portrait {
+        // The console's responsive mode is its OWN solid-bottom navigation,
+        // not the Liquid Glass round dock or a compressed Xbox/PS3 interface.
+        // Each immutable 44dp+ target contains a prepared PNG icon and label.
+        ui.rounded(12., h - 80., (w - 24.).max(0.), 70., 11., th.header_bg);
+        ui.stroke_rounded(12., h - 80., (w - 24.).max(0.), 70.,
+            11., 0.85, th.border);
+        for (i, (label, icon)) in items.iter().enumerate() {
+            let r = layout.nav_rect(w, h, i, items.len());
+            let active = i == selected;
+            if active {
+                ui.rounded(r[0] + 3., r[1] + 2., (r[2] - 6.).max(1.),
+                    49., 8., th.surface_selected);
+                ui.rounded(r[0] + r[2] * 0.22, r[1] + 51.,
+                    r[2] * 0.56, 2.5, 1.25, th.accent);
+            }
+            let ink = if active { th.text_primary } else { th.text_muted };
+            ui.icon(*icon, r[0] + (r[2] - 21.) / 2., r[1] + 4., 21., ink);
+            ui.centered_fit(Face::ConsoleMedium, 9.,
+                [r[0] + 2., r[1] + 29., (r[2] - 4.).max(10.), 17.],
+                ink, label);
+            target(r, ShellAction::Page(i));
+        }
+        return layout;
+    }
     // Liquid Glass: an entirely different narrow icon dock. Keep tab content
     // outside the glass layer; the icons and their hitboxes remain crisp.
     if th.experience == ExperiencePreset::LiquidGlass && !layout.portrait {
@@ -1182,12 +1269,12 @@ fn console_tile_tone(accent: u32) -> u32 {
         (((accent >> shift & 0xFF) as f32 * 0.29 + base * 0.71).round()
             .clamp(0., 255.)) as u32
     };
-    (shade(16, 21.) << 16) | (shade(8, 27.) << 8) | shade(0, 40.)
+    (shade(16, 21.) << 16) | (shade(8, 31.) << 8) | shade(0, 24.)
 }
 
-/// The Old School is a console dashboard, not a tinted copy of Liquid Glass.
-/// One strong game hero and a deliberately asymmetric, fixed-hitbox 3-row mosaic
-/// produce hierarchy without sacrificing any of the original eight actions.
+/// Horizon Jade Home: a game-first NXE-inspired hero and an intentionally
+/// asymmetric Metro-inspired utility mosaic. No Xbox/XMB art or interactions.
+/// All eight original actions retain stable, non-overlapping hitboxes.
 fn home_old_school(
     ui: &mut Ui<'_>,
     rect: [f32; 4],
@@ -1196,126 +1283,112 @@ fn home_old_school(
 ) {
     let [_, _, w, h] = rect;
     if w <= 0. || h <= 0. { return; }
+    let th = active_theme();
     let layout = ConsoleDashboardLayout::new(rect);
     let [hx, hy, hw, hh] = layout.hero;
+    let hero_bg = if th.is_light { 0xFCFDFB } else { 0x17241D };
+    let soft = if th.is_light { 0x5C645D } else { 0xB8C9BE };
+    let control_bg = if th.is_light { 0xE8ECE7 } else { 0x29362D };
 
-    // Quiet editorial hero: a single opaque/satin layer prevents wallpaper
-    // ribbons and previously drawn labels from passing through body text.
-    ui.rounded(hx, hy, hw, hh, 16., color::hex(0x111A2A, 230));
-    ui.stroke_rounded(hx, hy, hw, hh, 16., 0.8, color::hex(0xC8D4E7, 65));
-    ui.fill(hx + 21., hy + 15., (hw - 42.).max(0.), 1.,
-        color::hex(0xBBCDE4, 43));
-
-    ui.text(Face::Medium, 10., hx + 22., hy + 20.,
-        color::hex(0xA6B7CB, 205), "GAME LIBRARY / 01");
-    let heading_size = if hw < 390. { 27. } else { 32. };
+    // One quiet primary card. Layout and color, not faux depth and stacking,
+    // communicate the selected game. Its surface stays solid over the backdrop.
+    ui.rounded(hx, hy, hw, hh, 17., color::hex(hero_bg, 255));
+    ui.stroke_rounded(hx, hy, hw, hh, 17., 1.0, th.border);
+    ui.rounded(hx + 1., hy + 18., 3., (hh - 36.).max(1.), 1.5, th.accent);
+    ui.text(Face::Medium, 10.5, hx + 22., hy + 17.,
+        color::hex(soft, 255), "READY TO PLAY");
+    let heading_size = if hw < 365. { 27. } else { 33. };
     let heading = ui.fit_text(Face::ConsoleDisplay, heading_size, "MINECRAFT", hw - 43.);
-    ui.text(Face::ConsoleDisplay, heading_size, hx + 22., hy + 43.,
-        color::hex(0xF2F5FC, 255), &heading);
-
-    let ready = if view.installed { "Ready to play" } else { "Installation required" };
-    if hh < 192. {
-        // Portrait and short landscape: fit the complete state on one line,
-        // keeping a safe gap above Play and Profile.
-        let status = format!("26.3  /  {ready}");
-        let status = ui.fit_text(Face::Medium, 12., &status, hw - 44.);
-        ui.text(Face::Medium, 12., hx + 23., hy + 88.,
-            color::hex(0xC3D1E0, 237), &status);
+    ui.text(Face::ConsoleDisplay, heading_size, hx + 22., hy + 41.,
+        th.text_primary, &heading);
+    let ready = if view.installed { "Ready to launch" } else { "Install needed" };
+    if hh < 225. {
+        let status = format!("JAVA 26.3  /  {ready}");
+        let status = ui.fit_text(Face::Medium, 11.5, &status, hw - 47.);
+        ui.text(Face::Medium, 11.5, hx + 23., hy + 88., th.text_muted, &status);
     } else {
-        ui.text(Face::Medium, 15., hx + 23., hy + 89.,
-            color::hex(0xDAE3EE, 245), "JAVA EDITION 26.3");
-        ui.fill(hx + 23., hy + 117., 5., 5.,
-            color::hex(if view.installed { 0x92D2AB } else { 0xD9AA78 }, 238));
-        ui.text(Face::Regular, 12., hx + 38., hy + 111.,
-            color::hex(0xB8C7D7, 231), ready);
-        if hh > 265. {
-            let renderer = ui.fit_text(Face::Regular, 10., view.renderer, hw - 50.);
-            ui.text(Face::Regular, 10., hx + 23., hy + 149.,
-                color::hex(0x91A2B8, 183), &renderer);
+        ui.text(Face::Medium, 14., hx + 23., hy + 95.,
+            th.text_primary, "JAVA EDITION 26.3");
+        ui.rounded(hx + 23., hy + 124., 6., 6., 3.,
+            if view.installed { th.success } else { color::hex(0xD7A65E, 255) });
+        ui.text(Face::Regular, 12., hx + 37., hy + 119.,
+            th.text_muted, ready);
+        if hh > 262. {
+            let renderer = ui.fit_text(Face::Regular, 11., view.renderer, hw - 50.);
+            ui.text(Face::Regular, 11., hx + 23., hy + 151., th.text_muted, &renderer);
         }
     }
 
-    // Fixed footer dock. The primary action is never covered by a floating
-    // profile chip; both are sizeable, independent and always clickable.
-    let play = [hx + 14., hy + hh - 62., hw - 155., 48.];
-    let profile = [hx + hw - 124., hy + hh - 62., 110., 48.];
-    ui.fill(hx + 14., play[1] - 10., (hw - 28.).max(0.), 1.,
-        color::hex(0xA8B8CD, 42));
-
+    // Main action and profile chooser use separate large touch regions.
+    let play = [hx + 14., hy + hh - 62., hw - 157., 48.];
+    let profile = [hx + hw - 125., hy + hh - 62., 111., 48.];
     ui.rounded(play[0], play[1], play[2], play[3], 10.,
-        color::hex(0x426853, 242));
-    ui.fill(play[0] + 11., play[1] + 3., (play[2] - 22.).max(0.), 1.,
-        color::hex(0xC8F5D8, 100));
-    ui.icon(Icon::Play, play[0] + 13., play[1] + 12., 24.,
-        color::hex(0xF5FFF9, 255));
-    let label = if view.launching { "Starting..." } else if view.installed {
+        color::hex(0x176B35, 255));
+    ui.icon(Icon::Play, play[0] + 11., play[1] + 12., 24.,
+        color::hex(0xFFFFFF, 255));
+    let play_label = if view.launching { "Starting..." } else if view.installed {
         "Play Minecraft"
     } else {
         "Install Minecraft"
     };
-    let label = ui.fit_text(Face::Medium, if hw < 370. { 14. } else { 17. },
-        label, (play[2] - 50.).max(0.));
-    ui.text(Face::Medium, if hw < 370. { 14. } else { 17. },
-        play[0] + 44., play[1] + 14.,
-        color::hex(0xF6FFF8, 255), &label);
+    let size = if hw < 365. { 13.5 } else { 16. };
+    let label = ui.fit_text(Face::Medium, size, play_label, (play[2] - 46.).max(12.));
+    ui.text(Face::Medium, size, play[0] + 42., play[1] + 15.,
+        color::hex(0xFFFFFF, 255), &label);
     if !view.launching { target(play, HomeAction::Play); }
 
     ui.rounded(profile[0], profile[1], profile[2], profile[3], 10.,
-        color::hex(0x263248, 240));
+        color::hex(control_bg, 255));
+    ui.stroke_rounded(profile[0], profile[1], profile[2], profile[3], 10., 0.7, th.border);
     let profile_name = ui.fit_text(Face::Medium, 11.,
         &format!("Profile {}", view.profile + 1), profile[2] - 27.);
-    ui.text(Face::Medium, 11., profile[0] + 11., profile[1] + 16.,
-        color::hex(0xE4EBF6, 242), &profile_name);
+    ui.text(Face::Medium, 11., profile[0] + 10., profile[1] + 16.,
+        th.text_primary, &profile_name);
     ui.icon(Icon::ChevronDown, profile[0] + profile[2] - 19.,
-        profile[1] + 16., 12., color::hex(0xBBC9DC, 238));
+        profile[1] + 17., 12., th.text_muted);
     target(profile, HomeAction::Profile);
 
-    // Xbox-like varied tile spans without Xbox artwork or branding.
-    // Wide tiles read horizontally; compact tiles use icon-over-label.
-    // All six existing destinations retain exactly the same actions.
+    // Muted category tints (not an all-green dashboard). Every card routes
+    // to its existing page; icon/label never create their own competing hits.
     let shortcuts = [
-        ("Mods", Icon::Mods, HomeAction::Mods, 0x755A83_u32, "EXTENSIONS"),
-        ("Packs", Icon::Packs, HomeAction::Packs, 0x496D91_u32, "ASSETS"),
-        ("Shaders", Icon::Shaders, HomeAction::Shaders, 0x907451_u32, "VISUALS"),
-        ("My files", Icon::Folder, HomeAction::Files, 0x477F8E_u32, "STORAGE"),
-        ("Skins", Icon::Person, HomeAction::Skins, 0x4D8570_u32, "IDENTITY"),
-        ("Settings", Icon::Gear, HomeAction::Settings, 0x626A83_u32, "SYSTEM"),
+        ("Mods", Icon::Mods, HomeAction::Mods, 0x4E886B_u32, "EXTENSIONS"),
+        ("Packs", Icon::Packs, HomeAction::Packs, 0x537383_u32, "ASSETS"),
+        ("Shaders", Icon::Shaders, HomeAction::Shaders, 0x8D7656_u32, "VISUALS"),
+        ("My files", Icon::Folder, HomeAction::Files, 0x4A807B_u32, "STORAGE"),
+        ("Skins", Icon::Person, HomeAction::Skins, 0x5A8273_u32, "IDENTITY"),
+        ("Settings", Icon::Gear, HomeAction::Settings, 0x757A73_u32, "SYSTEM"),
     ];
     for (i, (name, icon, action, tint, descriptor)) in shortcuts.into_iter().enumerate() {
         let card = layout.shortcuts[i];
         let [cx, cy, cw, ch] = card;
         if cw <= 1. || ch <= 1. { continue; }
-        // One satin colored surface. No nested lens, thick bevel, duplicated
-        // border, or bright reflection competing with labels and touch targets.
-        ui.rounded(cx, cy, cw, ch, 9., color::hex(console_tile_tone(tint), 243));
-        ui.stroke_rounded(cx, cy, cw, ch, 9., 0.7,
-            color::hex(0xCBD5E3, 34));
-        // A slim identity rail retains each category's muted tint.
-        ui.fill(cx + 3., cy + 11., 2., (ch - 22.).max(0.),
-            color::hex(tint, 158));
-        ui.fill(cx + 12., cy + 3., (cw - 24.).max(0.), 1.,
-            color::hex(0xD4DDEB, 35));
-
-        let wide = cw > ch * 1.75;
+        let tile_bg = if th.is_light { 0xE8ECE7 } else { console_tile_tone(tint) };
+        let tile_text = if th.is_light { th.text_primary } else { color::hex(0xF4F7F3, 255) };
+        let tile_muted = if th.is_light { th.text_muted } else { color::hex(0xC1CEC4, 255) };
+        ui.rounded(cx, cy, cw, ch, 10., color::hex(tile_bg, 255));
+        // Hovered tiles use the live GPU material. This is an ordered,
+        // clipped backdrop pass; PNG pictograms and labels draw afterwards.
+        let hovered = ui.cursor.0 >= cx && ui.cursor.0 < cx + cw
+            && ui.cursor.1 >= cy && ui.cursor.1 < cy + ch;
+        if hovered && th.jade_gpu_fx && !th.is_light {
+            ui.backdrop_lens(card, 10., color::with_alpha(th.accent, 0.), [0.0, 0.0]);
+        }
+        ui.stroke_rounded(cx, cy, cw, ch, 10., 0.8, th.border);
+        ui.rounded(cx + 5., cy + 10., 3., (ch - 20.).max(1.), 1.5,
+            color::hex(tint, 255));
+        let wide = cw > ch * 1.70;
         if wide {
-            let caption = ui.fit_text(Face::Medium, 9., descriptor, (cw - 68.).max(30.));
-            ui.text(Face::Medium, 9., cx + 15., cy + 12.,
-                color::hex(0xBCC8D8, 206), &caption);
-            let fitted = ui.fit_text(Face::SemiBold, 17., name, (cw - 71.).max(30.));
-            ui.text(Face::SemiBold, 17., cx + 15., cy + ch - 34.,
-                color::hex(0xF2F6FD, 251), &fitted);
-            ui.icon(icon, cx + cw - 48., cy + (ch - 30.) * 0.5,
-                30., color::hex(0xEDF2FC, 241));
+            let caption = ui.fit_text(Face::Medium, 9.5, descriptor, (cw - 69.).max(18.));
+            ui.text(Face::Medium, 9.5, cx + 17., cy + 9., tile_muted, &caption);
+            let fitted = ui.fit_text(Face::SemiBold, 16., name, (cw - 72.).max(18.));
+            ui.text(Face::SemiBold, 16., cx + 17., cy + ch - 31., tile_text, &fitted);
+            ui.icon(icon, cx + cw - 46., cy + (ch - 28.) * 0.5, 28., tile_text);
         } else {
-            let icon_size = (ch * 0.35).clamp(18., 28.);
-            ui.icon(icon, cx + (cw - icon_size) * 0.5,
-                cy + (ch * 0.15), icon_size,
-                color::hex(0xF2F6FD, 245));
-            let fitted = ui.fit_text(Face::Medium, if cw < 98. { 11. } else { 13. },
-                name, (cw - 10.).max(24.));
-            ui.centered_fit(Face::Medium, if cw < 98. { 11. } else { 13. },
-                [cx + 5., cy + ch - 23., cw - 10., 17.],
-                color::hex(0xF2F5FB, 253), &fitted);
+            let icon_size = (ch * 0.35).clamp(18., 26.);
+            ui.icon(icon, cx + (cw - icon_size) * 0.5, cy + 8., icon_size, tile_text);
+            ui.centered_fit(Face::Medium, if cw < 95. { 10.5 } else { 12.5 },
+                [cx + 5., cy + ch - 24., cw - 10., 19.],
+                tile_text, name);
         }
         target(card, action);
     }
@@ -1871,6 +1944,93 @@ mod tests {
     use crate::hud::{HudAtlas, HudBatch};
 
     #[test]
+    fn jade_portrait_shell_keeps_seven_stable_navigation_targets() {
+        let mut theme = LauncherThemeConfig::default();
+        theme.apply_preset(ThemePreset::OldSchool);
+        set_active_for_test(&theme);
+        let atlas = HudAtlas::boot();
+        let mut batch = HudBatch::new([360, 800]);
+        let mut ui = Ui::new(&atlas, &mut batch, (0., 0.));
+        let channels = [
+            ("Play", Icon::Play), ("Mods", Icon::Mods),
+            ("Packs", Icon::Packs), ("Shaders", Icon::Shaders),
+            ("Files", Icon::Folder), ("Settings", Icon::Gear),
+            ("Skins", Icon::Person),
+        ];
+        let mut hits = Vec::new();
+        let layout = shell(&mut ui, &channels, 2, "Player", false, "Android", |r, action| {
+            if let ShellAction::Page(index) = action {
+                hits.push((index, r));
+            }
+        });
+        assert!(layout.console && layout.portrait);
+        assert_eq!(hits.len(), channels.len());
+        for (n, (index, r)) in hits.iter().enumerate() {
+            assert_eq!(*index, n);
+            assert!(r[2] >= 44.0 && r[3] >= 44.0, "touch target: {r:?}");
+            assert!(r[1] >= 720. && r[1] + r[3] <= 800.);
+            for (_, previous) in hits.iter().take(n) {
+                assert!(r[0] >= previous[0] + previous[2]
+                    || previous[0] >= r[0] + r[2], "overlap");
+            }
+        }
+        theme.apply_preset(ThemePreset::LiquidGlass);
+        set_active_for_test(&theme);
+        let other = Layout::new(360., 800.);
+        assert!(!other.console);
+    }
+
+    #[test]
+    fn jade_custom_accents_are_visible_without_replacing_console_surfaces() {
+        let mut cfg = LauncherThemeConfig::default();
+        cfg.apply_preset(ThemePreset::OldSchool);
+        let normal = cfg.resolve();
+        cfg.custom_accent_hex = "#327DE8".into();
+        let custom = cfg.resolve();
+        assert_ne!(custom.accent, normal.accent);
+        assert_eq!(custom.bg_solid, normal.bg_solid);
+        assert_eq!(custom.surface, normal.surface);
+        assert_eq!(custom.material, Material::Opaque);
+        assert!(custom.jade_gpu_fx);
+
+        cfg.appearance = super::super::ThemeAppearance::Light;
+        let light = cfg.resolve();
+        assert!(light.is_light);
+        assert_ne!(light.accent, normal.accent);
+
+        cfg.apply_preset(ThemePreset::LiquidGlass);
+        assert!(!cfg.resolve().jade_gpu_fx);
+        assert_eq!(cfg.resolve().material, Material::Glass);
+    }
+
+    #[test]
+    fn jade_png_icon_shading_uses_live_gpu_vertex_data_only_when_enabled() {
+        let atlas = HudAtlas::boot();
+        let mut theme = LauncherThemeConfig::default();
+        for (preset, effects, expected_jade) in [
+            (ThemePreset::OldSchool, true, true),
+            (ThemePreset::OldSchool, false, false),
+            (ThemePreset::LiquidGlass, true, false),
+        ] {
+            theme.apply_preset(preset);
+            theme.glass_effects = effects;
+            set_active_for_test(&theme);
+            let mut batch = HudBatch::new([640, 360]);
+            {
+                let mut ui = Ui::new(&atlas, &mut batch, (144., 105.));
+                ui.icon(Icon::Gear, 122., 90., 26., u32::MAX);
+            }
+            assert!(batch.vertices.len() >= 6);
+            let lit = batch.vertices.iter().any(|v| v.glint_uv[0] < -2.);
+            assert_eq!(lit, expected_jade, "preset: {preset:?}");
+            if expected_jade {
+                assert!(batch.vertices.iter().all(|v| v.glint_uv[0] < -2.));
+                assert!(batch.vertices.iter().all(|v| v.glint_uv[1].is_finite()));
+            }
+        }
+    }
+
+    #[test]
     fn navigation_and_home_actions_stay_separate_on_phone_viewports() {
         for (w, h) in [(340., 640.), (410., 780.), (760., 410.), (980., 440.)] {
             let layout = Layout::new(w, h);
@@ -2057,8 +2217,9 @@ mod tests {
         let mut cfg = LauncherThemeConfig::default();
         cfg.apply_preset(ThemePreset::OldSchool);
         assert_eq!(cfg.resolve().experience, ExperiencePreset::OldSchool);
-        assert_eq!(cfg.resolve().material, Material::Aero);
-        assert_eq!(cfg.resolve().wallpaper, Wallpaper::Graphite);
+        assert_eq!(cfg.resolve().material, Material::Opaque);
+        assert_eq!(cfg.resolve().wallpaper, Wallpaper::None);
+        assert!(cfg.resolve().jade_gpu_fx);
         set_active_for_test(&cfg);
         for (w, h) in [(340., 640.), (900., 480.)] {
             let layout = Layout::new(w, h);
@@ -2147,6 +2308,33 @@ mod tests {
             ui.finish();
             assert_eq!(!batch.glass.is_empty(), enabled);
         }
+    }
+
+    #[test]
+    fn jade_catalog_cards_use_live_gpu_material_only_when_requested() {
+        let atlas = HudAtlas::boot();
+        let mut cfg = LauncherThemeConfig::default();
+        cfg.apply_preset(ThemePreset::OldSchool);
+        for enabled in [true, false] {
+            cfg.glass_effects = enabled;
+            let resolved = cfg.resolve();
+            assert_eq!(resolved.material, Material::Opaque);
+            assert_eq!(resolved.jade_gpu_fx, enabled);
+            set_active_for_test(&cfg);
+            let mut batch = HudBatch::new([640, 360]);
+            let mut ui = Ui::new(&atlas, &mut batch, (72., 65.));
+            component_card(&mut ui, [20., 20., 180., 96.], false);
+            ui.finish();
+            assert_eq!(!batch.glass.is_empty(), enabled);
+        }
+
+        // The independent Liquid Glass preset remains a real lens material,
+        // never switches to Jade's GPU mode or its opaque surfaces.
+        cfg.apply_preset(ThemePreset::LiquidGlass);
+        cfg.glass_effects = true;
+        let liquid = cfg.resolve();
+        assert_eq!(liquid.material, Material::Glass);
+        assert!(!liquid.jade_gpu_fx);
     }
 
     fn set_active_for_test(cfg: &LauncherThemeConfig) {
