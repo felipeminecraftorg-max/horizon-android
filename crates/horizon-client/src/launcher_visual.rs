@@ -2187,6 +2187,33 @@ mod tests {
         }
     }
 
+    #[test]
+    fn jade_catalog_cards_use_live_gpu_material_only_when_requested() {
+        let atlas = HudAtlas::boot();
+        let mut cfg = LauncherThemeConfig::default();
+        cfg.apply_preset(ThemePreset::OldSchool);
+        for enabled in [true, false] {
+            cfg.glass_effects = enabled;
+            let resolved = cfg.resolve();
+            assert_eq!(resolved.material, Material::Opaque);
+            assert_eq!(resolved.jade_gpu_fx, enabled);
+            set_active_for_test(&cfg);
+            let mut batch = HudBatch::new([640, 360]);
+            let mut ui = Ui::new(&atlas, &mut batch, (72., 65.));
+            component_card(&mut ui, [20., 20., 180., 96.], false);
+            ui.finish();
+            assert_eq!(!batch.glass.is_empty(), enabled);
+        }
+
+        // The independent Liquid Glass preset remains a real lens material,
+        // never switches to Jade's GPU mode or its opaque surfaces.
+        cfg.apply_preset(ThemePreset::LiquidGlass);
+        cfg.glass_effects = true;
+        let liquid = cfg.resolve();
+        assert_eq!(liquid.material, Material::Glass);
+        assert!(!liquid.jade_gpu_fx);
+    }
+
     fn set_active_for_test(cfg: &LauncherThemeConfig) {
         super::super::set_active_theme(cfg.resolve());
     }
