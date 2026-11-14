@@ -1,4 +1,5 @@
-//! Native WGSL uniform bridge for the user's exported GLASS_LAB_PACK_V7.
+//! Native WGSL material uniforms. Liquid Glass retains its calibrated look; 
+//! Horizon Jade owns a separate restrained, real-time GGX satin-metal finish.
 //! Source: styles/{liquid,oldschool}/material-global.json and
 //! rendering.uniformValues in the supplied preset TXT files.
 //! The six vec4s are streamed with the ordered launcher backdrop lenses.
@@ -19,12 +20,13 @@ pub fn uniform_profile(experience: ExperiencePreset) -> [[f32; 4]; 6] {
             [1.008, 0.43, 0.47, 0.37],
         ],
         ExperiencePreset::OldSchool => [
-            [1.0, 1.0, 0.75, 0.90],
-            [0.57357645, -0.81915206, 1.148, 1.26],
-            [0.4785, 21.84, 0.48, 0.068],
-            [0.90, 1.386, 0.19, 0.24],
-            [0.14, 0.58, 0.79, 0.12],
-            [0.028, 0.0, 0.30, 0.91],
+            // Horizon Jade: low-glare satin alloy, not PS3 pearl chrome.
+            [1.0, 1.0, 0.22, 0.15],
+            [0.57357645, -0.81915206, 1.12, 0.72],
+            [0.065, 9.0, 0.12, 0.012],
+            [0.52, 0.85, 0.03, 0.08],
+            [0.06, 0.10, 0.25, 0.23],
+            [0.12, 0.32, 0.16, 0.70],
         ],
         ExperiencePreset::Standard => [
             [-1.0, 0.0, 0.0, 0.0],
@@ -100,10 +102,10 @@ mod tests {
         let old=uniform_profile(ExperiencePreset::OldSchool);
         assert_eq!(liquid[0][0], 0.0);
         assert_eq!(old[0][0], 1.0);
-        assert_eq!(old[0][1], 1.0); // exported PS3-pearl finish
+        assert_eq!(old[0][1], 1.0); // Jade satin-metal finish
         assert!((liquid[2][0]-1.122).abs()<0.0001);
-        assert!((old[2][0]-0.4785).abs()<0.0001);
-        assert_eq!(old[5][3], 0.91); // solid scrollbar thumb
+        assert!((old[2][0]-0.065).abs()<0.0001);
+        assert_eq!(old[5][3], 0.70);
         assert_ne!(liquid[3], old[3]);
     }
 }

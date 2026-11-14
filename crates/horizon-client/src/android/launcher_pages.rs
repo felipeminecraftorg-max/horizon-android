@@ -590,11 +590,14 @@ fn draw_setting_card(
     let console = experience == horizon_client::ui_theme::ExperiencePreset::OldSchool;
     if let SettingControl::SectionHeader(badge, icon) = right_control {
         if console {
-            visual::panel(ui, [x, y + 6.0, w, h - 10.0], 10.0, true);
+            // A Jade section header is a high-contrast surface, not a giant
+            // green primary button underneath three competing text colours.
+            visual::component_card(ui, [x, y + 6.0, w, h - 10.0], false);
+            ui.rounded(x + 4., y + 18., 3., (h - 34.).max(0.), 1.5, my3_accent());
         } else {
             ui.rounded(x, y + 6.0, w, h - 10.0, 16.0, my3_surface());
+            ui.border(x, y + 6.0, w, h - 10.0, 16.0, my3_border());
         }
-        ui.border(x, y + 6.0, w, h - 10.0, 16.0, my3_border());
         ui.rounded(x + 12.0, y + 13.0, 34.0, 34.0, 11.0, my3_accent_soft());
         ui.icon(icon, x + 20.0, y + 21.0, 18.0, my3_accent());
         let text_max = (w - 170.0).max(90.0);
@@ -815,7 +818,9 @@ fn page_icon(page: Page) -> Icon {
         Page::Shaders => Icon::Shaders,
         Page::Installed => Icon::Installed,
         Page::Settings => Icon::Settings,
-        Page::Skins => Icon::Installed,
+        Page::Skins => if horizon_client::ui_theme::active_theme().experience
+            == horizon_client::ui_theme::ExperiencePreset::OldSchool
+        { Icon::Person } else { Icon::Installed },
     }
 }
 
@@ -934,7 +939,9 @@ fn draw_my3_progress_view(
                 sw,
                 bar_h - 4.0,
                 4.0,
-                color::hex(0xC9B8FF, 165),
+                if horizon_client::ui_theme::active_theme().experience
+                    == horizon_client::ui_theme::ExperiencePreset::OldSchool
+                { my3_accent() } else { color::hex(0xC9B8FF, 165) },
             );
         }
     }
@@ -1166,12 +1173,9 @@ impl Launcher {
         };
         let (w, h) = (ui.w, ui.h);
         let active_th = horizon_client::ui_theme::active_theme();
-        if active_th.experience == horizon_client::ui_theme::ExperiencePreset::OldSchool
-            && active_th.wallpaper == visual::Wallpaper::Graphite
-        {
-            // Only Old School's default Graphite dashboard gets the new muted
-            // console waves. Dark Aero, Liquid Glass and deliberately selected
-            // alternative wallpapers retain their original rendering.
+        if active_th.experience == horizon_client::ui_theme::ExperiencePreset::OldSchool {
+            // Horizon Jade has its own cached ambient surface and independent
+            // design tokens. Never route Liquid Glass / Dark Aero into this path.
             visual::console_background(&mut ui, [0., 0., w, h]);
         } else {
             ui.draw_theme_background(0.0, 0.0, w, h, &active_th);
@@ -1931,17 +1935,14 @@ impl Launcher {
             let y = self.anim.soft_scroll_thumb(desired, [top, top + height - thumb]);
             let style = horizon_client::ui_theme::active_theme().experience;
             let track = if style == horizon_client::ui_theme::ExperiencePreset::OldSchool {
-                horizon_client::ui_theme::color::hex(0xA6B1C4, 38)
+                my3_surface()
             } else {
                 horizon_client::ui_theme::color::hex(0xDCECF7, 34)
             };
             ui.rounded(w - 12., top, 7., height, 3.5, track);
             if style == horizon_client::ui_theme::ExperiencePreset::OldSchool {
-                // Opaque brushed-steel thumb, independent of the refracting track.
-                ui.rounded(w - 12.5, y, 8., thumb, 3.5,
-                    horizon_client::ui_theme::color::hex(0xDCE4ED, 218));
-                ui.fill(w - 11., y + 4., 1., (thumb - 8.).max(1.),
-                    horizon_client::ui_theme::color::hex(0xFFFFFF, 105));
+                // Jade's thumb is a single clearly visible accent shape.
+                ui.rounded(w - 12.5, y, 8., thumb, 3.5, my3_accent());
             } else {
                 // Liquid Glass stays translucent with a quiet white edge.
                 ui.rounded(w - 12., y, 7., thumb, 3.5,
@@ -2290,8 +2291,14 @@ impl Launcher {
             if filtered.is_empty() {
                 self.list_view = None;
                 let card_h = (bottom - top - 8.0).clamp(110.0, 176.0);
-                ui.rounded(content_x, top, content_w, card_h, 18.0, my3_surface());
-                ui.border(content_x, top, content_w, card_h, 18.0, my3_border());
+                if horizon_client::ui_theme::active_theme().experience
+                    == horizon_client::ui_theme::ExperiencePreset::OldSchool
+                {
+                    visual::component_card(ui, [content_x, top, content_w, card_h], false);
+                } else {
+                    ui.rounded(content_x, top, content_w, card_h, 18.0, my3_surface());
+                    ui.border(content_x, top, content_w, card_h, 18.0, my3_border());
+                }
                 ui.rounded(
                     content_x + 20.0,
                     top + 18.0,
@@ -2383,19 +2390,17 @@ impl Launcher {
                 if y + card_h < top || y > bottom {
                     continue;
                 }
-                ui.rounded(content_x, y, content_w, card_h, 14.0, my3_card_bg());
-                ui.border(
-                    content_x,
-                    y,
-                    content_w,
-                    card_h,
-                    14.0,
-                    if item.enabled {
-                        my3_accent()
-                    } else {
-                        my3_card_border()
-                    },
-                );
+                if horizon_client::ui_theme::active_theme().experience
+                    == horizon_client::ui_theme::ExperiencePreset::OldSchool
+                {
+                    visual::component_card(ui, [content_x, y, content_w, card_h], item.enabled);
+                } else {
+                    ui.rounded(content_x, y, content_w, card_h, 14.0, my3_card_bg());
+                    ui.border(
+                        content_x, y, content_w, card_h, 14.0,
+                        if item.enabled { my3_accent() } else { my3_card_border() },
+                    );
+                }
 
                 // Left file-type icon + badge pill (MOD / PACK / SHADER)
                 let kind_icon = match item.kind {
@@ -2505,6 +2510,10 @@ impl Launcher {
         // ---- Sub-View 2: Integrated Mini File Manager (`InstalledSubTab::FileManager`) ----
         // Row 1: Back, Forward, Up + Clickable Breadcrumb Trail + Import & New Folder CTAs
         let nav_y = 94.0 + slide_y;
+        // Keep all controls reachable on narrow phones.
+        let narrow_fm = (compact || content_w < 540.0)
+            && horizon_client::ui_theme::active_theme().experience
+                == horizon_client::ui_theme::ExperiencePreset::OldSchool;
         let nav_btn_w = 32.0;
         let has_back = !self.catalog.fm_back_stack.is_empty();
         let has_fwd = !self.catalog.fm_forward_stack.is_empty();
@@ -2560,14 +2569,17 @@ impl Launcher {
         );
 
         // Clickable Breadcrumb Bar between Up button and Right CTAs
-        let bc_x = content_x + 110.0;
-        let bc_w = (content_x + content_w - right_cta_w - 8.0 - bc_x).max(60.0);
-        ui.rounded(bc_x, nav_y, bc_w, 30.0, 10.0, my3_surface());
-        ui.border(bc_x, nav_y, bc_w, 30.0, 10.0, my3_border());
+        let bc_x = if narrow_fm { content_x } else { content_x + 110.0 };
+        let bc_y = if narrow_fm { nav_y + 36.0 } else { nav_y };
+        let bc_w = if narrow_fm { content_w } else {
+            (content_x + content_w - right_cta_w - 8.0 - bc_x).max(60.0)
+        };
+        ui.rounded(bc_x, bc_y, bc_w, 30.0, 10.0, my3_surface());
+        ui.border(bc_x, bc_y, bc_w, 30.0, 10.0, my3_border());
         let mut cur_bx = bc_x + 6.0;
         let root_lbl = format!("P{}", self.catalog.config.profile + 1);
         let root_bw = (ui.measure(Face::SemiBold, 11.5, &root_lbl) + 12.0).min(bc_w - 10.0);
-        let root_br = [cur_bx, nav_y + 4.0, root_bw, 22.0];
+        let root_br = [cur_bx, bc_y + 4.0, root_bw, 22.0];
         ui.rounded(
             root_br[0],
             root_br[1],
@@ -2595,12 +2607,12 @@ impl Launcher {
                 if cur_bx + 28.0 > bc_x + bc_w {
                     break;
                 }
-                ui.text(Face::Regular, 11.0, cur_bx, nav_y + 7.0, my3_muted(), "/");
+                ui.text(Face::Regular, 11.0, cur_bx, bc_y + 7.0, my3_muted(), "/");
                 cur_bx += 8.0;
                 let avail = (bc_x + bc_w - 6.0 - cur_bx).max(24.0);
                 let fit_seg = ui.fit_text(Face::Medium, 11.0, seg, (avail - 10.0).max(16.0));
                 let seg_w = (ui.measure(Face::Medium, 11.0, &fit_seg) + 10.0).min(avail);
-                let seg_r = [cur_bx, nav_y + 4.0, seg_w, 22.0];
+                let seg_r = [cur_bx, bc_y + 4.0, seg_w, 22.0];
                 let is_last = idx + 1 == parts.len();
                 ui.rounded(
                     seg_r[0],
@@ -2627,13 +2639,16 @@ impl Launcher {
         }
 
         // Row 2: Quick Root Folder Pills (Root, Worlds, Mods, Packs, Shaders, Controls, Shots, Reports)
-        let root_y = 128.0 + slide_y;
+        let root_y = if narrow_fm { nav_y + 70.0 } else { nav_y + 34.0 };
         let root_dirs = crate::document_store::FM_ROOT_DIRS;
         let r_gap = 4.0;
-        let r_w = ((content_w - r_gap * (root_dirs.len() as f32 - 1.0)) / root_dirs.len() as f32)
-            .max(38.0);
+        let root_cols = if narrow_fm { 4 } else { root_dirs.len() };
+        let root_rows = root_dirs.len().div_ceil(root_cols);
+        let r_w = ((content_w - r_gap * (root_cols as f32 - 1.0))
+            / root_cols as f32).max(36.0);
         for (i, (rel, label)) in root_dirs.iter().enumerate() {
-            let rx = content_x + i as f32 * (r_w + r_gap);
+            let rx = content_x + (i % root_cols) as f32 * (r_w + r_gap);
+            let ry = root_y + (i / root_cols) as f32 * 30.0;
             let active = self.catalog.fm_current_dir == *rel
                 || (!rel.is_empty()
                     && self
@@ -2644,7 +2659,7 @@ impl Launcher {
             button(
                 ui,
                 &mut self.targets,
-                [rx, root_y, r_w, 26.0],
+                [rx, ry, r_w, 28.0],
                 label,
                 Action::FmNavigateRoot(rel),
                 active,
@@ -2652,7 +2667,7 @@ impl Launcher {
         }
 
         // Row 3: Multi-Select & Clipboard Action Toolbar
-        let tool_y = 158.0 + slide_y;
+        let tool_y = root_y + root_rows as f32 * 30.0;
         let sel_count = self.catalog.fm_selected.len();
         let clip_count = self
             .catalog
@@ -2680,20 +2695,30 @@ impl Launcher {
             (&del_label, Action::FmRequestDeleteSelected, sel_count > 0),
         ];
         let t_gap = 4.0;
-        let t_w = ((content_w - t_gap * (tools.len() as f32 - 1.0)) / tools.len() as f32).max(38.0);
+        let tool_cols = if narrow_fm { 4 } else { tools.len() };
+        let tool_rows = tools.len().div_ceil(tool_cols);
+        let t_w = ((content_w - t_gap * (tool_cols as f32 - 1.0))
+            / tool_cols as f32).max(36.0);
         for (i, (lbl, act, hi)) in tools.into_iter().enumerate() {
-            let tx = content_x + i as f32 * (t_w + t_gap);
-            button(ui, &mut self.targets, [tx, tool_y, t_w, 26.0], lbl, act, hi);
+            let tx = content_x + (i % tool_cols) as f32 * (t_w + t_gap);
+            let ty = tool_y + (i / tool_cols) as f32 * 30.0;
+            button(ui, &mut self.targets, [tx, ty, t_w, 28.0], lbl, act, hi);
         }
 
         // Scrollable File & Directory Rows
-        let top = 190.0 + slide_y;
+        let top = tool_y + tool_rows as f32 * 32.0;
         let bottom = h - 42.0;
         if self.catalog.fm_entries.is_empty() {
             self.list_view = None;
             let empty_h = (bottom - top - 8.0).clamp(96.0, 152.0);
-            ui.rounded(content_x, top, content_w, empty_h, 16.0, my3_surface());
-            ui.border(content_x, top, content_w, empty_h, 16.0, my3_border());
+            if horizon_client::ui_theme::active_theme().experience
+                == horizon_client::ui_theme::ExperiencePreset::OldSchool
+            {
+                visual::component_card(ui, [content_x, top, content_w, empty_h], false);
+            } else {
+                ui.rounded(content_x, top, content_w, empty_h, 16.0, my3_surface());
+                ui.border(content_x, top, content_w, empty_h, 16.0, my3_border());
+            }
             ui.icon(
                 Icon::Folder,
                 content_x + 20.0,
@@ -2760,30 +2785,16 @@ impl Launcher {
             if y + card_h < top || y > bottom {
                 continue;
             }
-            ui.rounded(
-                content_x,
-                y,
-                content_w,
-                card_h,
-                12.0,
-                if selected {
-                    my3_nav_active()
-                } else {
-                    my3_card_bg()
-                },
-            );
-            ui.border(
-                content_x,
-                y,
-                content_w,
-                card_h,
-                12.0,
-                if selected {
-                    my3_accent()
-                } else {
-                    my3_card_border()
-                },
-            );
+            if horizon_client::ui_theme::active_theme().experience
+                == horizon_client::ui_theme::ExperiencePreset::OldSchool
+            {
+                visual::component_card(ui, [content_x, y, content_w, card_h], selected);
+            } else {
+                ui.rounded(content_x, y, content_w, card_h, 12.0,
+                    if selected { my3_nav_active() } else { my3_card_bg() });
+                ui.border(content_x, y, content_w, card_h, 12.0,
+                    if selected { my3_accent() } else { my3_card_border() });
+            }
 
             ui.m3_checkbox(content_x + 11.0, y + 13.0, 20.0, selected, "");
             if let Some(c) = ui.clip_rect(check_r) {
@@ -3788,10 +3799,16 @@ impl Launcher {
                 let cy = grid_top + row as f32 * (card_h + gap_y);
                 let rect = [cx, cy, card_w, card_h];
 
-                ui.rounded(cx, cy, card_w, card_h, 16.0, my3_card_bg());
-                ui.border(cx, cy, card_w, card_h, 16.0, my3_card_border());
+                if horizon_client::ui_theme::active_theme().experience
+                    == horizon_client::ui_theme::ExperiencePreset::OldSchool
+                {
+                    visual::component_card(ui, rect, false);
+                } else {
+                    ui.rounded(cx, cy, card_w, card_h, 16.0, my3_card_bg());
+                    ui.border(cx, cy, card_w, card_h, 16.0, my3_card_border());
+                }
 
-                // Left vector icon + vertical divider line matching 45062.jpg
+                // Icon and information remain in separate text and focus lanes.
                 let icon_size = 20.0;
                 ui.icon(
                     icon,

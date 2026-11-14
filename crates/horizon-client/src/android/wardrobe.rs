@@ -590,8 +590,9 @@ impl Wardrobe {
         w: f32,
         top: f32,
     ) {
-        use horizon_client::ui_theme::{Icon, active_theme, motion};
+        use horizon_client::ui_theme::{Icon, ExperiencePreset, active_theme, launcher_visual as visual, motion};
         let theme = active_theme();
+        let jade = theme.experience == ExperiencePreset::OldSchool;
         let now = std::time::Instant::now();
         let tab_t = motion::ease_out_cubic(motion::progress(self.tab_changed_at, now, 0.20));
         let sel_t = motion::spring_spatial(motion::progress(self.selection_changed_at, now, 0.22));
@@ -647,8 +648,8 @@ impl Wardrobe {
             };
 
         let tabs_y = top + 46.0;
-        ui.rounded(x, tabs_y, w, 38.0, 12.0, theme.surface_dim);
-        ui.border(x, tabs_y, w, 38.0, 12.0, theme.border);
+        ui.rounded(x, tabs_y, w, 38.0, if jade { 9.0 } else { 12.0 }, theme.surface_dim);
+        ui.border(x, tabs_y, w, 38.0, if jade { 9.0 } else { 12.0 }, theme.border);
         let tw = (w - 8.0) * 0.5;
         for (i, (lbl, is_cape, active)) in [
             (format!("Skins ({skin_count})"), false, !self.capes),
@@ -660,8 +661,14 @@ impl Wardrobe {
             let tx = x + 3.0 + i as f32 * (tw + 2.0);
             let tr = [tx, tabs_y + 3.0, tw, 32.0];
             if active {
-                ui.rounded(tr[0], tr[1], tr[2], tr[3], 9.0, theme.accent);
-                ui.centered_fit(Face::SemiBold, 12.0, tr, theme.on_accent, &lbl);
+                ui.rounded(tr[0], tr[1], tr[2], tr[3], 8.0,
+                    if jade { theme.surface_selected } else { theme.accent });
+                if jade {
+                    ui.rounded(tr[0] + tr[2] * 0.26, tr[1] + tr[3] - 3.,
+                        tr[2] * 0.48, 2., 1., theme.accent);
+                }
+                ui.centered_fit(Face::SemiBold, 12.0, tr,
+                    if jade { theme.text_primary } else { theme.on_accent }, &lbl);
             } else {
                 ui.centered_fit(Face::Medium, 12.0, tr, theme.text_muted, &lbl);
             }
@@ -693,16 +700,16 @@ impl Wardrobe {
         self.rect = [px, preview_y, preview_w, preview_h];
 
         // Studio stage background with subtle inner rim and pedestal
-        ui.rounded(px, preview_y, preview_w, preview_h, 16.0, theme.surface);
-        ui.rounded(
-            px + 4.0,
-            preview_y + 4.0,
-            preview_w - 8.0,
-            preview_h - 8.0,
-            13.0,
-            theme.surface_dim,
-        );
-        ui.stroke_rounded(px, preview_y, preview_w, preview_h, 16.0, 1.2, theme.border);
+        if jade {
+            visual::component_card(ui, [px, preview_y, preview_w, preview_h], false);
+            ui.rounded(px + 5.0, preview_y + 5.0,
+                preview_w - 10.0, preview_h - 10.0, 8.0, theme.surface_dim);
+        } else {
+            ui.rounded(px, preview_y, preview_w, preview_h, 16.0, theme.surface);
+            ui.rounded(px + 4.0, preview_y + 4.0,
+                preview_w - 8.0, preview_h - 8.0, 13.0, theme.surface_dim);
+            ui.stroke_rounded(px, preview_y, preview_w, preview_h, 16.0, 1.2, theme.border);
+        }
 
         // Studio floor pedestal oval beneath the character
         let ped_w = (preview_w * 0.46).clamp(72.0, 124.0);
@@ -894,8 +901,12 @@ impl Wardrobe {
         };
 
         let detail_h = 46.0;
-        ui.rounded(lx, listtop, lw, detail_h, 12.0, theme.surface);
-        ui.border(lx, listtop, lw, detail_h, 12.0, theme.border);
+        if jade {
+            visual::component_card(ui, [lx, listtop, lw, detail_h], false);
+        } else {
+            ui.rounded(lx, listtop, lw, detail_h, 12.0, theme.surface);
+            ui.border(lx, listtop, lw, detail_h, 12.0, theme.border);
+        }
         let import_w = (lw * 0.42).clamp(118.0, 168.0);
         let info_w = (lw - import_w - 24.0).max(60.0);
         let fitted_active = ui.fit_text(Face::SemiBold, 11.5, &active_title, info_w);
@@ -956,31 +967,15 @@ impl Wardrobe {
                                  is_selected: bool,
                                  action: Action| {
             let r = [lx, ry, lw, card_h];
-            ui.rounded(
-                r[0],
-                r[1],
-                r[2],
-                r[3],
-                11.0,
-                if is_selected {
-                    theme.surface_selected
-                } else {
-                    theme.surface
-                },
-            );
-            ui.stroke_rounded(
-                r[0],
-                r[1],
-                r[2],
-                r[3],
-                11.0,
-                if is_selected { 1.6 } else { 1.0 },
-                if is_selected {
-                    theme.accent
-                } else {
-                    theme.border
-                },
-            );
+            if jade {
+                visual::component_card(ui, r, is_selected);
+            } else {
+                ui.rounded(r[0], r[1], r[2], r[3], 11.,
+                    if is_selected { theme.surface_selected } else { theme.surface });
+                ui.stroke_rounded(r[0], r[1], r[2], r[3], 11.,
+                    if is_selected { 1.6 } else { 1.0 },
+                    if is_selected { theme.accent } else { theme.border });
+            }
             // Leading icon badge
             let ib = [r[0] + 10.0, r[1] + 8.0, 26.0, 26.0];
             ui.rounded(
@@ -1117,8 +1112,12 @@ impl Wardrobe {
         // Empty State Card when gallery has no items for this tab
         if shown_items == 0 {
             if row >= list_start - 4.0 && row + 64.0 <= bottom + 8.0 {
-                ui.rounded(lx, row, lw, 60.0, 12.0, theme.surface_dim);
-                ui.border(lx, row, lw, 60.0, 12.0, theme.border);
+                if jade {
+                    visual::component_card(ui, [lx, row, lw, 60.], false);
+                } else {
+                    ui.rounded(lx, row, lw, 60.0, 12.0, theme.surface_dim);
+                    ui.border(lx, row, lw, 60.0, 12.0, theme.border);
+                }
                 ui.text(
                     Face::SemiBold,
                     12.0,
