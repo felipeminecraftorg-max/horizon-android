@@ -2508,6 +2508,8 @@ impl Launcher {
         // ---- Sub-View 2: Integrated Mini File Manager (`InstalledSubTab::FileManager`) ----
         // Row 1: Back, Forward, Up + Clickable Breadcrumb Trail + Import & New Folder CTAs
         let nav_y = 94.0 + slide_y;
+        // Keep all controls reachable on narrow phones.
+        let narrow_fm = compact || content_w < 540.0;
         let nav_btn_w = 32.0;
         let has_back = !self.catalog.fm_back_stack.is_empty();
         let has_fwd = !self.catalog.fm_forward_stack.is_empty();
@@ -2563,14 +2565,17 @@ impl Launcher {
         );
 
         // Clickable Breadcrumb Bar between Up button and Right CTAs
-        let bc_x = content_x + 110.0;
-        let bc_w = (content_x + content_w - right_cta_w - 8.0 - bc_x).max(60.0);
-        ui.rounded(bc_x, nav_y, bc_w, 30.0, 10.0, my3_surface());
-        ui.border(bc_x, nav_y, bc_w, 30.0, 10.0, my3_border());
+        let bc_x = if narrow_fm { content_x } else { content_x + 110.0 };
+        let bc_y = if narrow_fm { nav_y + 36.0 } else { nav_y };
+        let bc_w = if narrow_fm { content_w } else {
+            (content_x + content_w - right_cta_w - 8.0 - bc_x).max(60.0)
+        };
+        ui.rounded(bc_x, bc_y, bc_w, 30.0, 10.0, my3_surface());
+        ui.border(bc_x, bc_y, bc_w, 30.0, 10.0, my3_border());
         let mut cur_bx = bc_x + 6.0;
         let root_lbl = format!("P{}", self.catalog.config.profile + 1);
         let root_bw = (ui.measure(Face::SemiBold, 11.5, &root_lbl) + 12.0).min(bc_w - 10.0);
-        let root_br = [cur_bx, nav_y + 4.0, root_bw, 22.0];
+        let root_br = [cur_bx, bc_y + 4.0, root_bw, 22.0];
         ui.rounded(
             root_br[0],
             root_br[1],
@@ -2598,12 +2603,12 @@ impl Launcher {
                 if cur_bx + 28.0 > bc_x + bc_w {
                     break;
                 }
-                ui.text(Face::Regular, 11.0, cur_bx, nav_y + 7.0, my3_muted(), "/");
+                ui.text(Face::Regular, 11.0, cur_bx, bc_y + 7.0, my3_muted(), "/");
                 cur_bx += 8.0;
                 let avail = (bc_x + bc_w - 6.0 - cur_bx).max(24.0);
                 let fit_seg = ui.fit_text(Face::Medium, 11.0, seg, (avail - 10.0).max(16.0));
                 let seg_w = (ui.measure(Face::Medium, 11.0, &fit_seg) + 10.0).min(avail);
-                let seg_r = [cur_bx, nav_y + 4.0, seg_w, 22.0];
+                let seg_r = [cur_bx, bc_y + 4.0, seg_w, 22.0];
                 let is_last = idx + 1 == parts.len();
                 ui.rounded(
                     seg_r[0],
@@ -2630,13 +2635,16 @@ impl Launcher {
         }
 
         // Row 2: Quick Root Folder Pills (Root, Worlds, Mods, Packs, Shaders, Controls, Shots, Reports)
-        let root_y = 128.0 + slide_y;
+        let root_y = if narrow_fm { nav_y + 70.0 } else { nav_y + 34.0 };
         let root_dirs = crate::document_store::FM_ROOT_DIRS;
         let r_gap = 4.0;
-        let r_w = ((content_w - r_gap * (root_dirs.len() as f32 - 1.0)) / root_dirs.len() as f32)
-            .max(38.0);
+        let root_cols = if narrow_fm { 4 } else { root_dirs.len() };
+        let root_rows = root_dirs.len().div_ceil(root_cols);
+        let r_w = ((content_w - r_gap * (root_cols as f32 - 1.0))
+            / root_cols as f32).max(36.0);
         for (i, (rel, label)) in root_dirs.iter().enumerate() {
-            let rx = content_x + i as f32 * (r_w + r_gap);
+            let rx = content_x + (i % root_cols) as f32 * (r_w + r_gap);
+            let ry = root_y + (i / root_cols) as f32 * 30.0;
             let active = self.catalog.fm_current_dir == *rel
                 || (!rel.is_empty()
                     && self
@@ -2647,7 +2655,7 @@ impl Launcher {
             button(
                 ui,
                 &mut self.targets,
-                [rx, root_y, r_w, 26.0],
+                [rx, ry, r_w, 28.0],
                 label,
                 Action::FmNavigateRoot(rel),
                 active,
@@ -2655,7 +2663,7 @@ impl Launcher {
         }
 
         // Row 3: Multi-Select & Clipboard Action Toolbar
-        let tool_y = 158.0 + slide_y;
+        let tool_y = root_y + root_rows as f32 * 30.0;
         let sel_count = self.catalog.fm_selected.len();
         let clip_count = self
             .catalog
@@ -2683,14 +2691,18 @@ impl Launcher {
             (&del_label, Action::FmRequestDeleteSelected, sel_count > 0),
         ];
         let t_gap = 4.0;
-        let t_w = ((content_w - t_gap * (tools.len() as f32 - 1.0)) / tools.len() as f32).max(38.0);
+        let tool_cols = if narrow_fm { 4 } else { tools.len() };
+        let tool_rows = tools.len().div_ceil(tool_cols);
+        let t_w = ((content_w - t_gap * (tool_cols as f32 - 1.0))
+            / tool_cols as f32).max(36.0);
         for (i, (lbl, act, hi)) in tools.into_iter().enumerate() {
-            let tx = content_x + i as f32 * (t_w + t_gap);
-            button(ui, &mut self.targets, [tx, tool_y, t_w, 26.0], lbl, act, hi);
+            let tx = content_x + (i % tool_cols) as f32 * (t_w + t_gap);
+            let ty = tool_y + (i / tool_cols) as f32 * 30.0;
+            button(ui, &mut self.targets, [tx, ty, t_w, 28.0], lbl, act, hi);
         }
 
         // Scrollable File & Directory Rows
-        let top = 190.0 + slide_y;
+        let top = tool_y + tool_rows as f32 * 32.0;
         let bottom = h - 42.0;
         if self.catalog.fm_entries.is_empty() {
             self.list_view = None;
