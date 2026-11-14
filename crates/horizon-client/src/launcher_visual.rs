@@ -2035,8 +2035,9 @@ mod tests {
         let mut cfg = LauncherThemeConfig::default();
         cfg.apply_preset(ThemePreset::OldSchool);
         assert_eq!(cfg.resolve().experience, ExperiencePreset::OldSchool);
-        assert_eq!(cfg.resolve().material, Material::Aero);
-        assert_eq!(cfg.resolve().wallpaper, Wallpaper::Graphite);
+        assert_eq!(cfg.resolve().material, Material::Opaque);
+        assert_eq!(cfg.resolve().wallpaper, Wallpaper::None);
+        assert!(cfg.resolve().jade_gpu_fx);
         set_active_for_test(&cfg);
         for (w, h) in [(340., 640.), (900., 480.)] {
             let layout = Layout::new(w, h);
