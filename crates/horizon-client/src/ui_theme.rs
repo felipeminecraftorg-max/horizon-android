@@ -3064,10 +3064,36 @@ impl LauncherThemeConfig {
             resolved.surface_selected = opaque(jade.selected);
             resolved.border = opaque(jade.border);
             resolved.border_strong = opaque(jade.focus);
-            resolved.accent = opaque(jade.accent);
-            resolved.accent_soft = color::hex(jade.accent, 56);
-            resolved.on_accent = opaque(jade.on_accent);
-            resolved.accent_text = opaque(jade.on_accent);
+            // Preserve the user's existing Accent Swatch setting instead of
+            // silently ignoring it under the Jade preset. Exact default dark
+            // and light values remain unchanged for untouched installations.
+            let user_accent = parse_hex_color(&self.custom_accent_hex)
+                .unwrap_or(def_acc);
+            let is_custom = user_accent != def_acc;
+            let mut jade_accent = if is_custom { user_accent } else { jade.accent };
+            if is_custom {
+                // Ensure the new accent is distinguishable from the selected
+                // background (minimum 3:1) regardless of user's saved hue.
+                for _ in 0..10 {
+                    let a = rgb_luminance(jade_accent);
+                    let b = rgb_luminance(jade.background);
+                    let contrast = (a.max(b) + 0.05) / (a.min(b) + 0.05);
+                    if contrast >= 3.0 { break; }
+                    jade_accent = blend_rgb(jade_accent,
+                        if is_light { 0x000000 } else { 0xFFFFFF }, 0.22);
+                }
+            }
+            let on_jade = if !is_custom {
+                jade.on_accent
+            } else if rgb_luminance(jade_accent) > 0.18 {
+                0x000000
+            } else {
+                0xFFFFFF
+            };
+            resolved.accent = opaque(jade_accent);
+            resolved.accent_soft = color::hex(jade_accent, 56);
+            resolved.on_accent = opaque(on_jade);
+            resolved.accent_text = opaque(on_jade);
             resolved.text_primary = opaque(jade.text);
             resolved.text_muted = opaque(jade.muted);
             resolved.success = opaque(jade.success);
