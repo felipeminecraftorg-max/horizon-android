@@ -334,7 +334,7 @@ test("scene interaction moves focus by swipe, arrows and page without adding sta
   assert.match(app,/Math\.abs\(dx\)>52/);
   assert.match(app,/e\.key==="ArrowRight"/);
   assert.match(app,/tile\.setAttribute\("aria-hidden"/);
-  assert.match(renderer,/if\(element\.classList\?\.contains\("tile"\)\)return;/);
+  assert.match(renderer,/if\(!element\|\|element\.classList\?\.contains\("tile"\)\)return;/);
   assert.match(renderer,/rectCache\.set\(\[r\.x,r\.y,r\.width,r\.height\],index\*4\)/);
   assert.match(renderer,/uniform1i\(uniform\.uRectCount,NAMES\.length\)/);
   const controls=x.JadeLab.getSection("Componentes").controls;
