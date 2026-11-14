@@ -393,6 +393,7 @@ impl Launcher {
             self.focus = None;
             self.pending_focus = None;
             self.targets.clear();
+            self.jade_navigation_cue("back");
             return;
         }
         if self.catalog.page == Page::Settings
@@ -1105,17 +1106,44 @@ impl Launcher {
             && !crate::platform::active()
     }
 
+    /// Purely original Jade UI chime, reserved for swipes, shoulder tabs and
+    /// quick access opening. Tap actions keep the user's bundled SFX pack.
+    pub(super) fn jade_navigation_cue(&mut self, cue: &'static str) {
+        if !self.catalog.config.theme.interface_sounds
+            || self.catalog.config.theme.preset
+                != horizon_client::ui_theme::ThemePreset::OldSchool
+        {
+            return;
+        }
+        let audio = self.audio.get_or_insert_with(|| {
+            let mut audio = horizon_client::audio::Audio::new(
+                &self.home.join(".local/horizon-client/26.3"),
+            );
+            let settings = horizon_client::settings::Settings::load(
+                &self.catalog.config.game_home(&self.home).join("options.txt"),
+            );
+            audio.master = settings.volumes[0];
+            let mut volumes = settings.volumes;
+            volumes[0] = 1.0;
+            horizon_client::settings::set_source_volumes(volumes);
+            audio
+        });
+        audio.play_jade_ui_sfx(cue, 0.16);
+    }
+
     pub(super) fn toggle_jade_panel(&mut self) {
         if self.quick_panel_open {
             self.quick_panel_open = false;
             self.pending_focus = None;
             self.focus = None;
+            self.jade_navigation_cue("back");
         } else if self.jade_nav_ready() {
             self.quick_panel_open = true;
             self.pending_focus = Some(pages::Action::CloseQuickPanel);
             self.focus = None;
             self.taps.cancel();
             self.drag = None;
+            self.jade_navigation_cue("panel");
         }
     }
 
