@@ -1201,8 +1201,8 @@ fn home_old_school(
     let ready = if view.installed { "Ready to launch" } else { "Install needed" };
     if hh < 225. {
         let status = format!("JAVA 26.3  /  {ready}");
-        ui.text(Face::Medium, 11.5, hx + 23., hy + 88.,
-            th.text_muted, &ui.fit_text(Face::Medium, 11.5, &status, hw - 47.));
+        let status = ui.fit_text(Face::Medium, 11.5, &status, hw - 47.);
+        ui.text(Face::Medium, 11.5, hx + 23., hy + 88., th.text_muted, &status);
     } else {
         ui.text(Face::Medium, 14., hx + 23., hy + 95.,
             th.text_primary, "JAVA EDITION 26.3");
