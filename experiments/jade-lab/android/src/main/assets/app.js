@@ -9,6 +9,11 @@
   if(!PALETTES)throw new Error("O catálogo de paletas não foi carregado");
   const DEFAULTS=Object.freeze({
     paletteId:"jade",selectionStyle:"halo",
+    glassStyle:"frosted",glassQuality:"balanced",
+    glassOpacity:.38,glassBlur:.69,glassTransmission:.78,
+    glassTint:.35,glassScatter:.42,glassFresnel:.58,glassRim:.64,
+    glassGrain:.15,glassHighlight:.62,glassShadow:.52,
+    glassHero:true,glassCards:true,glassChrome:true,glassCTA:false,
     backgroundStyle:"ribbons",backgroundIntensity:1.05,
     backgroundScale:1.12,backgroundFlow:.32,
     ribbonLayers:3,ribbonCurve:.95,ribbonWidth:.73,ribbonSoftness:1.10,
@@ -27,6 +32,24 @@
   const SPECS={
     paletteId:["Preset cromático","palette",null,null,"Cada perfil também altera luz, atmosfera e material"],
     selectionStyle:["Tipo de seleção","select",["halo","rim","underline","quiet"],null,"Halo, borda física, linha inferior ou seleção discreta"],
+    glassStyle:["Material dos painéis","select",["frosted","tinted","matte","solid"],null,
+      "Vidro fosco, polímero colorido, matte espesso ou sólido original"],
+    glassQuality:["Amostragem da difusão","select",["fast","balanced","high"],null,
+      "Fast 1 avaliação, Balanced 5, High 9 — influencia o custo na GPU"],
+    glassOpacity:["Densidade do pigmento",0,1,.01,"Quanto mais alto, menos fundo atravessa o painel"],
+    glassBlur:["Raio da difusão",0,1,.01,"Distância entre as amostras do fundo renderizado"],
+    glassTransmission:["Transmissão do cenário",0,1,.01,"Quanto da paisagem luminosa aparece através do material"],
+    glassTint:["Cor do material",0,1,.01,"Tonalidade de cada painel sem aplicar cor chapada"],
+    glassScatter:["Espalhamento de luz",0,1.5,.01,"Névoa luminosa difusa dentro do vidro"],
+    glassFresnel:["Fresnel de borda",0,1.8,.01,"Reflexo angular do material"],
+    glassRim:["Aro refrativo",0,1.8,.01,"Luz no contorno curvo do objeto"],
+    glassGrain:["Microtextura do vidro",0,.8,.01,"Grão óptico estável e fino"],
+    glassHighlight:["Reflexo superior",0,1.7,.01,"Brilho largo, sem barra fixa"],
+    glassShadow:["Sombra de espessura",0,1,.01,"Densidade da superfície nas áreas inferiores"],
+    glassHero:["Material no painel principal","toggle",null,null,"Ativar vidro no hero"],
+    glassCards:["Material nos cards","toggle",null,null,"Ativar vidro nos módulos laterais"],
+    glassChrome:["Material nas barras","toggle",null,null,"Ativar vidro no topo, navegação e rodapé"],
+    glassCTA:["Material no botão principal","toggle",null,null,"Revestimento opcional no botão Play"],
     backgroundStyle:["Linguagem do fundo","select",["ribbons","aurora","satin","halo","minimal"],null,
       "Ondas fluidas, aurora difusa, cetim, halos ou degradê"],
     backgroundIntensity:["Intensidade do fundo",0,1.8,.01,"Força visual das curvas e das luzes"],
@@ -88,6 +111,11 @@
     {id:"Luz",icon:"☀",intro:"Iluminação direcional com resposta especular em tempo real.",groups:[
       ["Luz principal",["azimuth","elevation","intensity","ambient"]],
       ["Luz nos componentes",["edgeLight","heroGlow","bloom"]]]},
+    {id:"Vidro",icon:"◇",intro:"Materiais dark com difusão real do fundo procedural, transmissão, reflexo e microtextura. Sem estética de iPhone.",groups:[
+      ["Tipo de superfície",["glassStyle","glassQuality"]],
+      ["Corpo do material",["glassOpacity","glassBlur","glassTransmission","glassTint","glassScatter"]],
+      ["Acabamento óptico",["glassFresnel","glassRim","glassHighlight","glassGrain","glassShadow"]],
+      ["Aplicar em",["glassHero","glassCards","glassChrome","glassCTA"]]]},
     {id:"Materiais",icon:"◈",intro:"Resposta física GGX: normal, micro-rugosidade e oclusão.",groups:[
       ["Acabamento",["roughness","metallic","reflectivity","bevel"]],
       ["Profundidade dos painéis",["depth","ao"]]]},
@@ -217,7 +245,10 @@
       control='<select data-param="'+key+'" aria-label="'+label+'">'+
         spec[2].map(v=>'<option value="'+v+'"'+(v===val?' selected':'')+'>'+v+' FPS</option>').join("")+'</select>';
     }else if(spec[1]==="select"){
-      const labels={halo:"Halo material",rim:"Borda luminosa",underline:"Linha inferior",quiet:"Discreto",
+      const labels={frosted:"Frosted Dark",tinted:"Tinted Frost",matte:"Dense Matte",
+        solid:"Sólido original",fast:"Rápida · 1 amostra",
+        balanced:"Equilibrada · 5 amostras",high:"Alta · 9 amostras",
+        halo:"Halo material",rim:"Borda luminosa",underline:"Linha inferior",quiet:"Discreto",
         ribbons:"Ondas fluidas",aurora:"Aurora difusa",satin:"Cetim diagonal",
         minimal:"Degradê minimalista"};
       control='<select data-param="'+key+'" aria-label="'+label+'">'+
@@ -403,7 +434,8 @@
       engine:"WebGL2 / GLSL ES 300",theme:"oldschool-dark",
       uniforms:["uAtmos","uLight","uMaterial","uSurface","uMotion","uDetail",
         "uPalette","uRects","uFocusIndex","uSelectionStyle",
-        "uBackdropShape","uBackdropLayers","uBackdropLight","uBackdropDetail"],
+        "uBackdropShape","uBackdropLayers","uBackdropLight","uBackdropDetail",
+        "uGlassModel","uGlassOptics","uGlassDetail","uGlassTargets"],
       controls:clone(state),note:"GPU rects use CSS viewport coordinates; see source app."
     }));
     entries.push(json("manifest.json",{
@@ -417,8 +449,11 @@
       "Preset: preset.json. Each category: tabs/*.json.\n"+
       "GPU shader sources: shaders/*.frag, *.vert (WebGL2 / GLSL ES 300).\n"+
       "Background parameters: tabs/fundo.json; styles ribbons, aurora, satin, halo, minimal.\n"+
+      "Glass parameters: tabs/vidro.json; styles frosted, tinted, matte, solid.\n"+
       "uniforms.json contains every live parameter used for this export.\n"+
       "Background uniforms are separate from GGX material uniforms for portability.\n"+
+      "Glass uniforms: uGlassModel, uGlassOptics, uGlassDetail, uGlassTargets.\n"+
+      "Glass diffusion samples ONLY the procedural background, not native/DOM text or other panels.\n"+
       "This is an engineering reference pack, not a compiled Rust/WGSL mod.\n"+
       "The image preview is the GPU backdrop/material shader, not DOM text.\n"+
       "Import this ZIP back into Jade Lab using Import preset/pack.\n"
