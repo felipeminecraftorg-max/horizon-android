@@ -818,7 +818,9 @@ fn page_icon(page: Page) -> Icon {
         Page::Shaders => Icon::Shaders,
         Page::Installed => Icon::Installed,
         Page::Settings => Icon::Settings,
-        Page::Skins => Icon::Person,
+        Page::Skins => if horizon_client::ui_theme::active_theme().experience
+            == horizon_client::ui_theme::ExperiencePreset::OldSchool
+        { Icon::Person } else { Icon::Installed },
     }
 }
 
@@ -2509,7 +2511,9 @@ impl Launcher {
         // Row 1: Back, Forward, Up + Clickable Breadcrumb Trail + Import & New Folder CTAs
         let nav_y = 94.0 + slide_y;
         // Keep all controls reachable on narrow phones.
-        let narrow_fm = compact || content_w < 540.0;
+        let narrow_fm = (compact || content_w < 540.0)
+            && horizon_client::ui_theme::active_theme().experience
+                == horizon_client::ui_theme::ExperiencePreset::OldSchool;
         let nav_btn_w = 32.0;
         let has_back = !self.catalog.fm_back_stack.is_empty();
         let has_fwd = !self.catalog.fm_forward_stack.is_empty();
