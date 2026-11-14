@@ -10,7 +10,7 @@ assets, interface ou sons proprietários.
 | 1. Identidade e seleção | Remover barra lateral fixa, implementar seleção luminosa GPU, base de sete presets completos | **Implementada — validar no Android** |
 | 2. Fundo atmosférico | Ondas em camadas, gradientes, textura de fundo, halo volumétrico e controles próprios | **Implementada — validar no Android** |
 | 3. Materiais de vidro fosco | Frosted Dark, Tinted Frost, Dense Matte; blur amostrado, borda física e luz transmitida; cena de console mais espaçosa | **Implementada — validar no Android** |
-| 4. Hero, cards e microtexturas | Detalhes de relevo, contraste por módulo, reflexos locais, ícones e ajuste por componente | Pendente |
+| 4. Navegação e performance | Navegação única em cena, base cromática neutra, iluminação reativa, otimização GPU e cards de metal | **Implementada — em validação** |
 | 5. Integração e desempenho | Regressão visual, benchmarks GPU, modos de economia, exportação, APK final de testes | Pendente |
 
 ## Tarefa 1 — entregue na branch `feature/jade-lab-part2-visual-foundation`
@@ -100,6 +100,41 @@ A profundidade dos cards e do avatar é realizada com perspectiva tridimensional
 no compositor WebView/CSS; **não é uma engine 3D de malhas e esqueletos**. A física
 óptica dos painéis alinhados e o fundo são calculados no WebGL2. A aparência
 deve ser avaliada no celular antes de considerá-la final.
+
+## Tarefa 4 — refinamento após teste em aparelho
+
+O primeiro teste da versão 1.3.0 mostrou quedas severas de fluidez e uma
+interface demasiado colorizada, com navegação duplicada. Essa revisão ataca
+as **causas técnicas identificadas no código**, sem inventar benchmarks.
+
+- O shader do vidro recriava `renderBackdrop` **até nove vezes por fragmento**,
+  além de desenhar o fundo uma décima vez. Agora um framebuffer WebGL2
+  reduzido desenha o cenário uma vez, enquanto `frostedBackdrop` reutiliza
+  a textura para 1/5/9 amostras leves. Há fallback se FBO for indisponível.
+- A escala do canvas deixou de multiplicar a densidade de pixels `DPR`
+  elevada do Android; limitada a 620 mil pixels e 0,88 pixels por pixel CSS,
+  com qualidade dinâmica reduzida em travamentos longos.
+- Cache de geometria de painéis reduz leituras de layout durante animações.
+  Persistência local dos controles é limitada para não travar a UI a cada
+  movimento de slider. Desfocagem `backdrop-filter` pesada foi removida dos
+  cards animados e do editor.
+- O antigo menu horizontal superior foi **removido do HTML**, e a pilha
+  3D agora é a única navegação, com **Play como 1 de 7 seções**. O hero
+  apresenta informações e ação contextual, não outra seleção de abas.
+- Sete paletas passam a combinar **fundos carvão/ardósia, materiais prata,
+  superfícies metálicas, reflexos marfim e destaques de cor bem escolhidos**,
+  em vez de uniformemente pintar tudo de verde/roxo/azul. Os três neutros
+  `sceneNeutral`, `sceneMetal` e `sceneHighlight` são editáveis e
+  exportáveis separadamente.
+- Ondas `ribbons` receberam frequências de movimento perceptíveis,
+  com a mesma fonte de luz usada pelos materiais GGX, avatar e cartões.
+  O tempo de cada quadro vem do WebGL2, não de uma sequência de imagens.
+- Mantidos 7 paletas, exportação JSON por aba, importação ZIP, editor
+  recolhível, modos escuros, tela cheia e todos os controles anteriores.
+
+A nova versão é `1.4.0-dark`. Os testes verificam a presença do FBO,
+amostragem compartilhada, composição única, troca de paletas neutras e
+manutenção das exportações. **Não significa FPS comprovado em aparelho real**.
 
 ## Limitações e fronteiras
 

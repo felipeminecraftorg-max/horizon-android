@@ -241,7 +241,7 @@ test("Fundo tab stores all atmospheric controls with strict ranges and JSON impo
   assert.equal(ctrl.backgroundStyle,"aurora");
   assert.equal(ctrl.ribbonCurve,1.31);
   assert.equal(ctrl.backgroundGlow,.47);
-  assert.equal(ctrl.fps,60);
+  assert.equal(ctrl.fps,45);
 });
 
 test("selection is dynamic GPU lighting without fixed left-hand indicator",()=>{
@@ -264,7 +264,7 @@ test("three optical dark glass variants use actual procedural backdrop sampling"
   for(const u of ["uGlassModel","uGlassOptics","uGlassDetail","uGlassTargets"])
     assert.match(source,new RegExp("uniform vec4 "+u+";"));
   assert.match(source,/vec3 frostedBackdrop/);
-  assert.match(source,/renderBackdrop\(clamp\(uv\+dx/);
+  assert.match(source,/texture\(uSceneTexture,clamp\(texUv\+dx/);
   assert.match(source,/uGlassDetail\.w>1\.5/);
   assert.match(source,/backdropTone=mix\(backdropTone,base,\.48\)/);
   for(const k of ["glassStyle","glassQuality","glassOpacity","glassBlur",
@@ -329,13 +329,13 @@ test("scene interaction moves focus by swipe, arrows and page without adding sta
   const app=fs.readFileSync(path.join(root,"app.js"),"utf8");
   const renderer=fs.readFileSync(path.join(root,"renderer.js"),"utf8");
   const x=sandbox();
-  assert.match(app,/const STACK_PAGES=\["Mods","Packs","Shaders","Files","Skins","Settings"\]/);
+  assert.match(app,/const STACK_PAGES=\["Play","Mods","Packs","Shaders","Files","Skins","Settings"\]/);
   assert.match(app,/difference===2\?"rear":"hidden"/);
   assert.match(app,/Math\.abs\(dx\)>52/);
   assert.match(app,/e\.key==="ArrowRight"/);
   assert.match(app,/tile\.setAttribute\("aria-hidden"/);
-  assert.match(renderer,/if\(element\.classList\?\.contains\("tile"\)\)return;/);
-  assert.match(renderer,/rects\.set\(\[r\.x,r\.y,r\.width,r\.height\],index\*4\)/);
+  assert.match(renderer,/if\(!element\|\|element\.classList\?\.contains\("tile"\)\)return;/);
+  assert.match(renderer,/rectCache\.set\(\[r\.x,r\.y,r\.width,r\.height\],index\*4\)/);
   assert.match(renderer,/uniform1i\(uniform\.uRectCount,NAMES\.length\)/);
   const controls=x.JadeLab.getSection("Componentes").controls;
   for(const key of ["sceneDepth","sceneSpacing","sceneTilt","avatarMotion"])
@@ -345,6 +345,58 @@ test("scene interaction moves focus by swipe, arrows and page without adding sta
   assert.equal(x.JadeLab.getPreset().controls.sceneTilt,25);
   assert.equal(x.JadeLab.getPreset().controls.sceneDepth,0);
   assert.equal(x.JadeLab.getPreset().theme,"oldschool-dark");
+});
+
+test("cached two-pass GPU scene avoids recursive atmospheric recomputation",()=>{
+  const x=sandbox(),src=x.JadeRenderer.fragmentSource,js=renderer;
+  assert.match(src,/uniform sampler2D uSceneTexture;/);
+  assert.match(src,/uniform int uScenePass;/);
+  assert.match(src,/uniform vec4 uSceneNeutral\[3\];/);
+  const blur=src.slice(src.indexOf("vec3 frostedBackdrop"),src.indexOf("void main()"));
+  assert.match(blur,/texture\(uSceneTexture/);
+  assert.doesNotMatch(blur,/renderBackdrop\(/);
+  assert.match(js,/gl\.createFramebuffer\(\)/);
+  assert.match(js,/gl\.framebufferTexture2D\(/);
+  assert.match(js,/gl\.uniform1i\(uniform\.uScenePass,1\)/);
+  assert.match(js,/gl\.uniform1i\(uniform\.uScenePass,0\)/);
+  assert.match(js,/Math\.min\(scale,pixelCap\)/);
+  assert.doesNotMatch(js,/Math\.min\(window\.devicePixelRatio/);
+  assert.match(js,/adaptiveScale=Math\.max/);
+  assert.match(js,/lastCssLight>45/);
+  assert.match(src,/uScenePass==2\?renderBackdrop/);
+});
+
+test("one seven-page console navigation replaces duplicate menu row",()=>{
+  const html=fs.readFileSync(path.join(root,"index.html"),"utf8");
+  const css=fs.readFileSync(path.join(root,"console-refine.css"),"utf8");
+  assert.doesNotMatch(html,/<nav class="channels/);
+  assert.match(html,/data-surface="playtile" data-page="Play"/);
+  assert.match(html,/01 \/ 07/);
+  assert.match(html,/console-refine\.css/);
+  assert.match(css,/\.preview \.channels,\.preview \.status-footer\{display:none!important\}/);
+  assert.match(css,/-webkit-backdrop-filter:none!important/);
+  assert.match(css,/--light-pos-x/);
+  assert.match(css,/--sceneMetal/);
+  // In mobile/landscape the minimized editor must release click targets.
+  assert.match(css,/\.editor\.collapsed\s*\{[^}]*pointer-events:none!important/s);
+  assert.match(css,/\.floating-tools\s*\{[^}]*bottom:auto!important/s);
+});
+
+test("themes separate neutral materials from accents and export them independently",()=>{
+  const x=sandbox();
+  for(const id of x.JadePalettes.ids){
+    const p=x.JadePalettes.profiles[id];
+    for(const k of ["sceneNeutral","sceneMetal","sceneHighlight",
+      "environmentLight","environmentWarmth"])
+      assert.ok(k in p.scene,id+" "+k);
+    assert.notEqual(p.scene.sceneMetal,p.colors.accent);
+    assert.ok(x.JadePalettes.contrast(p.colors.accent,p.colors.bg)>3.0);
+    x.JadeLab.applyPalette(id);
+    assert.equal(x.JadeLab.getPreset().controls.sceneMetal,p.scene.sceneMetal);
+  }
+  x.JadeLab.setField("sceneNeutral","#a1a2a3");
+  assert.equal(x.JadeLab.selectedPalette(),"custom");
+  assert.equal(x.JadeLab.getSection("Cores").controls.sceneNeutral,"#a1a2a3");
 });
 
 test("Android manifest is a separate offline app with no broad permissions",()=>{

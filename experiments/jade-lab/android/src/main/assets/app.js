@@ -25,10 +25,12 @@
     azimuth:-38,elevation:.72,intensity:1.24,ambient:.66,
     roughness:.29,metallic:.31,reflectivity:.72,bevel:.57,
     depth:.65,ao:.43,edgeLight:.74,heroGlow:.79,bloom:.38,
-    bg:"#091611",surface:"#203c2c",accent:"#74da94",cool:"#63aeb8",warm:"#cb995a",
+    bg:"#192328",surface:"#354249",accent:"#85d3a0",cool:"#b4d0cc",warm:"#d9c9aa",
+    sceneNeutral:"#899b9e",sceneMetal:"#586a72",sceneHighlight:"#e5e3d6",
+    environmentLight:.84,environmentWarmth:.40,
     contrast:1.10,saturation:1.07,
     speed:.48,pulse:.22,parallax:.62,reducedMotion:false,
-    quality:.87,fps:60
+    quality:.62,fps:45
   });
   const SPECS={
     paletteId:["Preset cromático","palette",null,null,"Cada perfil também altera luz, atmosfera e material"],
@@ -90,6 +92,11 @@
     edgeLight:["Luz de borda",0,1.8,.01,"Rim e fresnel de contorno"],
     heroGlow:["Halo do painel principal",0,1.5,.01,"Energia luminosa localizada"],
     bloom:["Bloom local",0,1.5,.01,"Realce luminoso contido nos materiais"],
+    sceneNeutral:["Prata ambiental","color",null,null,"Cor neutra iluminada no cenário"],
+    sceneMetal:["Metal escovado","color",null,null,"Tom físico dos painéis e dos cards"],
+    sceneHighlight:["Luz pérola","color",null,null,"Reflexo claro que acompanha a luz"],
+    environmentLight:["Presença de luz neutra",0,1.5,.01,"Intensidade da iluminação prata no fundo"],
+    environmentWarmth:["Luz quente auxiliar",0,1,.01,"Pequena contribuição de luz marfim"],
     bg:["Fundo escuro","color",null,null,"Cor estrutural do cenário"],
     surface:["Base dos painéis","color",null,null,"Pigmento do material"],
     accent:["Jade principal","color",null,null,"Bordas, luz e seleção"],
@@ -128,6 +135,7 @@
       ["Identidades cromáticas",["paletteId"]]]},
     {id:"Cores",icon:"◌",intro:"Edite as cinco cores individualmente. Ao alterar uma cor, o preset vira Personalizado.",groups:[
       ["Cores de superfície",["bg","surface","accent"]],
+      ["Neutros e metais",["sceneNeutral","sceneMetal","sceneHighlight","environmentLight","environmentWarmth"]],
       ["Luzes auxiliares",["cool","warm"]],
       ["Tratamento final",["contrast","saturation"]]]},
     {id:"Componentes",icon:"▦",intro:"Cena com avatar original e três cartões tridimensionais. O fundo permanece visível.",groups:[
@@ -160,6 +168,7 @@
   const PARAM_KEYS=Object.keys(SPECS);
   let state=clone(DEFAULTS),tabId="Atmosfera",page="Play",paused=false,toastId=0;
   const groupOpen={},storeKey="horizon.jade.lab.dark.v1";
+  let lastSavedAt=0;
   function sanitizeName(name) {
     const clean=String(name||"jade-lab").replace(/[^a-zA-Z0-9._-]/g,"-").replace(/^-+|-+$/g,"").slice(0,64);
     return clean||"jade-lab";
@@ -169,7 +178,11 @@
     node.textContent=String(message);node.classList.add("show");
     clearTimeout(toastId);toastId=setTimeout(()=>node.classList.remove("show"),2800);
   }
-  function safeSave() {
+  function safeSave(force=false) {
+    const now=Date.now();
+    // localStorage is synchronous on Android: never write it per slider pixel.
+    if(!force && now-lastSavedAt<280)return;
+    lastSavedAt=now;
     try{localStorage.setItem(storeKey,JSON.stringify(state));}catch(e){}
   }
   function restore() {
@@ -190,7 +203,8 @@
   function sync() {
     window.JadeRenderer.setPreset(state);
     const root=document.documentElement;
-    for(const k of PALETTES.colorFields)root.style.setProperty("--"+k,state[k]);
+    for(const k of [...PALETTES.colorFields,...PALETTES.sceneColorFields])
+      root.style.setProperty("--"+k,state[k]);
     const rgb=[1,3,5].map(i=>parseInt(state.accent.slice(i,i+2),16)).join(",");
     root.style.setProperty("--accent-rgb",rgb);
     const white=PALETTES.contrast(state.accent,"#ffffff");
@@ -343,7 +357,8 @@
       return;
     }
     state[key]=next;
-    if(PALETTES.colorFields.includes(key))state.paletteId="custom";
+    if([...PALETTES.colorFields,...PALETTES.sceneColorFields].includes(key))
+      state.paletteId="custom";
     const readouts=document.querySelectorAll('[data-readout="'+key+'"]');
     readouts.forEach(o=>{o.textContent=String(formatValue(key,next));});
     sync();
@@ -462,7 +477,8 @@
       uniforms:["uAtmos","uLight","uMaterial","uSurface","uMotion","uDetail",
         "uPalette","uRects","uFocusIndex","uSelectionStyle",
         "uBackdropShape","uBackdropLayers","uBackdropLight","uBackdropDetail",
-        "uGlassModel","uGlassOptics","uGlassDetail","uGlassTargets"],
+        "uGlassModel","uGlassOptics","uGlassDetail","uGlassTargets",
+        "uSceneTexture","uScenePass","uSceneNeutral"],
       controls:clone(state),note:"GPU rects use CSS viewport coordinates; see source app."
     }));
     entries.push(json("manifest.json",{
@@ -479,8 +495,11 @@
       "Glass parameters: tabs/vidro.json; styles frosted, tinted, matte, solid.\n"+
       "uniforms.json contains every live parameter used for this export.\n"+
       "Background uniforms are separate from GGX material uniforms for portability.\n"+
+      "Shared environment colors are distinct from accent colors.\n"+
+      "uSceneNeutral[0] supplies neutral metal/pearl illumination from the same moving light.\n"+
       "Glass uniforms: uGlassModel, uGlassOptics, uGlassDetail, uGlassTargets.\n"+
-      "Glass diffusion samples ONLY the procedural background, not native/DOM text or other panels.\n"+
+      "Glass diffusion samples the low resolution cached procedural GPU scene; text stays crisp.\n"+
+      "The deck is the only navigation; the top channel strip is gone.\n"+
       "This is an engineering reference pack, not a compiled Rust/WGSL mod.\n"+
       "The image preview is the GPU backdrop/material shader, not DOM text.\n"+
       "Import this ZIP back into Jade Lab using Import preset/pack.\n"
@@ -518,7 +537,8 @@
     }else{
       Object.assign(state,updates);
       if(!("paletteId" in updates)&&
-         PALETTES.colorFields.some(k=>Object.hasOwn(updates,k)))
+         [...PALETTES.colorFields,...PALETTES.sceneColorFields]
+           .some(k=>Object.hasOwn(updates,k)))
         state.paletteId="custom";
     }
     sync();if(el("editor-tabs") && el("editor-body"))renderPanel();
@@ -597,6 +617,11 @@
     el("download-section").addEventListener("click",()=>doExport("section"));
     el("save-preset").addEventListener("click",()=>doExport("preset"));
     el("download-pack").addEventListener("click",()=>doExport("pack"));
+    window.addEventListener("pagehide",()=>safeSave(true));
+    document.addEventListener("visibilitychange",()=>{
+      if(document.hidden)safeSave(true);
+    });
+    body.addEventListener("pointerup",()=>safeSave(true),{passive:true});
     el("import-file").addEventListener("change",async e=>{
       try{await importFile(e.target.files&&e.target.files[0]);}
       catch(err){toast("Importação: "+(err.message||err));}
@@ -621,7 +646,8 @@
       }
     });
   }
-  const STACK_PAGES=["Mods","Packs","Shaders","Files","Skins","Settings"];
+  // The spatial deck is the ONLY app navigation. Hero is contextual content.
+  const STACK_PAGES=["Play","Mods","Packs","Shaders","Files","Skins","Settings"];
   let stackIndex=0;
   function updateStack(selected){
     const direct=STACK_PAGES.indexOf(selected);
@@ -640,7 +666,11 @@
     if(position)position.textContent=String(stackIndex+1).padStart(2,"0")+
       " / "+String(STACK_PAGES.length).padStart(2,"0");
     const scene=el("console-scene");
-    if(scene)scene.dataset.page=selected;
+    if(scene){
+      scene.dataset.page=selected;
+      // The focused region and player avatar respond to one shared light.
+      scene.style.setProperty("--light-strength",selected==="Play"?"0.75":"1");
+    }
   }
   function cycleStack(direction){
     const next=(stackIndex+direction+STACK_PAGES.length)%STACK_PAGES.length;

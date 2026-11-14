@@ -35,6 +35,10 @@ uniform vec4 uGlassModel;  // style [0..3], opacity, blurRadius, transmission
 uniform vec4 uGlassOptics; // tint, scatter, fresnel, chromatic rim
 uniform vec4 uGlassDetail; // fine grain, satin glint, contact shadow, tap tier
 uniform vec4 uGlassTargets;// hero, tiles, system chrome, play CTA
+uniform sampler2D uSceneTexture;
+uniform int uScenePass; // 1=backdrop draw, 0=composite, 2=fallback
+uniform vec4 uEnvironment; // ambient strength, material energy, warmth, spread
+uniform vec4 uSceneNeutral[3]; // independent silver backdrop, brushed metal and pearl light
 
 float hash12(vec2 p) {
   vec3 p3=fract(vec3(p.xyx)*0.1031);
@@ -70,8 +74,8 @@ vec3 tonemap(vec3 c) {
 float ribbonHeight(float x,float idx,float time,float scale,float bend) {
   float p=x*scale;
   return .53+(idx-1.5)*.144
-      + bend*(.11*sin(p*3.5-idx*.66+time*.19)
-              + .046*sin(p*6.4+idx*1.25-time*.11));
+      + bend*(.11*sin(p*3.5-idx*.66+time*.93)
+              + .046*sin(p*6.4+idx*1.25-time*.48));
 }
 vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
   float style=uBackdropShape.x;
@@ -84,7 +88,7 @@ vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
   float flow=time*uBackdropLayers.w;
 
   vec2 center=uBackdropLight.zw+(mouse-vec2(.5)) *
-    (.034*uBackdropDetail.y);
+    (.14*uBackdropDetail.y);
   float grad=radial(uv,center,vec2(.85,.67));
   float opposite=radial(uv,center+vec2(.44,-.31),vec2(.8,.72));
   float depth=uBackdropLight.y;
@@ -108,7 +112,7 @@ vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
       if(float(layer)>=count)continue;
       float i=float(layer);
       vec2 pos=uv;
-      float t=flow*(.33+.11*i);
+      float t=flow*(.9+.23*i);
       float y=ribbonHeight(pos.x,i,t,scale,bend);
       if(style>1.5){
         // Satin: diagonal soft bands with very restrained movement.
@@ -126,7 +130,7 @@ vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
       float horizonFade=smoothstep(-.16,.13,pos.x)*
                         (1.0-smoothstep(.86,1.12,pos.x));
       // Light follows the band curvature, producing a pearl-like highlight.
-      float turn=.58+.42*sin(pos.x*scale*3.9+i*1.64-flow*.28);
+      float turn=.58+.42*sin(pos.x*scale*3.9+i*1.64-flow*.82);
       vec3 spectral=layer==0?uPalette[3].rgb:
                     layer==1?uPalette[2].rgb:
                     layer==2?uPalette[4].rgb:uPalette[3].rgb;
@@ -166,26 +170,26 @@ vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
 // landscape. It does not sample native/DOM text or completed UI layers.
 // All offset positions stay in viewport coordinates despite render scaling.
 vec3 frostedBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
-  vec3 center=renderBackdrop(uv,p,time,mouse);
-  if(uGlassDetail.w<.5 || uGlassModel.z<=.001) return center;
+  // Read the cached GPU scene; no more recursive expensive ribbons.
+  // WebGL framebuffer stores texture Y bottom-up, while scene UV uses top-down.
+  vec2 texUv=vec2(uv.x,1.0-uv.y);
+  vec3 center=texture(uSceneTexture,texUv).rgb;
+  if(uGlassDetail.w<.5||uGlassModel.z<=.001)return center;
   float radius=1.5+19.0*clamp(uGlassModel.z,0.0,1.0);
   vec2 dx=vec2(radius/max(uViewport.x,1.0),0.0);
   vec2 dy=vec2(0.0,radius/max(uViewport.y,1.0));
-  vec3 axial=renderBackdrop(clamp(uv+dx,vec2(0.),vec2(1.)),p+vec2(radius,0.),time,mouse);
-  axial+=renderBackdrop(clamp(uv-dx,vec2(0.),vec2(1.)),p-vec2(radius,0.),time,mouse);
-  axial+=renderBackdrop(clamp(uv+dy,vec2(0.),vec2(1.)),p+vec2(0.,radius),time,mouse);
-  axial+=renderBackdrop(clamp(uv-dy,vec2(0.),vec2(1.)),p-vec2(0.,radius),time,mouse);
-  vec3 sum=center*4.0+axial;
+  vec3 sum=center*4.0;
+  sum+=texture(uSceneTexture,clamp(texUv+dx,vec2(0.),vec2(1.))).rgb;
+  sum+=texture(uSceneTexture,clamp(texUv-dx,vec2(0.),vec2(1.))).rgb;
+  sum+=texture(uSceneTexture,clamp(texUv+dy,vec2(0.),vec2(1.))).rgb;
+  sum+=texture(uSceneTexture,clamp(texUv-dy,vec2(0.),vec2(1.))).rgb;
   float weight=8.0;
   if(uGlassDetail.w>1.5){
     vec2 dxy=vec2(dx.x*.7071068,dy.y*.7071068);
-    vec2 dp=dxy*uViewport;
-    sum+=renderBackdrop(clamp(uv+dxy,vec2(0.),vec2(1.)),p+dp,time,mouse);
-    sum+=renderBackdrop(clamp(uv-dxy,vec2(0.),vec2(1.)),p-dp,time,mouse);
-    sum+=renderBackdrop(clamp(uv+vec2(dx.x,-dy.y)*.7071068,vec2(0.),vec2(1.)),
-          p+vec2(dp.x,-dp.y),time,mouse);
-    sum+=renderBackdrop(clamp(uv+vec2(-dx.x,dy.y)*.7071068,vec2(0.),vec2(1.)),
-          p+vec2(-dp.x,dp.y),time,mouse);
+    sum+=texture(uSceneTexture,clamp(texUv+dxy,vec2(0.),vec2(1.))).rgb;
+    sum+=texture(uSceneTexture,clamp(texUv-dxy,vec2(0.),vec2(1.))).rgb;
+    sum+=texture(uSceneTexture,clamp(texUv+vec2(dxy.x,-dxy.y),vec2(0.),vec2(1.))).rgb;
+    sum+=texture(uSceneTexture,clamp(texUv+vec2(-dxy.x,dxy.y),vec2(0.),vec2(1.))).rgb;
     weight=12.0;
   }
   return sum/weight;
@@ -197,7 +201,21 @@ void main() {
   // Reduced motion freezes time, while cursor-driven lighting remains alive.
   float tt=uTime*uMotion.x*(1.0-uReduced);
   vec2 cursor=uPointer/max(uViewport,vec2(1.0));
-  vec3 result=renderBackdrop(uv,p,tt,cursor);
+  if(uScenePass==1){
+    vec3 background=renderBackdrop(uv,p,tt,cursor);
+    float diffused=radial(uv,vec2(.5,.43),vec2(.85,.8));
+    // Gray pearl and warm ivory coexist with a much smaller colored accent:
+    // the selected color no longer tints the entire dashboard.
+    background=mix(background,
+      mix(uSceneNeutral[0].rgb,uSceneNeutral[1].rgb,.25),
+      diffused*uEnvironment.x*.43);
+    background+=uSceneNeutral[2].rgb*
+      radial(uv,vec2(.75,.23),vec2(.67,.62))*uEnvironment.z*.037;
+    fragmentColor=vec4(background,1.0);
+    return;
+  }
+  vec3 result=uScenePass==2?renderBackdrop(uv,p,tt,cursor):
+    texture(uSceneTexture,vec2(uv.x,1.0-uv.y)).rgb;
   cursor-=vec2(.5);
   float angle=uLight.x*3.14159265/180.0;
   vec3 light=normalize(vec3(cos(angle)*.87+cursor.x*uMotion.z,
@@ -355,9 +373,12 @@ void main() {
 `;
   const NAMES = ["topbar", "nav", "hero", "mods", "packs", "shaders", "files", "skins", "settings", "footer", "cta"];
   let canvas, gl, program, uniform = {}, buffer, working = false;
+  let sceneTexture=null,sceneFbo=null,sceneSize=[0,0],sceneAvailable=false,
+    geometryDirty=true,rectCache=new Float32Array(12*4),
+    slowFrames=0,adaptiveScale=1;
   let preset, paused = false, last = 0, elapsed = 0, dpr = 1, renderCount = 0;
   let selectedPage="Play";
-  let cursor = [0, 0], error = "";
+  let cursor = [0, 0], error = "",lastCssLight=0;
   const $ = (id) => document.getElementById(id);
   const num = (v, fallback) => Number.isFinite(Number(v)) ? Number(v) : fallback;
   function color(hex) {
@@ -399,18 +420,38 @@ void main() {
         "uRects[0]","uPalette[0]","uAtmos","uLight","uMaterial","uSurface","uMotion","uDetail",
         "uFocusIndex","uSelectionStyle","uBackdropShape",
         "uBackdropLayers","uBackdropLight","uBackdropDetail",
-        "uGlassModel","uGlassOptics","uGlassDetail","uGlassTargets"];
+        "uGlassModel","uGlassOptics","uGlassDetail","uGlassTargets",
+        "uSceneTexture","uScenePass","uEnvironment","uSceneNeutral[0]"];
       keys.forEach(k => { uniform[k] = gl.getUniformLocation(program, k); });
+      gl.uniform1i(uniform.uSceneTexture,0);
       buffer = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1, -1,1,1,-1,1,1]), gl.STATIC_DRAW);
       gl.enableVertexAttribArray(0);
       gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
       cursor = [innerWidth*.35, innerHeight*.5];
-      canvas.addEventListener("webglcontextlost", e => {e.preventDefault(); working=false; error="Contexto GPU perdido"; notify(error);});
+      canvas.addEventListener("webglcontextlost",e=>{
+        e.preventDefault();working=false;error="Contexto GPU perdido";
+        sceneTexture=null;sceneFbo=null;sceneAvailable=false;notify(error);
+      });
       canvas.addEventListener("webglcontextrestored", () => {working=false;init();});
-      window.addEventListener("pointermove", e => {if(!e.target.closest || !e.target.closest("#editor")) cursor=[e.clientX,e.clientY];}, {passive:true});
-      window.addEventListener("resize", resize, {passive:true});
+      window.addEventListener("pointermove",e=>{
+        if(e.target.closest?.("#editor"))return;
+        cursor=[e.clientX,e.clientY];
+        // One light position drives the GPU, cards, metal and avatar.
+        // Limit CSS writes because WebView style recalc is expensive.
+        const now=performance.now();
+        if(now-lastCssLight>45){
+          lastCssLight=now;
+          const root=document.documentElement;
+          root.style.setProperty("--light-pos-x",
+            (100*e.clientX/Math.max(1,innerWidth)).toFixed(1)+"%");
+          root.style.setProperty("--light-pos-y",
+            (100*e.clientY/Math.max(1,innerHeight)).toFixed(1)+"%");
+        }
+      },{passive:true});
+      window.addEventListener("resize",()=>{geometryDirty=true;resize();},{passive:true});
+      document.addEventListener("pointerdown",()=>{geometryDirty=true;},{passive:true});
       document.addEventListener("visibilitychange", () => {last=0;});
       working = true;
       resize();
@@ -428,14 +469,52 @@ void main() {
     const label=$("render-badge");
     if(label) label.textContent=s.substring(0,36);
   }
+  function allocateScene(w,h){
+    if(!gl||!w||!h)return;
+    if(sceneAvailable&&sceneSize[0]===w&&sceneSize[1]===h)return;
+    if(sceneTexture)gl.deleteTexture(sceneTexture);
+    if(sceneFbo)gl.deleteFramebuffer(sceneFbo);
+    sceneTexture=gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D,sceneTexture);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+    sceneFbo=gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER,sceneFbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,sceneTexture,0);
+    sceneAvailable=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    gl.bindTexture(gl.TEXTURE_2D,null);
+    sceneSize=[w,h];
+  }
+  function refreshRects(){
+    rectCache.fill(0);
+    NAMES.forEach((name,index)=>{
+      const element=document.querySelector('[data-surface="'+name+'"]');
+      if(!element||element.classList?.contains("tile"))return;
+      if((name==="topbar"||name==="nav"||name==="footer")&&!preset.glassChrome)return;
+      if(getComputedStyle(element).display==="none")return;
+      const r=element.getBoundingClientRect();
+      if(r.width<2||r.height<2)return;
+      rectCache.set([r.x,r.y,r.width,r.height],index*4);
+    });
+    geometryDirty=false;
+  }
   function resize() {
     if (!gl || !canvas) return;
-    const scale = Math.max(.45, Math.min(1.0, num(preset && preset.quality, .82)));
-    const maxDpr = Math.min(window.devicePixelRatio || 1, 2);
-    const maxDim = 2200;
-    dpr = Math.min(scale * maxDpr, maxDim / Math.max(innerWidth, innerHeight));
+    // Scale independently of Android DPR (often x3): DOM text stays sharp.
+    const scale=Math.max(.38,Math.min(.88,
+      num(preset && preset.quality,.62)*adaptiveScale));
+    const pixelCap=Math.min(1,Math.sqrt(620000/Math.max(1,innerWidth*innerHeight)));
+    dpr=Math.min(scale,pixelCap);
     const w=Math.max(2,Math.round(innerWidth*dpr)),h=Math.max(2,Math.round(innerHeight*dpr));
-    if(canvas.width!==w || canvas.height!==h){canvas.width=w;canvas.height=h;gl.viewport(0,0,w,h);}
+    if(canvas.width!==w||canvas.height!==h){
+      canvas.width=w;canvas.height=h;gl.viewport(0,0,w,h);
+      allocateScene(Math.max(2,Math.floor(w*.64)),Math.max(2,Math.floor(h*.64)));
+    }
   }
   function frame(now) {
     if (!working) return;
@@ -447,9 +526,15 @@ void main() {
     last=now;
     if(!paused && !(preset && preset.reducedMotion)) elapsed+=dt;
     resize();
+    if(dt>.054)slowFrames++;else slowFrames=Math.max(0,slowFrames-1);
+    if(slowFrames>=20&&adaptiveScale>.52){
+      adaptiveScale=Math.max(.52,adaptiveScale-.12);
+      slowFrames=0;resize();notify("GPU ECO · "+Math.round(adaptiveScale*100)+"%");
+    }
     draw();
     renderCount++;
-    if(renderCount%150===0) notify("WEBGL2 · "+(Math.round(1000 / Math.max(1,dt*1000)) || limit)+" FPS");
+    if(renderCount%120===0)notify("WEBGL2 · "+
+      Math.round(1000/Math.max(1,dt*1000))+" FPS");
   }
   function vec4(name, values) {
     gl.uniform4fv(uniform[name], new Float32Array(values));
@@ -457,27 +542,18 @@ void main() {
   function draw() {
     if (!preset || !program || !working) return;
     gl.useProgram(program);
+    const e=preset.environmentLight??.3;
+    gl.uniform4f(uniform.uEnvironment,e,.60,preset.environmentWarmth??.28,.60);
+    gl.uniform4fv(uniform["uSceneNeutral[0]"],new Float32Array(
+      ["sceneNeutral","sceneMetal","sceneHighlight"].flatMap(k=>color(preset[k]))
+    ));
     gl.uniform2f(uniform.uResolution,canvas.width,canvas.height);
     gl.uniform2f(uniform.uViewport,innerWidth,innerHeight);
     gl.uniform2f(uniform.uPointer,cursor[0],cursor[1]);
     gl.uniform1f(uniform.uTime,elapsed);
     gl.uniform1f(uniform.uReduced,preset.reducedMotion?1:0);
-    // Match every shader surface to its *stable* identifier. Hidden module
-    // cards are fully CSS-perspective transformed, so do NOT render flat
-    // axis-aligned GPU material rectangles behind them. CSS backdrop-filter
-    // handles their actual warped silhouette without ghost rectangles.
-    const rects=new Float32Array(12*4);
-    NAMES.forEach((name,index)=>{
-      const element=document.querySelector('[data-surface="'+name+'"]');
-      if(!element)return;
-      if(element.classList?.contains("tile"))return;
-      if((name==="topbar"||name==="nav"||name==="footer") &&
-          !preset.glassChrome)return;
-      if(getComputedStyle(element).display==="none")return;
-      const r=element.getBoundingClientRect();
-      if(r.width<2||r.height<2)return;
-      rects.set([r.x,r.y,r.width,r.height],index*4);
-    });
+    // Cached layout; transformed cards are rendered by the compositor.
+    if(geometryDirty||renderCount%18===0)refreshRects();
     gl.uniform1i(uniform.uRectCount,NAMES.length);
     const surfaces={Play:"hero",Mods:"mods",Packs:"packs",Shaders:"shaders",
       Files:"files",Skins:"skins",Settings:"settings"};
@@ -487,7 +563,7 @@ void main() {
     const modes=["halo","rim","underline","quiet"];
     gl.uniform1i(uniform.uSelectionStyle,
       Math.max(0,modes.indexOf(preset.selectionStyle)));
-    gl.uniform4fv(uniform["uRects[0]"],rects);
+    gl.uniform4fv(uniform["uRects[0]"],rectCache);
     const c=["bg","surface","accent","cool","warm"].flatMap(k=>color(preset[k]));
     gl.uniform4fv(uniform["uPalette[0]"],new Float32Array(c));
     vec4("uAtmos",[preset.fog,preset.waves,preset.noise,preset.vignette]);
@@ -531,14 +607,37 @@ void main() {
       preset.glassHero?1:0,preset.glassCards?1:0,
       preset.glassChrome?1:0,preset.glassCTA?1:0
     ]);
+    if(!sceneAvailable){
+      // On devices without a renderable offscreen texture, avoid sampling
+      // undefined content. Solid material still receives a lit GGX response.
+      vec4("uGlassTargets",[0,0,0,0]);
+    }
+    if(sceneAvailable){
+      // Never sample the texture while it is bound as an FBO attachment.
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D,null);
+      gl.bindFramebuffer(gl.FRAMEBUFFER,sceneFbo);
+      gl.viewport(0,0,sceneSize[0],sceneSize[1]);
+      gl.uniform2f(uniform.uResolution,sceneSize[0],sceneSize[1]);
+      gl.uniform1i(uniform.uScenePass,1);
+      gl.drawArrays(gl.TRIANGLES,0,6);
+      gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+      gl.viewport(0,0,canvas.width,canvas.height);
+      gl.uniform2f(uniform.uResolution,canvas.width,canvas.height);
+      gl.bindTexture(gl.TEXTURE_2D,sceneTexture);
+      gl.uniform1i(uniform.uScenePass,0);
+    }else gl.uniform1i(uniform.uScenePass,2);
     gl.drawArrays(gl.TRIANGLES,0,6);
   }
   function setPreset(p) {
-    preset=p;
-    if (gl) resize();
+    preset=p;geometryDirty=true;
+    if(gl)resize();
   }
   function setPage(name) {
-    selectedPage=String(name||"Play");
+    selectedPage=String(name||"Play");geometryDirty=true;
+    // Keyboard/deck navigation also moves the active point light.
+    cursor=selectedPage==="Play"?[innerWidth*.43,innerHeight*.28]:
+      [innerWidth*.70,innerHeight*.30];
   }
   function pause(value) {paused=!!value;return paused;}
   function recenter() {cursor=[innerWidth*.35,innerHeight*.4];}
@@ -547,7 +646,8 @@ void main() {
     draw();
     return canvas.toDataURL("image/png");
   }
-  function state() {return {webgl2:working,paused,error,dimensions:[canvas&&canvas.width,canvas&&canvas.height]};}
+  function state() {return {webgl2:working,paused,error,sceneCache:sceneAvailable,
+    adaptiveScale,dimensions:[canvas&&canvas.width,canvas&&canvas.height]};}
   window.JadeRenderer={init,setPreset,setPage,pause,recenter,screenshot,state,
     vertexSource:VERTEX_SOURCE,fragmentSource:FRAGMENT_SOURCE,refresh:draw};
 })();
