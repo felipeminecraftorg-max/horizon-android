@@ -10,7 +10,8 @@ test **Old School / Horizon Jade dark only**, not Liquid Glass.
 - A full-screen responsive Horizon Jade *mock dashboard* with Play, Mods,
   Packs, Shaders, My Files, Settings and Skins; the preview does **not** install
   or launch Minecraft and never touches the user's worlds/accounts.
-- WebGL2 / GLSL ES 3.00 with live gradients, broad energy waves, vignette,
+- WebGL2 / GLSL ES 3.00 with live gradients and five live background styles
+  (original luminous ribbons, aurora, diagonal satin, halos, minimal), vignette,
   atmospheric fog, GGX/Schlick material response, specular lights, surface
   bevels, AO, controlled glow, and cursor-driven lighting.
 - Real GPU render-scale (0.45–1.0), frame cap (30–120), reduced motion.
@@ -18,6 +19,9 @@ test **Old School / Horizon Jade dark only**, not Liquid Glass.
 - Independent, foldable groups in every tab and the ability to **collapse the
   entire editor, expand it, resize it vertically, or fully hide it** while
   inspecting every pixel of the phone screen in landscape or portrait.
+- Use **Fundo** to control 16 real GPU background parameters including shape,
+  light position, diffusion, grain, flow, parallax, ribbon count and contrast.
+  Each of the seven curated dark palettes selects a complete authored background.
 - Edit and save presets locally; export **every individual tab** as JSON;
   export the entire preset as JSON; export one complete ZIP containing
   section JSONs, live shaders, uniform mapping, manifest and shader preview.

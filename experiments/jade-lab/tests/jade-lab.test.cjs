@@ -173,6 +173,77 @@ test("custom color edits do not overwrite chosen colors or legacy preset format"
   assert.equal(x.JadeLab.getPreset().controls.accent,"#ffcf64");
 });
 
+test("five atmospheric backgrounds have independent GPU uniforms and true GLSL source",()=>{
+  const x=sandbox(),glsl=x.JadeRenderer.fragmentSource;
+  for(const name of ["uBackdropShape","uBackdropLayers",
+    "uBackdropLight","uBackdropDetail"])
+      assert.match(glsl,new RegExp("uniform vec4 "+name+";"));
+  assert.match(glsl,/vec3 renderBackdrop/);
+  assert.match(glsl,/float ribbonHeight/);
+  assert.match(glsl,/for\(int layer=0;layer<4;layer\+\+\)/);
+  assert.match(renderer,/vec4\("uBackdropShape"/);
+  assert.match(renderer,/backgroundCenterX/);
+  assert.match(renderer,/backgroundParallax/);
+  assert.doesNotMatch(glsl,/texture2D\(/);
+});
+
+test("background presets have distinct compositions and respect FPS",()=>{
+  const x=sandbox();
+  x.JadeLab.setField("fps",90);
+  x.JadeLab.setField("quality",.65);
+  x.JadeLab.setField("reducedMotion",true);
+  const styles=new Set();
+  for(const id of x.JadePalettes.ids){
+    assert.equal(x.JadeLab.applyPalette(id),true);
+    const ctrl=x.JadeLab.getPreset().controls;
+    const backdrop=x.JadePalettes.profiles[id].backdrop;
+    assert.ok(Object.keys(backdrop).length>=14,"profile "+id);
+    assert.equal(ctrl.backgroundStyle,backdrop.backgroundStyle);
+    assert.equal(ctrl.ribbonLayers,backdrop.ribbonLayers);
+    assert.equal(ctrl.gradientDepth,backdrop.gradientDepth);
+    assert.equal(ctrl.backgroundCenterX,backdrop.backgroundCenterX);
+    assert.equal(ctrl.backgroundContrast,backdrop.backgroundContrast);
+    assert.equal(ctrl.fps,90);
+    assert.equal(ctrl.quality,.65);
+    assert.equal(ctrl.reducedMotion,true);
+    styles.add(ctrl.backgroundStyle);
+  }
+  assert.equal(styles.size,5,"every background style is used by a curated palette");
+});
+
+test("Fundo tab stores all atmospheric controls with strict ranges and JSON import",async()=>{
+  const x=sandbox(),before=x.JadeLab.getSection("Fundo");
+  assert.equal(before.format,"HORIZON_JADE_TAB_V1");
+  const keys=Object.keys(before.controls);
+  for(const key of ["backgroundStyle","backgroundIntensity","backgroundScale",
+    "backgroundFlow","ribbonLayers","ribbonCurve","ribbonWidth",
+    "ribbonSoftness","ribbonGleam","backgroundGlow","gradientDepth",
+    "backgroundContrast","backgroundGrain","backgroundCenterX",
+    "backgroundCenterY","backgroundParallax"])
+    assert.ok(keys.includes(key),"Missing "+key);
+  x.JadeLab.setField("backgroundStyle","satin");
+  x.JadeLab.setField("backgroundIntensity",20);
+  x.JadeLab.setField("backgroundCenterX",-5);
+  x.JadeLab.setField("ribbonLayers",4);
+  x.JadeLab.setField("backgroundStyle","not-a-style");
+  let ctrl=x.JadeLab.getPreset().controls;
+  assert.equal(ctrl.backgroundStyle,"satin");
+  assert.equal(ctrl.backgroundIntensity,1.8);
+  assert.equal(ctrl.backgroundCenterX,0);
+  assert.equal(ctrl.ribbonLayers,4);
+  const one={format:"HORIZON_JADE_TAB_V1",theme:"oldschool-dark",
+    tab:"Fundo",controls:{backgroundStyle:"aurora",ribbonCurve:1.31,
+       backgroundGlow:.47}};
+  const file=new Blob([JSON.stringify(one)],{type:"application/json"});
+  file.name="fundo.json";
+  await x.JadeLab.importFile(file);
+  ctrl=x.JadeLab.getPreset().controls;
+  assert.equal(ctrl.backgroundStyle,"aurora");
+  assert.equal(ctrl.ribbonCurve,1.31);
+  assert.equal(ctrl.backgroundGlow,.47);
+  assert.equal(ctrl.fps,60);
+});
+
 test("selection is dynamic GPU lighting without fixed left-hand indicator",()=>{
   const x=sandbox();
   const css=fs.readFileSync(path.join(root,"styles.css"),"utf8");

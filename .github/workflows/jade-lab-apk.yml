@@ -6,6 +6,7 @@ on:
     branches:
       - feature/jade-lab-dark-android
       - feature/jade-lab-part2-visual-foundation
+      - feature/jade-lab-part2-atmospheric-background
     paths:
       - 'experiments/jade-lab/**'
       - '.github/workflows/jade-lab-apk.yml'

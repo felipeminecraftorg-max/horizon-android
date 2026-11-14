@@ -56,12 +56,74 @@
       material:{roughness:.52,metallic:.23,reflectivity:.57,bevel:.42,depth:.63,ao:.40}
     }
   };
+  // Palette-specific landscape art direction, not merely an RGB tint.
+  // Presets own the compositional style, halo placement and band hierarchy;
+  // the user can still override every number independently in Fundo.
+  const BACKDROPS={
+    jade:{
+      backgroundStyle:"ribbons",backgroundIntensity:1.05,
+      backgroundScale:1.12,backgroundFlow:.32,
+      ribbonLayers:3,ribbonCurve:.95,ribbonWidth:.73,ribbonSoftness:1.10,
+      ribbonGleam:.72,backgroundGlow:.78,gradientDepth:1.05,
+      backgroundContrast:.75,backgroundGrain:.16,
+      backgroundCenterX:.34,backgroundCenterY:.58,backgroundParallax:.37
+    },
+    amethyst:{
+      backgroundStyle:"aurora",backgroundIntensity:1.22,
+      backgroundScale:.86,backgroundFlow:.20,
+      ribbonLayers:4,ribbonCurve:1.27,ribbonWidth:1.16,ribbonSoftness:1.48,
+      ribbonGleam:.46,backgroundGlow:1.13,gradientDepth:1.19,
+      backgroundContrast:1.14,backgroundGrain:.13,
+      backgroundCenterX:.45,backgroundCenterY:.44,backgroundParallax:.23
+    },
+    azure:{
+      backgroundStyle:"satin",backgroundIntensity:1.08,
+      backgroundScale:1.37,backgroundFlow:.25,
+      ribbonLayers:3,ribbonCurve:.68,ribbonWidth:.73,ribbonSoftness:.88,
+      ribbonGleam:1.10,backgroundGlow:.85,gradientDepth:.89,
+      backgroundContrast:1.03,backgroundGrain:.075,
+      backgroundCenterX:.63,backgroundCenterY:.36,backgroundParallax:.51
+    },
+    graphite:{
+      backgroundStyle:"minimal",backgroundIntensity:.52,
+      backgroundScale:1.18,backgroundFlow:.07,
+      ribbonLayers:2,ribbonCurve:.35,ribbonWidth:.48,ribbonSoftness:1.18,
+      ribbonGleam:.32,backgroundGlow:.44,gradientDepth:.68,
+      backgroundContrast:.40,backgroundGrain:.27,
+      backgroundCenterX:.62,backgroundCenterY:.28,backgroundParallax:.12
+    },
+    obsidian:{
+      backgroundStyle:"halo",backgroundIntensity:.86,
+      backgroundScale:.97,backgroundFlow:.10,
+      ribbonLayers:3,ribbonCurve:.38,ribbonWidth:.59,ribbonSoftness:1.36,
+      ribbonGleam:.76,backgroundGlow:.68,gradientDepth:1.26,
+      backgroundContrast:.59,backgroundGrain:.10,
+      backgroundCenterX:.61,backgroundCenterY:.43,backgroundParallax:.19
+    },
+    cobalt:{
+      backgroundStyle:"ribbons",backgroundIntensity:1.24,
+      backgroundScale:1.32,backgroundFlow:.44,
+      ribbonLayers:4,ribbonCurve:1.29,ribbonWidth:.83,ribbonSoftness:.93,
+      ribbonGleam:1.15,backgroundGlow:1.10,gradientDepth:1.16,
+      backgroundContrast:1.02,backgroundGrain:.12,
+      backgroundCenterX:.35,backgroundCenterY:.61,backgroundParallax:.56
+    },
+    smoke:{
+      backgroundStyle:"satin",backgroundIntensity:.66,
+      backgroundScale:.83,backgroundFlow:.08,
+      ribbonLayers:2,ribbonCurve:.39,ribbonWidth:.92,ribbonSoftness:1.75,
+      ribbonGleam:.44,backgroundGlow:.40,gradientDepth:.72,
+      backgroundContrast:.47,backgroundGrain:.32,
+      backgroundCenterX:.46,backgroundCenterY:.31,backgroundParallax:.10
+    }
+  };
   const IDS=Object.freeze(Object.keys(PROFILES));
   const COLOR_FIELDS=Object.freeze(["bg","surface","accent","cool","warm"]);
   const merge=(base,id)=>{
     if(!Object.prototype.hasOwnProperty.call(PROFILES,id))return null;
     const p=PROFILES[id];
-    return Object.assign({},base,p.colors,p.atmosphere,p.lighting,p.material,{paletteId:id});
+    return Object.assign({},base,p.colors,p.atmosphere,p.lighting,p.material,
+      BACKDROPS[id],{paletteId:id});
   };
   const luminance=hex=>{
     const rgb=[1,3,5].map(i=>parseInt(hex.substring(i,i+2),16)/255);
@@ -80,7 +142,8 @@
       colors:Object.freeze({...p.colors}),
       atmosphere:Object.freeze({...p.atmosphere}),
       lighting:Object.freeze({...p.lighting}),
-      material:Object.freeze({...p.material})
+      material:Object.freeze({...p.material}),
+      backdrop:Object.freeze({...BACKDROPS[id]})
     })];
   }));
   window.JadePalettes=Object.freeze({
