@@ -9,6 +9,12 @@
   if(!PALETTES)throw new Error("O catálogo de paletas não foi carregado");
   const DEFAULTS=Object.freeze({
     paletteId:"jade",selectionStyle:"halo",
+    backgroundStyle:"ribbons",backgroundIntensity:1.05,
+    backgroundScale:1.12,backgroundFlow:.32,
+    ribbonLayers:3,ribbonCurve:.95,ribbonWidth:.73,ribbonSoftness:1.10,
+    backgroundGlow:.78,gradientDepth:1.05,
+    backgroundGrain:.16,backgroundCenterX:.34,backgroundCenterY:.58,
+    backgroundParallax:.37,ribbonGleam:.72,backgroundContrast:.75,
     fog:.48,waves:.33,noise:.09,vignette:.35,diffusion:.58,
     azimuth:-38,elevation:.72,intensity:1.24,ambient:.66,
     roughness:.29,metallic:.31,reflectivity:.72,bevel:.57,
@@ -21,6 +27,23 @@
   const SPECS={
     paletteId:["Preset cromático","palette",null,null,"Cada perfil também altera luz, atmosfera e material"],
     selectionStyle:["Tipo de seleção","select",["halo","rim","underline","quiet"],null,"Halo, borda física, linha inferior ou seleção discreta"],
+    backgroundStyle:["Linguagem do fundo","select",["ribbons","aurora","satin","halo","minimal"],null,
+      "Ondas fluidas, aurora difusa, cetim, halos ou degradê"],
+    backgroundIntensity:["Intensidade do fundo",0,1.8,.01,"Força visual das curvas e das luzes"],
+    backgroundScale:["Escala das curvas",.45,2.6,.01,"Espaçamento e ondulação espacial"],
+    backgroundFlow:["Velocidade da paisagem",0,1.5,.01,"Movimento lento das camadas no tempo"],
+    ribbonLayers:["Camadas de ondas",1,4,1,"Uma a quatro curvas independentes"],
+    ribbonCurve:["Curvatura das ondas",0,1.8,.01,"O quanto cada faixa desvia da linha principal"],
+    ribbonWidth:["Espessura dos véus",.12,1.6,.01,"Largura do corpo iluminado das curvas"],
+    ribbonSoftness:["Difusão das curvas",.4,2.4,.01,"Quanto a luz se espalha pelas bordas"],
+    ribbonGleam:["Reflexo acetinado",0,1.7,.01,"Faixa de brilho fino que acompanha a curva"],
+    backgroundGlow:["Halo volumétrico",0,1.8,.01,"Luz atmosférica atrás dos painéis"],
+    gradientDepth:["Profundidade do degradê",0,1.8,.01,"Contraste entre fundo e névoa"],
+    backgroundContrast:["Cor de contraste",0,1.8,.01,"Luz secundária complementar à paleta"],
+    backgroundGrain:["Microtextura",0,.7,.01,"Granulação estável, sem tremulação"],
+    backgroundCenterX:["Centro luminoso X",0,1,.01,"Posição horizontal da luz principal"],
+    backgroundCenterY:["Centro luminoso Y",0,1,.01,"Posição vertical da luz principal"],
+    backgroundParallax:["Paralaxe do fundo",0,1.4,.01,"Deslocamento da iluminação com o dedo"],
     fog:["Névoa atmosférica",0,1,.01,"Intensidade difusa no fundo"],
     waves:["Ondas de energia",0,1,.01,"Luz ambiental em ondas largas"],
     noise:["Textura fina",0,.6,.01,"Granulação óptica discreta"],
@@ -54,7 +77,12 @@
     fps:["FPS máximo","choice",[30,45,60,90,120],null,"Limite para economizar energia"]
   };
   const TABS=[
-    {id:"Atmosfera",icon:"☁",intro:"Atmosfera real: gradiente escuro, luz difusa e ondas suaves.",groups:[
+    {id:"Fundo",icon:"≋",intro:"Paisagem de console em tempo real: curvas fluidas, névoa e luz com profundidade. Sem imagens copiadas.",groups:[
+      ["Estilo do cenário",["backgroundStyle","backgroundIntensity","backgroundScale"]],
+      ["Curvas e ondas",["ribbonLayers","ribbonCurve","ribbonWidth","ribbonSoftness","ribbonGleam","backgroundFlow"]],
+      ["Luz e degradês",["backgroundGlow","gradientDepth","backgroundContrast","backgroundCenterX","backgroundCenterY"]],
+      ["Textura e movimento",["backgroundGrain","backgroundParallax"]]]},
+    {id:"Atmosfera",icon:"☁",intro:"Camada de ar sobre o cenário: névoa, ondas suaves, vinheta e textura.",groups:[
       ["Campo de fundo",["fog","waves","diffusion"]],
       ["Acabamento ambiental",["noise","vignette"]]]},
     {id:"Luz",icon:"☀",intro:"Iluminação direcional com resposta especular em tempo real.",groups:[
@@ -189,7 +217,9 @@
       control='<select data-param="'+key+'" aria-label="'+label+'">'+
         spec[2].map(v=>'<option value="'+v+'"'+(v===val?' selected':'')+'>'+v+' FPS</option>').join("")+'</select>';
     }else if(spec[1]==="select"){
-      const labels={halo:"Halo material",rim:"Borda luminosa",underline:"Linha inferior",quiet:"Discreto"};
+      const labels={halo:"Halo material",rim:"Borda luminosa",underline:"Linha inferior",quiet:"Discreto",
+        ribbons:"Ondas fluidas",aurora:"Aurora difusa",satin:"Cetim diagonal",
+        minimal:"Degradê minimalista"};
       control='<select data-param="'+key+'" aria-label="'+label+'">'+
         spec[2].map(v=>'<option value="'+v+'"'+(v===val?' selected':'')+'>'+
         escapeHtml(labels[v]||v)+'</option>').join("")+'</select>';
@@ -371,7 +401,9 @@
     entries.push({name:"shaders/fullscreen.vert",bytes:textBytes(window.JadeRenderer.vertexSource)});
     entries.push(json("uniforms.json",{
       engine:"WebGL2 / GLSL ES 300",theme:"oldschool-dark",
-      uniforms:["uAtmos","uLight","uMaterial","uSurface","uMotion","uDetail","uPalette","uRects","uFocusIndex","uSelectionStyle"],
+      uniforms:["uAtmos","uLight","uMaterial","uSurface","uMotion","uDetail",
+        "uPalette","uRects","uFocusIndex","uSelectionStyle",
+        "uBackdropShape","uBackdropLayers","uBackdropLight","uBackdropDetail"],
       controls:clone(state),note:"GPU rects use CSS viewport coordinates; see source app."
     }));
     entries.push(json("manifest.json",{
@@ -384,7 +416,9 @@
       "HORIZON JADE LAB — DARK ONLY\n"+
       "Preset: preset.json. Each category: tabs/*.json.\n"+
       "GPU shader sources: shaders/*.frag, *.vert (WebGL2 / GLSL ES 300).\n"+
+      "Background parameters: tabs/fundo.json; styles ribbons, aurora, satin, halo, minimal.\n"+
       "uniforms.json contains every live parameter used for this export.\n"+
+      "Background uniforms are separate from GGX material uniforms for portability.\n"+
       "This is an engineering reference pack, not a compiled Rust/WGSL mod.\n"+
       "The image preview is the GPU backdrop/material shader, not DOM text.\n"+
       "Import this ZIP back into Jade Lab using Import preset/pack.\n"
