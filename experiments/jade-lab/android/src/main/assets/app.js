@@ -212,13 +212,18 @@
     root.style.setProperty("--glass-rim",String(state.glassRim));
     root.style.setProperty("--scene-glass-blur",
       String(state.glassCards?Math.round(4+state.glassBlur*17):0)+"px");
+    root.style.setProperty("--scene-glass-opacity",
+      String(state.glassCards?(0.07+state.glassOpacity*.37).toFixed(3):.27));
     const scene=el("console-scene");
     if(scene){
       scene.style.setProperty("--deck-depth",Math.round(30+state.sceneDepth*100)+"px");
       scene.style.setProperty("--deck-gap",Math.round(26+state.sceneSpacing*27)+"px");
       scene.style.setProperty("--deck-tilt",String(state.sceneTilt)+"deg");
-      scene.style.setProperty("--avatar-speed",String(state.avatarMotion));
+      scene.style.setProperty("--avatar-idle-duration",
+        String((7.5-state.avatarMotion*4.5).toFixed(2))+"s");
       scene.dataset.reducedMotion=state.reducedMotion?"true":"false";
+      const avatar=scene.querySelector?.(".avatar-figure");
+      if(avatar)avatar.style.animationPlayState=state.reducedMotion?"paused":"running";
     }
     const badge=el("live-hint");
     if(badge)badge.textContent="LIVE GPU · "+state.paletteId.toUpperCase()+" · "+state.fps+" FPS";
