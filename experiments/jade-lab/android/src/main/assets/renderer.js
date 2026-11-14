@@ -74,8 +74,8 @@ vec3 tonemap(vec3 c) {
 float ribbonHeight(float x,float idx,float time,float scale,float bend) {
   float p=x*scale;
   return .53+(idx-1.5)*.144
-      + bend*(.11*sin(p*3.5-idx*.66+time*.19)
-              + .046*sin(p*6.4+idx*1.25-time*.11));
+      + bend*(.11*sin(p*3.5-idx*.66+time*.93)
+              + .046*sin(p*6.4+idx*1.25-time*.48));
 }
 vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
   float style=uBackdropShape.x;
@@ -88,7 +88,7 @@ vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
   float flow=time*uBackdropLayers.w;
 
   vec2 center=uBackdropLight.zw+(mouse-vec2(.5)) *
-    (.034*uBackdropDetail.y);
+    (.14*uBackdropDetail.y);
   float grad=radial(uv,center,vec2(.85,.67));
   float opposite=radial(uv,center+vec2(.44,-.31),vec2(.8,.72));
   float depth=uBackdropLight.y;
@@ -112,7 +112,7 @@ vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
       if(float(layer)>=count)continue;
       float i=float(layer);
       vec2 pos=uv;
-      float t=flow*(.33+.11*i);
+      float t=flow*(.9+.23*i);
       float y=ribbonHeight(pos.x,i,t,scale,bend);
       if(style>1.5){
         // Satin: diagonal soft bands with very restrained movement.
@@ -130,7 +130,7 @@ vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
       float horizonFade=smoothstep(-.16,.13,pos.x)*
                         (1.0-smoothstep(.86,1.12,pos.x));
       // Light follows the band curvature, producing a pearl-like highlight.
-      float turn=.58+.42*sin(pos.x*scale*3.9+i*1.64-flow*.28);
+      float turn=.58+.42*sin(pos.x*scale*3.9+i*1.64-flow*.82);
       vec3 spectral=layer==0?uPalette[3].rgb:
                     layer==1?uPalette[2].rgb:
                     layer==2?uPalette[4].rgb:uPalette[3].rgb;
@@ -378,7 +378,7 @@ void main() {
     slowFrames=0,adaptiveScale=1;
   let preset, paused = false, last = 0, elapsed = 0, dpr = 1, renderCount = 0;
   let selectedPage="Play";
-  let cursor = [0, 0], error = "";
+  let cursor = [0, 0], error = "",lastCssLight=0;
   const $ = (id) => document.getElementById(id);
   const num = (v, fallback) => Number.isFinite(Number(v)) ? Number(v) : fallback;
   function color(hex) {
@@ -435,7 +435,21 @@ void main() {
         sceneTexture=null;sceneFbo=null;sceneAvailable=false;notify(error);
       });
       canvas.addEventListener("webglcontextrestored", () => {working=false;init();});
-      window.addEventListener("pointermove", e => {if(!e.target.closest || !e.target.closest("#editor")) cursor=[e.clientX,e.clientY];}, {passive:true});
+      window.addEventListener("pointermove",e=>{
+        if(e.target.closest?.("#editor"))return;
+        cursor=[e.clientX,e.clientY];
+        // One light position drives the GPU, cards, metal and avatar.
+        // Limit CSS writes because WebView style recalc is expensive.
+        const now=performance.now();
+        if(now-lastCssLight>45){
+          lastCssLight=now;
+          const root=document.documentElement;
+          root.style.setProperty("--light-pos-x",
+            (100*e.clientX/Math.max(1,innerWidth)).toFixed(1)+"%");
+          root.style.setProperty("--light-pos-y",
+            (100*e.clientY/Math.max(1,innerHeight)).toFixed(1)+"%");
+        }
+      },{passive:true});
       window.addEventListener("resize",()=>{geometryDirty=true;resize();},{passive:true});
       document.addEventListener("pointerdown",()=>{geometryDirty=true;},{passive:true});
       document.addEventListener("visibilitychange", () => {last=0;});
@@ -621,6 +635,9 @@ void main() {
   }
   function setPage(name) {
     selectedPage=String(name||"Play");geometryDirty=true;
+    // Keyboard/deck navigation also moves the active point light.
+    cursor=selectedPage==="Play"?[innerWidth*.43,innerHeight*.28]:
+      [innerWidth*.70,innerHeight*.30];
   }
   function pause(value) {paused=!!value;return paused;}
   function recenter() {cursor=[innerWidth*.35,innerHeight*.4];}
