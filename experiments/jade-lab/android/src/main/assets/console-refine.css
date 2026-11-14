@@ -173,3 +173,13 @@
  .floating-tools{top:clamp(75px,13vh,120px)!important}
  .floating-tools .float-button{width:36px;height:36px}
 }
+
+/* GPU fallback must not consume navigation touches on unsupported devices. */
+#gpu-fallback:not([hidden]){
+  pointer-events:none!important;
+  left:auto!important;right:12px!important;
+  bottom:auto!important;top:62px!important;
+  width:max-content;max-width:min(220px,52vw);
+  padding:6px 9px;
+  font-size:10px;opacity:.80;
+}
