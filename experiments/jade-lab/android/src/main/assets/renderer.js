@@ -130,7 +130,7 @@ void main() {
          *uSurface.x*.060;
     float rim=bevelDistance*uSurface.z;
     mat+=mix(uPalette[2].rgb,vec3(1.0),.48)*rim*(.035+.075*nl);
-    float innerShadow=smoothstep(.03,.20,q.y)*smoothstep(.92,.76,q.y);
+    float innerShadow=smoothstep(.03,.20,q.y)*(1.0-smoothstep(.76,.92,q.y));
     mat*=1.0-innerShadow*uSurface.y*.045;
     if(i==2 || i==10) {
       float aura=radial(q,vec2(.32,.76),vec2(.87,1.1));
@@ -144,6 +144,8 @@ void main() {
     mat+=spec*uMotion.w*.12;
     result=mix(result,mat,inMask*.96);
   }
+  float luminance=dot(result,vec3(.2126,.7152,.0722));
+  result=mix(vec3(luminance),result,uDetail.z);
   result=(result-.5)*uDetail.y+.5;
   result*=.94+uDetail.x*.12;
   result=tonemap(result);
