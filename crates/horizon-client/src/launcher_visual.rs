@@ -667,7 +667,7 @@ pub fn component_card(ui: &mut Ui<'_>, rect: [f32; 4], emphasized: bool) {
         // Only one hovered card gets a live material evaluation; no per-item
         // reflection pass on hundreds of catalog entries.
         if hover && th.jade_gpu_fx && !th.is_light && h >= 44. {
-            ui.backdrop_lens(rect, radius, color::hex(0x66C77A, 0), [0., 0.]);
+            ui.backdrop_lens(rect, radius, color::with_alpha(th.accent, 0.), [0., 0.]);
         }
         ui.stroke_rounded(x, y, w, h, radius, if emphasized { 1.2 } else { 0.85 },
             if emphasized { th.accent } else { th.border });
