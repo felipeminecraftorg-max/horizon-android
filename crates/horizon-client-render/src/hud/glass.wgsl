@@ -163,7 +163,7 @@ fn normal_for(q: vec2<f32>, outside: vec2<f32>, p: vec2<f32>) -> vec2<f32> {
             matte += spec * (0.70 + 0.30 * lens.profile[1].w);
             matte += local_reflect * mask * f * 0.18;
             let edge = exp(-depth / max(1.5 * dp, roll * 0.17));
-            matte += vec3(0.13, 0.56, 0.27) * edge
+            matte += mix(vec3(0.13, 0.56, 0.27), lens.tint.rgb, 0.55) * edge
                 * (0.028 + 0.065 * max(dot(outward, light_dir), 0.));
             matte += vec3(0.13, 0.19, 0.16) * inner * 0.08;
             return vec4(clamp(matte, vec3(0.), vec3(1.)),
