@@ -12,6 +12,12 @@
 use crate::hud::{HudAtlas, HudBatch, Rect};
 use ab_glyph::{Font as _, FontRef, PxScale, ScaleFont as _};
 use std::{cell::RefCell, collections::HashMap, path::Path};
+
+// The Android input module is intentionally backend-free. Compile and run its
+// gesture unit tests on the Linux CI runner too, without requiring an emulator.
+#[cfg(test)]
+#[path = "android/launcher_gesture.rs"]
+mod launcher_gesture_tests;
 #[path = "launcher_icon_assets.rs"]
 mod launcher_icon_assets;
 
