@@ -365,6 +365,9 @@ void main() {
 `;
   const NAMES = ["topbar", "nav", "hero", "mods", "packs", "shaders", "files", "skins", "settings", "footer", "cta"];
   let canvas, gl, program, uniform = {}, buffer, working = false;
+  let sceneTexture=null,sceneFbo=null,sceneSize=[0,0],sceneAvailable=false,
+    geometryDirty=true,rectCache=new Float32Array(12*4),
+    slowFrames=0,adaptiveScale=1;
   let preset, paused = false, last = 0, elapsed = 0, dpr = 1, renderCount = 0;
   let selectedPage="Play";
   let cursor = [0, 0], error = "";
@@ -412,16 +415,21 @@ void main() {
         "uGlassModel","uGlassOptics","uGlassDetail","uGlassTargets",
         "uSceneTexture","uScenePass","uEnvironment"];
       keys.forEach(k => { uniform[k] = gl.getUniformLocation(program, k); });
+      gl.uniform1i(uniform.uSceneTexture,0);
       buffer = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1, -1,1,1,-1,1,1]), gl.STATIC_DRAW);
       gl.enableVertexAttribArray(0);
       gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
       cursor = [innerWidth*.35, innerHeight*.5];
-      canvas.addEventListener("webglcontextlost", e => {e.preventDefault(); working=false; error="Contexto GPU perdido"; notify(error);});
+      canvas.addEventListener("webglcontextlost",e=>{
+        e.preventDefault();working=false;error="Contexto GPU perdido";
+        sceneTexture=null;sceneFbo=null;sceneAvailable=false;notify(error);
+      });
       canvas.addEventListener("webglcontextrestored", () => {working=false;init();});
       window.addEventListener("pointermove", e => {if(!e.target.closest || !e.target.closest("#editor")) cursor=[e.clientX,e.clientY];}, {passive:true});
-      window.addEventListener("resize", resize, {passive:true});
+      window.addEventListener("resize",()=>{geometryDirty=true;resize();},{passive:true});
+      document.addEventListener("pointerdown",()=>{geometryDirty=true;},{passive:true});
       document.addEventListener("visibilitychange", () => {last=0;});
       working = true;
       resize();
@@ -439,14 +447,52 @@ void main() {
     const label=$("render-badge");
     if(label) label.textContent=s.substring(0,36);
   }
+  function allocateScene(w,h){
+    if(!gl||!w||!h)return;
+    if(sceneAvailable&&sceneSize[0]===w&&sceneSize[1]===h)return;
+    if(sceneTexture)gl.deleteTexture(sceneTexture);
+    if(sceneFbo)gl.deleteFramebuffer(sceneFbo);
+    sceneTexture=gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D,sceneTexture);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+    sceneFbo=gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER,sceneFbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,sceneTexture,0);
+    sceneAvailable=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    gl.bindTexture(gl.TEXTURE_2D,null);
+    sceneSize=[w,h];
+  }
+  function refreshRects(){
+    rectCache.fill(0);
+    NAMES.forEach((name,index)=>{
+      const element=document.querySelector('[data-surface="'+name+'"]');
+      if(!element||element.classList?.contains("tile"))return;
+      if((name==="topbar"||name==="nav"||name==="footer")&&!preset.glassChrome)return;
+      if(getComputedStyle(element).display==="none")return;
+      const r=element.getBoundingClientRect();
+      if(r.width<2||r.height<2)return;
+      rectCache.set([r.x,r.y,r.width,r.height],index*4);
+    });
+    geometryDirty=false;
+  }
   function resize() {
     if (!gl || !canvas) return;
-    const scale = Math.max(.45, Math.min(1.0, num(preset && preset.quality, .82)));
-    const maxDpr = Math.min(window.devicePixelRatio || 1, 2);
-    const maxDim = 2200;
-    dpr = Math.min(scale * maxDpr, maxDim / Math.max(innerWidth, innerHeight));
+    // Scale independently of Android DPR (often x3): DOM text stays sharp.
+    const scale=Math.max(.38,Math.min(.88,
+      num(preset && preset.quality,.62)*adaptiveScale));
+    const pixelCap=Math.min(1,Math.sqrt(620000/Math.max(1,innerWidth*innerHeight)));
+    dpr=Math.min(scale,pixelCap);
     const w=Math.max(2,Math.round(innerWidth*dpr)),h=Math.max(2,Math.round(innerHeight*dpr));
-    if(canvas.width!==w || canvas.height!==h){canvas.width=w;canvas.height=h;gl.viewport(0,0,w,h);}
+    if(canvas.width!==w||canvas.height!==h){
+      canvas.width=w;canvas.height=h;gl.viewport(0,0,w,h);
+      allocateScene(Math.max(2,Math.floor(w*.64)),Math.max(2,Math.floor(h*.64)));
+    }
   }
   function frame(now) {
     if (!working) return;
@@ -458,9 +504,15 @@ void main() {
     last=now;
     if(!paused && !(preset && preset.reducedMotion)) elapsed+=dt;
     resize();
+    if(dt>.054)slowFrames++;else slowFrames=Math.max(0,slowFrames-1);
+    if(slowFrames>=20&&adaptiveScale>.52){
+      adaptiveScale=Math.max(.52,adaptiveScale-.12);
+      slowFrames=0;resize();notify("GPU ECO · "+Math.round(adaptiveScale*100)+"%");
+    }
     draw();
     renderCount++;
-    if(renderCount%150===0) notify("WEBGL2 · "+(Math.round(1000 / Math.max(1,dt*1000)) || limit)+" FPS");
+    if(renderCount%120===0)notify("WEBGL2 · "+
+      Math.round(1000/Math.max(1,dt*1000))+" FPS");
   }
   function vec4(name, values) {
     gl.uniform4fv(uniform[name], new Float32Array(values));
@@ -468,27 +520,15 @@ void main() {
   function draw() {
     if (!preset || !program || !working) return;
     gl.useProgram(program);
+    const e=preset.environmentLight??.3;
+    gl.uniform4f(uniform.uEnvironment,e,.60,preset.environmentWarmth??.28,.60);
     gl.uniform2f(uniform.uResolution,canvas.width,canvas.height);
     gl.uniform2f(uniform.uViewport,innerWidth,innerHeight);
     gl.uniform2f(uniform.uPointer,cursor[0],cursor[1]);
     gl.uniform1f(uniform.uTime,elapsed);
     gl.uniform1f(uniform.uReduced,preset.reducedMotion?1:0);
-    // Match every shader surface to its *stable* identifier. Hidden module
-    // cards are fully CSS-perspective transformed, so do NOT render flat
-    // axis-aligned GPU material rectangles behind them. CSS backdrop-filter
-    // handles their actual warped silhouette without ghost rectangles.
-    const rects=new Float32Array(12*4);
-    NAMES.forEach((name,index)=>{
-      const element=document.querySelector('[data-surface="'+name+'"]');
-      if(!element)return;
-      if(element.classList?.contains("tile"))return;
-      if((name==="topbar"||name==="nav"||name==="footer") &&
-          !preset.glassChrome)return;
-      if(getComputedStyle(element).display==="none")return;
-      const r=element.getBoundingClientRect();
-      if(r.width<2||r.height<2)return;
-      rects.set([r.x,r.y,r.width,r.height],index*4);
-    });
+    // Cached layout; transformed cards are rendered by the compositor.
+    if(geometryDirty||renderCount%18===0)refreshRects();
     gl.uniform1i(uniform.uRectCount,NAMES.length);
     const surfaces={Play:"hero",Mods:"mods",Packs:"packs",Shaders:"shaders",
       Files:"files",Skins:"skins",Settings:"settings"};
@@ -498,7 +538,7 @@ void main() {
     const modes=["halo","rim","underline","quiet"];
     gl.uniform1i(uniform.uSelectionStyle,
       Math.max(0,modes.indexOf(preset.selectionStyle)));
-    gl.uniform4fv(uniform["uRects[0]"],rects);
+    gl.uniform4fv(uniform["uRects[0]"],rectCache);
     const c=["bg","surface","accent","cool","warm"].flatMap(k=>color(preset[k]));
     gl.uniform4fv(uniform["uPalette[0]"],new Float32Array(c));
     vec4("uAtmos",[preset.fog,preset.waves,preset.noise,preset.vignette]);
@@ -542,14 +582,29 @@ void main() {
       preset.glassHero?1:0,preset.glassCards?1:0,
       preset.glassChrome?1:0,preset.glassCTA?1:0
     ]);
+    if(sceneAvailable){
+      // Never sample the texture while it is bound as an FBO attachment.
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D,null);
+      gl.bindFramebuffer(gl.FRAMEBUFFER,sceneFbo);
+      gl.viewport(0,0,sceneSize[0],sceneSize[1]);
+      gl.uniform2f(uniform.uResolution,sceneSize[0],sceneSize[1]);
+      gl.uniform1i(uniform.uScenePass,1);
+      gl.drawArrays(gl.TRIANGLES,0,6);
+      gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+      gl.viewport(0,0,canvas.width,canvas.height);
+      gl.uniform2f(uniform.uResolution,canvas.width,canvas.height);
+      gl.bindTexture(gl.TEXTURE_2D,sceneTexture);
+      gl.uniform1i(uniform.uScenePass,0);
+    }else gl.uniform1i(uniform.uScenePass,2);
     gl.drawArrays(gl.TRIANGLES,0,6);
   }
   function setPreset(p) {
-    preset=p;
-    if (gl) resize();
+    preset=p;geometryDirty=true;
+    if(gl)resize();
   }
   function setPage(name) {
-    selectedPage=String(name||"Play");
+    selectedPage=String(name||"Play");geometryDirty=true;
   }
   function pause(value) {paused=!!value;return paused;}
   function recenter() {cursor=[innerWidth*.35,innerHeight*.4];}
@@ -558,7 +613,8 @@ void main() {
     draw();
     return canvas.toDataURL("image/png");
   }
-  function state() {return {webgl2:working,paused,error,dimensions:[canvas&&canvas.width,canvas&&canvas.height]};}
+  function state() {return {webgl2:working,paused,error,sceneCache:sceneAvailable,
+    adaptiveScale,dimensions:[canvas&&canvas.width,canvas&&canvas.height]};}
   window.JadeRenderer={init,setPreset,setPage,pause,recenter,screenshot,state,
     vertexSource:VERTEX_SOURCE,fragmentSource:FRAGMENT_SOURCE,refresh:draw};
 })();
