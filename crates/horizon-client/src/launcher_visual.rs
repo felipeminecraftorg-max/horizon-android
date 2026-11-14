@@ -1944,6 +1944,43 @@ mod tests {
     use crate::hud::{HudAtlas, HudBatch};
 
     #[test]
+    fn jade_portrait_shell_keeps_seven_stable_navigation_targets() {
+        let mut theme = LauncherThemeConfig::default();
+        theme.apply_preset(ThemePreset::OldSchool);
+        set_active_for_test(&theme);
+        let atlas = HudAtlas::boot();
+        let mut batch = HudBatch::new([360, 800]);
+        let mut ui = Ui::new(&atlas, &mut batch, (0., 0.));
+        let channels = [
+            ("Play", Icon::Play), ("Mods", Icon::Mods),
+            ("Packs", Icon::Packs), ("Shaders", Icon::Shaders),
+            ("Files", Icon::Folder), ("Settings", Icon::Gear),
+            ("Skins", Icon::Person),
+        ];
+        let mut hits = Vec::new();
+        let layout = shell(&mut ui, &channels, 2, "Player", false, "Android", |r, action| {
+            if let ShellAction::Page(index) = action {
+                hits.push((index, r));
+            }
+        });
+        assert!(layout.console && layout.portrait);
+        assert_eq!(hits.len(), channels.len());
+        for (n, (index, r)) in hits.iter().enumerate() {
+            assert_eq!(*index, n);
+            assert!(r[2] >= 44.0 && r[3] >= 44.0, "touch target: {r:?}");
+            assert!(r[1] >= 720. && r[1] + r[3] <= 800.);
+            for (_, previous) in hits.iter().take(n) {
+                assert!(r[0] >= previous[0] + previous[2]
+                    || previous[0] >= r[0] + r[2], "overlap");
+            }
+        }
+        theme.apply_preset(ThemePreset::LiquidGlass);
+        set_active_for_test(&theme);
+        let other = Layout::new(360., 800.);
+        assert!(!other.console);
+    }
+
+    #[test]
     fn navigation_and_home_actions_stay_separate_on_phone_viewports() {
         for (w, h) in [(340., 640.), (410., 780.), (760., 410.), (980., 440.)] {
             let layout = Layout::new(w, h);
