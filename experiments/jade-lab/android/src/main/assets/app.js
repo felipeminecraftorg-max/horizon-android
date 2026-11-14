@@ -9,6 +9,7 @@
   if(!PALETTES)throw new Error("O catálogo de paletas não foi carregado");
   const DEFAULTS=Object.freeze({
     paletteId:"jade",selectionStyle:"halo",
+    sceneDepth:.68,sceneSpacing:.64,sceneTilt:13,avatarMotion:.48,
     glassStyle:"frosted",glassQuality:"balanced",
     glassOpacity:.38,glassBlur:.69,glassTransmission:.78,
     glassTint:.35,glassScatter:.42,glassFresnel:.58,glassRim:.64,
@@ -32,6 +33,10 @@
   const SPECS={
     paletteId:["Preset cromático","palette",null,null,"Cada perfil também altera luz, atmosfera e material"],
     selectionStyle:["Tipo de seleção","select",["halo","rim","underline","quiet"],null,"Halo, borda física, linha inferior ou seleção discreta"],
+    sceneDepth:["Profundidade da pilha",0,1.4,.01,"Separação tridimensional entre os cards"],
+    sceneSpacing:["Espaçamento entre cards",0,1.4,.01,"Distância vertical entre superfícies"],
+    sceneTilt:["Inclinação 3D",0,25,1,"Quanto os botões giram em perspectiva"],
+    avatarMotion:["Movimento do personagem",0,1,.01,"Flutuação suave do avatar original"],
     glassStyle:["Material dos painéis","select",["frosted","tinted","matte","solid"],null,
       "Vidro fosco, polímero colorido, matte espesso ou sólido original"],
     glassQuality:["Amostragem da difusão","select",["fast","balanced","high"],null,
@@ -125,7 +130,8 @@
       ["Cores de superfície",["bg","surface","accent"]],
       ["Luzes auxiliares",["cool","warm"]],
       ["Tratamento final",["contrast","saturation"]]]},
-    {id:"Componentes",icon:"▦",intro:"Foco integrado ao material. Nenhuma barra lateral fixa.",groups:[
+    {id:"Componentes",icon:"▦",intro:"Cena com avatar original e três cartões tridimensionais. O fundo permanece visível.",groups:[
+      ["Cena 3D de console",["sceneDepth","sceneSpacing","sceneTilt","avatarMotion"]],
       ["Hierarquia da seleção",["selectionStyle"]],
       ["Hero + botão principal",["heroGlow","depth","bevel"]],
       ["Cards + navegação",["ao","edgeLight","reflectivity","bloom"]]]},
@@ -204,6 +210,16 @@
     root.style.setProperty("--glass-blur",Math.round(state.glassBlur*23+5)+"px");
     root.style.setProperty("--glass-opacity",String(state.glassOpacity));
     root.style.setProperty("--glass-rim",String(state.glassRim));
+    root.style.setProperty("--scene-glass-blur",
+      String(state.glassCards?Math.round(4+state.glassBlur*17):0)+"px");
+    const scene=el("console-scene");
+    if(scene){
+      scene.style.setProperty("--deck-depth",Math.round(30+state.sceneDepth*100)+"px");
+      scene.style.setProperty("--deck-gap",Math.round(26+state.sceneSpacing*27)+"px");
+      scene.style.setProperty("--deck-tilt",String(state.sceneTilt)+"deg");
+      scene.style.setProperty("--avatar-speed",String(state.avatarMotion));
+      scene.dataset.reducedMotion=state.reducedMotion?"true":"false";
+    }
     const badge=el("live-hint");
     if(badge)badge.textContent="LIVE GPU · "+state.paletteId.toUpperCase()+" · "+state.fps+" FPS";
     safeSave();
@@ -600,6 +616,58 @@
       }
     });
   }
+  const STACK_PAGES=["Mods","Packs","Shaders","Files","Skins","Settings"];
+  let stackIndex=0;
+  function updateStack(selected){
+    const direct=STACK_PAGES.indexOf(selected);
+    if(direct!==-1)stackIndex=direct;
+    const cards=document.querySelectorAll(".cards .tile[data-page]");
+    cards.forEach(tile=>{
+      const i=STACK_PAGES.indexOf(tile.dataset.page);
+      const difference=(i-stackIndex+STACK_PAGES.length)%STACK_PAGES.length;
+      const pos=difference===0?"front":difference===1?"middle":
+        difference===2?"rear":"hidden";
+      tile.dataset.stack=pos;
+      tile.setAttribute("aria-hidden",pos==="hidden"?"true":"false");
+      tile.tabIndex=pos==="hidden"?-1:0;
+    });
+    const position=el("scene-position");
+    if(position)position.textContent=String(stackIndex+1).padStart(2,"0")+
+      " / "+String(STACK_PAGES.length).padStart(2,"0");
+    const scene=el("console-scene");
+    if(scene)scene.dataset.page=selected;
+  }
+  function cycleStack(direction){
+    const next=(stackIndex+direction+STACK_PAGES.length)%STACK_PAGES.length;
+    pageSelect(STACK_PAGES[next]);
+  }
+  function setupScene(){
+    const scene=el("console-scene");if(!scene)return;
+    const previous=el("scene-prev"),next=el("scene-next");
+    if(previous)previous.addEventListener("click",()=>cycleStack(-1));
+    if(next)next.addEventListener("click",()=>cycleStack(1));
+    let start=null;
+    scene.addEventListener("pointerdown",e=>{
+      if(e.target.closest("button,select,input"))return;
+      start={x:e.clientX,y:e.clientY};
+    },{passive:true});
+    scene.addEventListener("pointerup",e=>{
+      if(!start)return;
+      const dx=e.clientX-start.x,dy=e.clientY-start.y;start=null;
+      if(Math.abs(dx)>52&&Math.abs(dx)>Math.abs(dy)*1.5)
+        cycleStack(dx<0?1:-1);
+    },{passive:true});
+    scene.addEventListener("pointercancel",()=>{start=null;},{passive:true});
+    document.addEventListener("keydown",e=>{
+      if(e.altKey||e.ctrlKey||e.metaKey)return;
+      if(e.target?.closest?.("input,textarea,select,[contenteditable]"))return;
+      if(e.key==="ArrowRight"||e.key==="PageDown"){
+        cycleStack(1);e.preventDefault();
+      }else if(e.key==="ArrowLeft"||e.key==="PageUp"){
+        cycleStack(-1);e.preventDefault();
+      }
+    });
+  }
   const PAGE_DATA={
     Play:["READY TO PLAY","MINECRAFT","JAVA EDITION 26.3","● Install needed","Install Minecraft"],
     Mods:["EXTENSIONS","MODS","NATIVE + HNMOD","● Presets and projects","Open Mods"],
@@ -628,9 +696,12 @@
       if(node.matches("button"))node.setAttribute("aria-pressed",String(selected));
     });
     window.JadeRenderer.setPage?.(page);
+    updateStack(page);
+    const hero=el("preview")?.querySelector?.(".hero");
+    if(hero)hero.dataset.sceneActive=page==="Play"?"true":"false";
   }
   function init() {
-    restore();sync();renderPanel();setupEditor();
+    restore();sync();renderPanel();setupEditor();setupScene();
     window.JadeRenderer.init();
     document.querySelectorAll("[data-page]").forEach(button=>
       button.addEventListener("click",()=>pageSelect(button.dataset.page)));
