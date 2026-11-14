@@ -151,6 +151,7 @@
     if(key==="fps")return value+" FPS";
     if(key==="quality")return Math.round(value*100)+"%";
     if(typeof value==="number")return value.toFixed((SPECS[key][3]||1)>=1?0:2).replace(/0+$/,"").replace(/\.$/,"");
+    if(typeof value==="string")return value;
     return value===true?"ON":"OFF";
   }
   function escapeHtml(s) {
@@ -159,6 +160,26 @@
   }
   function field(key) {
     const spec=SPECS[key],val=state[key],label=escapeHtml(spec[0]),hint=escapeHtml(spec[4]);
+    if(spec[1]==="palette"){
+      const cards=PALETTES.ids.map(id=>{
+        const p=PALETTES.profiles[id],c=p.colors,active=val===id;
+        return '<button type="button" class="palette-card'+(active?' active':'')+
+          '" aria-label="Selecionar '+escapeHtml(p.name)+'" aria-pressed="'+active+
+          '" data-palette="'+id+'" style="--card-bg:'+c.bg+
+          ';--card-surface:'+c.surface+';--card-accent:'+c.accent+
+          ';--card-cool:'+c.cool+'"><span class="palette-name">'+escapeHtml(p.name)+
+          '</span><span class="palette-desc">'+escapeHtml(p.tagline)+
+          '</span><span class="palette-swatches">'+
+          PALETTES.colorFields.map(k=>'<span class="palette-swatch" title="'+k+
+            '" style="--swatch:'+c[k]+'"></span>').join("")+'</span></button>';
+      }).join("");
+      const mode=val==="custom"?"Personalizado (ajustes manuais)":
+        PALETTES.profiles[val]?.name||"Personalizado";
+      return '<div class="field"><div class="field-head"><label>'+label+
+        '</label><output data-readout="paletteId">'+escapeHtml(mode)+
+        '</output></div><div class="palette-grid">'+cards+
+        '</div><p class="palette-custom-note">Cada perfil aplica cinco cores, rugosidade, metalização, iluminação e contraste sem perder seus ajustes de FPS e escala.</p></div>';
+    }
     let control="";
     if(spec[1]==="color"){
       control='<input aria-label="'+label+'" type="color" data-param="'+key+'" value="'+val+'">';
@@ -167,6 +188,11 @@
     }else if(spec[1]==="choice"){
       control='<select data-param="'+key+'" aria-label="'+label+'">'+
         spec[2].map(v=>'<option value="'+v+'"'+(v===val?' selected':'')+'>'+v+' FPS</option>').join("")+'</select>';
+    }else if(spec[1]==="select"){
+      const labels={halo:"Halo material",rim:"Borda luminosa",underline:"Linha inferior",quiet:"Discreto"};
+      control='<select data-param="'+key+'" aria-label="'+label+'">'+
+        spec[2].map(v=>'<option value="'+v+'"'+(v===val?' selected':'')+'>'+
+        escapeHtml(labels[v]||v)+'</option>').join("")+'</select>';
     }else{
       control='<input aria-label="'+label+'" type="range" data-param="'+key+
         '" min="'+spec[1]+'" max="'+spec[2]+'" step="'+spec[3]+'" value="'+val+'">';
@@ -207,19 +233,38 @@
   }
   function changeTab(next) {
     if(!TABS.some(t=>t.id===next))return;
-    tabId=next;renderPanel();el("editor-body").scrollTop=0;
+    tabId=next;
+    if(el("editor-tabs") && el("editor-body")){
+      renderPanel();el("editor-body").scrollTop=0;
+    }
+  }
+  function setPalette(id) {
+    const next=PALETTES.apply(state,id);
+    if(!next)return false;
+    state=next;
+    sync();
+    if(el("editor-tabs") && el("editor-body"))renderPanel();
+    return true;
   }
   function setField(key,value) {
     const next=validValue(key,value);
     if(next===undefined)return;
+    if(key==="paletteId"){
+      if(next==="custom"){state.paletteId="custom";sync();}
+      else setPalette(next);
+      return;
+    }
     state[key]=next;
+    if(PALETTES.colorFields.includes(key))state.paletteId="custom";
     const readouts=document.querySelectorAll('[data-readout="'+key+'"]');
     readouts.forEach(o=>{o.textContent=String(formatValue(key,next));});
     sync();
   }
   function presetObject() {
-    return {format:FORMAT,preset:"Horizon Jade",theme:"oldschool-dark",
-      engine:"WebGL2",createdAt:new Date().toISOString(),controls:clone(state)};
+    return {format:FORMAT,preset:"Horizon Jade · "+
+        (PALETTES.profiles[state.paletteId]?.name||"Custom"),theme:"oldschool-dark",
+      palette:state.paletteId,engine:"WebGL2",createdAt:new Date().toISOString(),
+      controls:clone(state)};
   }
   function sectionObject(id) {
     const t=TABS.find(x=>x.id===id)||TABS[0];
@@ -318,11 +363,15 @@
     for(const t of TABS.filter(x=>x.id!=="Exportar")){
       entries.push(json("tabs/"+sanitizeName(t.id.toLowerCase())+".json",sectionObject(t.id)));
     }
+    entries.push(json("palettes/catalog.json",{
+      theme:"oldschool-dark",ids:PALETTES.ids,profiles:PALETTES.profiles,
+      selected:state.paletteId,selectionStyle:state.selectionStyle
+    }));
     entries.push({name:"shaders/jade_scene.frag",bytes:textBytes(window.JadeRenderer.fragmentSource)});
     entries.push({name:"shaders/fullscreen.vert",bytes:textBytes(window.JadeRenderer.vertexSource)});
     entries.push(json("uniforms.json",{
       engine:"WebGL2 / GLSL ES 300",theme:"oldschool-dark",
-      uniforms:["uAtmos","uLight","uMaterial","uSurface","uMotion","uDetail","uPalette","uRects"],
+      uniforms:["uAtmos","uLight","uMaterial","uSurface","uMotion","uDetail","uPalette","uRects","uFocusIndex","uSelectionStyle"],
       controls:clone(state),note:"GPU rects use CSS viewport coordinates; see source app."
     }));
     entries.push(json("manifest.json",{
@@ -365,7 +414,18 @@
       updates[k]=v;
     }
     if(!Object.keys(updates).length)throw new Error("Nenhuma configuração reconhecida");
-    Object.assign(state,updates);sync();renderPanel();
+    // Importing a standalone Paletas tab must apply the COMPLETE curated
+    // profile, not merely alter its ID while leaving the old purple/green mix.
+    if(incoming.format==="HORIZON_JADE_TAB_V1" && incoming.tab==="Paletas" &&
+       PALETTES.isPreset(updates.paletteId)){
+      state=PALETTES.apply(state,updates.paletteId);
+    }else{
+      Object.assign(state,updates);
+      if(!("paletteId" in updates)&&
+         PALETTES.colorFields.some(k=>Object.hasOwn(updates,k)))
+        state.paletteId="custom";
+    }
+    sync();if(el("editor-tabs") && el("editor-body"))renderPanel();
     toast("Preset importado: "+Object.keys(updates).length+" parâmetros");
   }
   async function doExport(command) {
@@ -429,6 +489,12 @@
         groupOpen[e.target.dataset.group]=e.target.open;
     },true);
     body.addEventListener("click",e=>{
+      const palette=e.target.closest("[data-palette]");
+      if(palette){
+        if(setPalette(palette.dataset.palette))
+          toast("Paleta "+PALETTES.profiles[palette.dataset.palette].name+" aplicada");
+        return;
+      }
       const button=e.target.closest("[data-export]");
       if(button)doExport(button.dataset.export);
     });
@@ -480,18 +546,27 @@
       btn.classList.toggle("active",current);
       if(current)btn.setAttribute("aria-current","page");else btn.removeAttribute("aria-current");
     });
+    document.querySelectorAll(".hero[data-surface],.tile[data-page]").forEach(node=>{
+      const selected=node.classList.contains("hero")?page==="Play":
+        node.dataset.page===page;
+      node.classList.toggle("is-selected",selected);
+      if(node.matches("button"))node.setAttribute("aria-pressed",String(selected));
+    });
+    window.JadeRenderer.setPage?.(page);
   }
   function init() {
     restore();sync();renderPanel();setupEditor();
     window.JadeRenderer.init();
     document.querySelectorAll("[data-page]").forEach(button=>
       button.addEventListener("click",()=>pageSelect(button.dataset.page)));
+    pageSelect("Play");
     el("hero-action").addEventListener("click",()=>toast("Prévia de "+page+"; este laboratório não instala o jogo"));
     if(window.JadeRenderer.state().error)toast(window.JadeRenderer.state().error);
     // Native Android may invoke this after entering immersive mode.
     window.addEventListener("pageshow",()=>window.JadeRenderer.refresh());
   }
   window.JadeLab={getPreset:presetObject,getSection:sectionObject,defaults:()=>clone(DEFAULTS),
+    palettes:PALETTES.profiles,applyPalette:setPalette,selectedPalette:()=>state.paletteId,
     exportPreset:downloadPreset,exportPack:downloadPack,exportSection:downloadSection,
     importFile,setField,changeTab,zipStore,findStoredZipPreset};
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init);
