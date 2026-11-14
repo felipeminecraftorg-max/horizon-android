@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- No internet, external storage permissions, camera or device identifiers. -->
+  <application
+      android:label="Horizon Jade Lab"
+      android:theme="@android:style/Theme.Material.NoActionBar"
+      android:usesCleartextTraffic="false"
+      android:allowBackup="false"
+      android:hardwareAccelerated="true"
+      android:hasCode="true"
+      android:supportsRtl="true">
+    <activity
+        android:name="dev.horizon.jadelab.JadeLabActivity"
+        android:exported="true"
+        android:resizeableActivity="true"
+        android:configChanges="screenSize|smallestScreenSize|orientation|keyboardHidden">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN"/>
+        <category android:name="android.intent.category.LAUNCHER"/>
+      </intent-filter>
+    </activity>
+  </application>
+</manifest>
