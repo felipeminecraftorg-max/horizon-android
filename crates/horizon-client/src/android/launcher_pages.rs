@@ -2094,13 +2094,27 @@ impl Launcher {
         if let Some(action) = self.pending_focus.take() {
             self.focus = self.targets.iter().position(|(_, a)| *a == action);
         }
-        if let Some(index) = self.focus
-            && let Some(([x, y, w, h], _)) = self.targets.get(index)
-        {
-            ui.border(*x - 2.0, *y - 2.0, *w + 4.0, *h + 4.0, 12.0, my3_accent());
+        let focused = self.focus.and_then(|index| self.targets.get(index)).copied();
+        if active_th.experience == horizon_client::ui_theme::ExperiencePreset::OldSchool {
+            if let Some([x, y, w, h]) = self.anim.focus_outline(focused.map(|(r, _)| r)) {
+                // Console focus lives above the card and has its own animated
+                // geometry, while every controller activation uses the original
+                // unanimated action rectangle below.
+                ui.stroke_rounded(x - 2., y - 2., w + 4., h + 4.,
+                    9., 1.8, active_th.focus);
+                ui.stroke_rounded(x - 4., y - 4., w + 8., h + 8.,
+                    11., 0.7, color::with_alpha(active_th.accent, 0.38));
+            }
+        } else {
+            self.anim.focus_outline(None);
+            if let Some(([x, y, w, h], _)) = focused {
+                ui.border(x - 2., y - 2., w + 4., h + 4., 12., my3_accent());
+            }
+        }
+        if let Some(([x, y, w, h], _)) = focused {
             self.cursor = (
-                f64::from((x + w / 2.0) * ui.density),
-                f64::from((y + h / 2.0) * ui.density),
+                f64::from((x + w / 2.) * ui.density),
+                f64::from((y + h / 2.) * ui.density),
             );
         }
         if self.mouse_down || self.drag.as_ref().is_some_and(|drag| !drag.moved) {
