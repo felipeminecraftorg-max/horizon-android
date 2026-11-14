@@ -1282,8 +1282,23 @@ impl<'a> Ui<'a> {
             && let Some(rect) = with_cache(atlas, |c| c.image(atlas, key, w, h, rgba))
         {
             let pxf = f32::from(px);
+            // Encode a Jade-only, dynamically changing light vector in the
+            // unused per-vertex glint coordinates. The HUD WGSL shader uses
+            // source PNG alpha gradients as a bevel/normal estimate, yielding
+            // actual per-pixel directional light on the uploaded icon texture.
+            // No geometry, silhouette or icon pixels are regenerated per frame.
+            let start = self.batch.vertices.len();
             self.emit_clipped_uv(x0, y0, x0 + pxf, y0 + pxf,
                 rect.u0, rect.v0, rect.u1, rect.v1, color);
+            if active_theme().jade_gpu_fx {
+                let light_x = ((self.cursor.0 - x - size * 0.5)
+                    / (size * 1.5).max(1.)).clamp(-1., 1.);
+                let light_y = ((self.cursor.1 - y - size * 0.5)
+                    / (size * 1.5).max(1.)).clamp(-1., 1.);
+                for vertex in &mut self.batch.vertices[start..] {
+                    vertex.glint_uv = [-4.0 + light_x, light_y];
+                }
+            }
             return;
         }
         // Existing standard and Liquid Glass icons keep their independent
