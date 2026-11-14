@@ -9,7 +9,7 @@ assets, interface ou sons proprietários.
 | --- | --- | --- |
 | 1. Identidade e seleção | Remover barra lateral fixa, implementar seleção luminosa GPU, base de sete presets completos | **Implementada — validar no Android** |
 | 2. Fundo atmosférico | Ondas em camadas, gradientes, textura de fundo, halo volumétrico e controles próprios | **Implementada — validar no Android** |
-| 3. Materiais de vidro fosco | Frosted Dark, Tinted Frost, Dense Matte; blur amostrado, borda física e luz transmitida | Pendente |
+| 3. Materiais de vidro fosco | Frosted Dark, Tinted Frost, Dense Matte; blur amostrado, borda física e luz transmitida; cena de console mais espaçosa | **Implementada — validar no Android** |
 | 4. Hero, cards e microtexturas | Detalhes de relevo, contraste por módulo, reflexos locais, ícones e ajuste por componente | Pendente |
 | 5. Integração e desempenho | Regressão visual, benchmarks GPU, modos de economia, exportação, APK final de testes | Pendente |
 
@@ -64,6 +64,43 @@ assets, interface ou sons proprietários.
 - A versão é `1.2.0-dark`; testes Node e validação GLSL fazem parte do
   GitHub Actions antes da assinatura do APK.
 
+## Tarefa 3 — entregue na branch `feature/jade-lab-part2-frosted-materials`
+
+- **Três acabamentos ópticos reais** no WebGL2: `frosted` (difusão atmosférica
+  translúcida), `tinted` (vidro colorido mais encorpado) e `matte` (acabamento
+  espesso com menor transmissão); opção `solid` para referência de antes/depois.
+- `frostedBackdrop` amostra **o fundo procedural gerado na GPU** em um padrão
+  de até nove pontos, preservando o texto da interface em resolução nativa.
+  Não simula borrão com mera opacidade; tampouco promete desfocar texto DOM
+  ou aplicações Android externas.
+- Nova aba **Vidro**: densidade do pigmento, difusão, transmissão, cor, espalhamento,
+  Fresnel, luz de contorno, grão, reflexo superior, sombra, qualidade de amostras
+  e opções de aplicação em hero/cards/barras/CTA.
+- Cada uma das sete paletas possui um acabamento calibrado independente.
+- **Recomposição solicitada após inspeção da UI anterior:** o dashboard antigo
+  cobria quase todo o fundo com seis cards e um painel grande. Foi substituído
+  por uma **cena aberta** com um avatar geométrico original feito com CSS,
+  um hero compacto e **três cards sobrepostos em perspectiva** (não uma grade).
+  O foco muda por toque, setas e gesto lateral, com animação de profundidade.
+  Os seis módulos seguem alcançáveis, mas apenas três aparecem simultaneamente.
+- O avatar **não** utiliza skins Minecraft/Xbox nem representa um jogador real;
+  é um marcador de referência original para testes de movimento e composição.
+- Cartões inclinados usam material de vidro CSS/compositor (backdrop-filter)
+  para acompanhar sua perspectiva; renderizar por trás deles um material
+  retangular no shader provocava caixas fantasmas. Corrigimos a associação
+  fixa dos índices `uRects` e ignoramos no shader de placas os cards transformados.
+  Os painéis alinhados continuam sendo renderizados no shader GPU.
+- Controles extras **Cena 3D**: profundidade, espaçamento, inclinação e movimento
+  do avatar, preservados no preset completo e na exportação da aba Componentes.
+- `glassChrome` inicia desligado para **deixar o fundo aparente**. O usuário
+  continua podendo ativá-lo. Editor recolhível, modo escuro e exportação por
+  aba mantidos. APK de testes em versão `1.3.0-dark`.
+
+A profundidade dos cards e do avatar é realizada com perspectiva tridimensional
+no compositor WebView/CSS; **não é uma engine 3D de malhas e esqueletos**. A física
+óptica dos painéis alinhados e o fundo são calculados no WebGL2. A aparência
+deve ser avaliada no celular antes de considerá-la final.
+
 ## Limitações e fronteiras
 
 A base atual usa **WebGL2 / GLSL ES 3.00**, não o WGSL nativo do launcher Rust.
@@ -72,6 +109,6 @@ um trabalho separado. A interface é uma prévia interativa do console; não ini
 o Minecraft. Não se considera a aparência validada antes de inspeção no celular.
 
 As Tarefas 1 e 2 introduzem seleção dinâmica, paletas e fundo atmosférico.
-**Vidro fosco com material próprio**, reflexos transmitidos e blur de cena
-continuam reservados para a Tarefa 3. Polimento fino de cards e texturas
-fica para a Tarefa 4; validação visual física para a Tarefa 5.
+A Tarefa 3 implementa vidro fosco e reorganiza a cena de console para evitar
+ocultar o fundo. Polimento fino de materiais, ícones e microtexturas continua
+na Tarefa 4; validação visual física e desempenho ficam para a Tarefa 5.
