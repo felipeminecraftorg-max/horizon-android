@@ -1,0 +1,125 @@
+name: Horizon Jade Lab Dark APK
+run-name: Jade Lab · ${{ github.sha }}
+
+on:
+  push:
+    branches:
+      - feature/jade-lab-dark-android
+    paths:
+      - 'experiments/jade-lab/**'
+      - '.github/workflows/jade-lab-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: jade-lab-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-package:
+    name: WebGL2 tests + standalone Android APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - name: Validate live editor, ZIP roundtrip and JavaScript sources
+        run: |
+          set -euo pipefail
+          node --version
+          node --check experiments/jade-lab/android/src/main/assets/app.js
+          node --check experiments/jade-lab/android/src/main/assets/renderer.js
+          node --test experiments/jade-lab/tests/jade-lab.test.cjs
+      - name: Validate both live GLSL ES shader stages
+        run: |
+          set -euo pipefail
+          sudo apt-get update -q
+          sudo apt-get install -yq glslang-tools
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const vm = require('node:vm');
+          const js = fs.readFileSync('experiments/jade-lab/android/src/main/assets/renderer.js','utf8');
+          const sandbox = {window:{}};
+          vm.runInNewContext(js,sandbox);
+          fs.writeFileSync('/tmp/jade-lab.frag',sandbox.window.JadeRenderer.fragmentSource);
+          fs.writeFileSync('/tmp/jade-lab.vert',sandbox.window.JadeRenderer.vertexSource);
+          NODE
+          glslangValidator -S frag /tmp/jade-lab.frag
+          glslangValidator -S vert /tmp/jade-lab.vert
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          gradle-version: '8.14'
+      - name: Install Android 35 toolchain
+        run: |
+          set -euo pipefail
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$sdkmanager" ]]; then
+            sdkmanager=$(find "$ANDROID_HOME/cmdline-tools" -type f -path '*/bin/sdkmanager' | sort -V | tail -n 1)
+          fi
+          test -x "$sdkmanager"
+          "$sdkmanager" --sdk_root="$ANDROID_HOME" 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Create disposable Jade Lab test identity (never use Horizon keys)
+        run: |
+          set -euo pipefail
+          mkdir -p experiments/jade-lab/android/.local
+          keytool -genkeypair -keystore experiments/jade-lab/android/.local/jade-lab-debug.keystore \
+            -storepass android -keypass android -alias jadelabdebug \
+            -keyalg RSA -keysize 2048 -validity 365 \
+            -dname "CN=Horizon Jade Lab Temporary CI"
+      - name: Compile standalone Android APK
+        run: gradle --no-daemon -p experiments/jade-lab/android assembleRelease
+      - name: Verify APK signature, package identity, assets and checksum
+        run: |
+          set -euo pipefail
+          APK=$(find experiments/jade-lab/android/build/outputs/apk/release -type f -name '*.apk' | head -n 1)
+          test -n "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q "package: name='dev.horizon.jadelab'"
+          mkdir -p dist
+          export JADE_BUILT_APK="$APK"
+          python3 - <<'PY'
+          import os, pathlib, shutil, hashlib, json, zipfile
+          p=pathlib.Path(os.environ['JADE_BUILT_APK'])
+          assert p.is_file() and p.stat().st_size>4_096, 'Empty or incomplete standalone APK'
+          with zipfile.ZipFile(p) as z:
+              entries=set(z.namelist())
+              required={'assets/index.html','assets/styles.css',
+                        'assets/renderer.js','assets/app.js'}
+              assert required<=entries,sorted(required-entries)
+          sha=os.environ['GITHUB_SHA']
+          name=f'Horizon-Jade-Lab-Dark-{sha[:12]}.apk'
+          target=pathlib.Path('dist')/name
+          shutil.copyfile(p,target)
+          digest=hashlib.sha256(target.read_bytes()).hexdigest()
+          pathlib.Path('dist/SHA256SUMS.txt').write_text(f'{digest}  {name}\n')
+          pathlib.Path('dist/BUILD.json').write_text(json.dumps({
+              'app':'Horizon Jade Lab Dark','package':'dev.horizon.jadelab',
+              'minSdk':29,'architecture':'universal Android Java/WebGL2',
+              'sourceCommit':sha,'sha256':digest,'signed':'ephemeral CI key',
+              'runtime':'offline','sourcePath':'experiments/jade-lab/',
+              'workflow':f'https://github.com/{os.environ["GITHUB_REPOSITORY"]}/actions/runs/{os.environ["GITHUB_RUN_ID"]}'
+          },indent=2)+'\n')
+          shutil.copyfile('experiments/jade-lab/README.md','dist/README.md')
+          print(name, target.stat().st_size,'bytes SHA256',digest)
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as s:
+              s.write('## Horizon Jade Lab Dark\n\n'
+                      f'APK: **{name}** · SHA256: {digest}\n\n'
+                      'Download from the **Artifacts** section; Android 10+ with WebGL2. '
+                      'A temporary signing key may prevent upgrading an APK from a previous test run.\n')
+          PY
+      - name: Publish signed APK and validation metadata
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: horizon-jade-lab-dark-apk
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove temporary signing identity
+        if: always()
+        run: rm -f experiments/jade-lab/android/.local/jade-lab-debug.keystore
