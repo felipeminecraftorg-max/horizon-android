@@ -653,20 +653,27 @@ pub fn button(ui: &mut Ui<'_>, rect: [f32; 4], label: &str, icon: Option<Icon>, 
     );
 }
 
-/// Glass Lab V7 components adapted to the native Horizon HUD.
-/// These are actual interactive surfaces: callers keep their existing hitboxes,
-/// state and touch handlers rather than replacing them with visual mockups.
-/// The material in panel() is rasterized by the WGSL backdrop-lens pipeline.
+/// All major Android pages call these primitives. Jade uses a single opaque
+/// surface hierarchy; glass optics remain exclusive to Liquid Glass.
 pub fn component_card(ui: &mut Ui<'_>, rect: [f32; 4], emphasized: bool) {
     let th = active_theme();
     let [x, y, w, h] = rect;
     if th.experience == ExperiencePreset::OldSchool {
-        // A wide settings/catalog card should remain readable, not repeat
-        // previously composited text as a giant refractive lens.
-        ui.rounded(x, y, w, h, 12., color::hex(0x101927, if emphasized { 192 } else { 174 }));
-        ui.stroke_rounded(x, y, w, h, 12., 0.75, color::hex(0xC8DAF0, 65));
-        ui.fill(x + 13., y + 2., (w - 26.).max(0.), 0.8,
-            color::hex(0xEFF5FF, 62));
+        let radius = 10.;
+        ui.rounded(x, y, w, h, radius,
+            if emphasized { th.surface_selected } else { th.surface });
+        let hover = ui.cursor.0 >= x && ui.cursor.0 < x + w
+            && ui.cursor.1 >= y && ui.cursor.1 < y + h;
+        // Only one hovered card gets a live material evaluation; no per-item
+        // reflection pass on hundreds of catalog entries.
+        if hover && th.jade_gpu_fx && !th.is_light && h >= 44. {
+            ui.backdrop_lens(rect, radius, color::hex(0x66C77A, 0), [0., 0.]);
+        }
+        ui.stroke_rounded(x, y, w, h, radius, if emphasized { 1.2 } else { 0.85 },
+            if emphasized { th.accent } else { th.border });
+        if emphasized {
+            ui.rounded(x + 4., y + 11., 3., (h - 22.).max(0.), 1.5, th.accent);
+        }
     } else if th.experience == ExperiencePreset::LiquidGlass {
         ui.rounded(x, y, w, h, 15., color::hex(0x162A32, if emphasized { 105 } else { 77 }));
         ui.stroke_rounded(x, y, w, h, 15., 0.8, color::hex(0xE2F7FF, 84));
@@ -675,20 +682,25 @@ pub fn component_card(ui: &mut Ui<'_>, rect: [f32; 4], emphasized: bool) {
     }
 }
 
-/// V7 pill/chip: translucent text-bearing object, small enough for GPU optics.
+/// Chips never put jade-green text on the same jade-green filled accent;
+/// selected controls carry an accent line and preserve primary contrast.
 pub fn component_chip(ui: &mut Ui<'_>, rect: [f32; 4], selected: bool) {
     let th = active_theme();
     let [x, y, w, h] = rect;
+    if th.experience == ExperiencePreset::OldSchool {
+        ui.rounded(x, y, w, h, 7.,
+            if selected { th.surface_selected } else { th.surface });
+        ui.stroke_rounded(x, y, w, h, 7., 0.85,
+            if selected { th.accent } else { th.border });
+        return;
+    }
     if th.experience == ExperiencePreset::Standard {
         ui.rounded(x, y, w, h, h / 2., if selected { th.accent } else { th.surface });
     } else {
-        // The chip's backdrop is a single real lens; the label is emitted
-        // afterwards so glyphs aren't sampled twice by adjacent lenses.
-        panel(ui, rect, if th.experience == ExperiencePreset::OldSchool { 9. } else { h / 2. }, selected);
+        panel(ui, rect, h / 2., selected);
         if selected {
             ui.stroke_rounded(x + 1., y + 1., w - 2., h - 2.,
-                if th.experience == ExperiencePreset::OldSchool { 8. } else { h / 2. - 1. },
-                0.85, color::hex(0xF1F5FF, 137));
+                h / 2. - 1., 0.85, color::hex(0xF1F5FF, 137));
         }
     }
 }
@@ -710,10 +722,10 @@ pub fn optical_calibration_slider(ui: &mut Ui<'_>, rect: [f32; 4],
     let t = fraction.clamp(0., 1.);
     let old = theme.experience == ExperiencePreset::OldSchool;
     ui.rounded(track_x, track_y, track_w, 5., 2.5,
-        color::hex(if old { 0xA0B0C7 } else { 0xE7F5FF }, 60));
+        if old { theme.surface_dim } else { color::hex(0xE7F5FF, 60) });
     if t > 0.005 {
         ui.rounded(track_x, track_y, (track_w * t).max(2.), 5., 2.5,
-            color::hex(if old { 0xD6E3F4 } else { 0xF2FAFF }, 152));
+            if old { theme.accent } else { color::hex(0xF2FAFF, 152) });
     }
     let size = 19.;
     let thumb = [track_x + track_w * t - size * 0.5,
@@ -732,7 +744,25 @@ pub fn component_slider(ui: &mut Ui<'_>, rect: [f32; 4], value: f32, value_label
     let th = active_theme();
     let [x, y, w, h] = rect;
     let old = th.experience == ExperiencePreset::OldSchool;
-    panel(ui, rect, if old { 10. } else { h * 0.5 }, false);
+    if old {
+        ui.rounded(x, y, w, h, 9., th.surface);
+        ui.stroke_rounded(x, y, w, h, 9., 0.8, th.border);
+        let caption = ui.fit_text(Face::SemiBold, 12., value_label, w - 16.);
+        ui.centered_fit(Face::SemiBold, 12.,
+            [x + 6., y + 2., w - 12., 18.], th.text_primary, &caption);
+        let bar_x = x + 10.;
+        let bar_y = y + h - 12.;
+        let bar_w = (w - 20.).max(24.);
+        let t = value.clamp(0., 1.);
+        ui.rounded(bar_x, bar_y, bar_w, 5., 2.5, th.surface_dim);
+        if t > 0. {
+            ui.rounded(bar_x, bar_y, (bar_w * t).max(2.), 5., 2.5, th.accent);
+        }
+        let thumb_x = (bar_x + bar_w * t - 4.5).clamp(bar_x - 1., bar_x + bar_w - 8.);
+        ui.rounded(thumb_x, bar_y - 4., 9., 13., 3.5, th.text_primary);
+        return;
+    }
+    panel(ui, rect, h * 0.5, false);
     let caption = ui.fit_text(Face::SemiBold, 12., value_label, w - 16.);
     ui.centered_fit(Face::SemiBold, 12.,
         [x + 6., y + 2., w - 12., 18.], color::hex(0xF0F5FC, 245), &caption);
@@ -817,32 +847,55 @@ pub fn component_switch(ui: &mut Ui<'_>, x: f32, y: f32, on: bool) {
     let th = active_theme();
     let old = th.experience == ExperiencePreset::OldSchool;
     let rect = [x, y, 52., 28.];
-    panel(ui, rect, if old { 10. } else { 14. }, on);
+    if old {
+        ui.rounded(x, y, 52., 28., 10.,
+            if on { th.accent } else { th.surface_dim });
+        ui.stroke_rounded(x, y, 52., 28., 10., 0.85,
+            if on { th.accent } else { th.border });
+    } else {
+        panel(ui, rect, 14., on);
+    }
     let position = switch_thumb_fraction(x, y, on, th.experience);
     let travel = 4. + 22. * position;
     let thumb_d = 20.;
     ui.rounded(x + travel, y + 4., thumb_d, thumb_d,
         if old { 6. } else { 10. },
-        color::hex(if old { 0xEBEEF3 } else { 0xF7FBFF }, 236));
+        if old { if on { th.on_accent } else { th.text_primary } }
+        else { color::hex(0xF7FBFF, 236) });
     if position > 0.70 {
         ui.icon(Icon::Check, x + travel + 4., y + 8., 12.,
-            color::hex(if old { 0x253243 } else { 0x3E6872 }, 245));
+            if old { th.accent } else { color::hex(0x3E6872, 245) });
     }
 }
 
-/// Track containing *one* active lens; all tab labels remain crisp. The focus
-/// fraction may be supplied by a spring; touch targets are registered by caller.
+/// Segmented controls use a flat Jade selection band with a restrained focus
+/// line. Liquid Glass keeps its own lens-based animation and geometry.
 pub fn component_tabs(ui: &mut Ui<'_>, rect: [f32; 4],
     labels: [&str; 2], focused: f32) {
     let th = active_theme();
     let [x, y, w, h] = rect;
     let old = th.experience == ExperiencePreset::OldSchool;
-    ui.rounded(x, y, w, h, if old { 11. } else { h / 2. },
-        color::hex(if old { 0x171C2D } else { 0xB9D5DE }, if old { 144 } else { 34 }));
+    if old {
+        ui.rounded(x, y, w, h, 9., th.surface);
+        ui.stroke_rounded(x, y, w, h, 9., 0.85, th.border);
+        let part_w = w / 2.;
+        let fx = x + part_w * focused.clamp(0., 1.);
+        ui.rounded(fx + 2., y + 2., (part_w - 4.).max(0.), h - 4.,
+            7., th.surface_selected);
+        ui.rounded(fx + part_w * 0.24, y + h - 3.5, part_w * 0.52,
+            2., 1., th.accent);
+        for (i, label) in labels.into_iter().enumerate() {
+            let selected = (focused - i as f32).abs() < 0.5;
+            ui.centered_fit(Face::Medium, 13.,
+                [x + i as f32 * part_w + 5., y + 2., part_w - 10., h - 4.],
+                if selected { th.text_primary } else { th.text_muted }, label);
+        }
+        return;
+    }
+    ui.rounded(x, y, w, h, h / 2., color::hex(0xB9D5DE, 34));
     let part_w = w / 2.;
     let fx = x + part_w * focused.clamp(0., 1.);
-    panel(ui, [fx + 2., y + 2., part_w - 4., h - 4.],
-        if old { 9. } else { (h - 4.) / 2. }, true);
+    panel(ui, [fx + 2., y + 2., part_w - 4., h - 4.], (h - 4.) / 2., true);
     for (i, label) in labels.into_iter().enumerate() {
         let selected = (focused - i as f32).abs() < 0.5;
         ui.centered_fit(Face::Medium, 13.,
@@ -855,7 +908,13 @@ pub fn component_tabs(ui: &mut Ui<'_>, rect: [f32; 4],
 /// scrolling and navigation never draw glyphs into the lens framebuffer.
 pub fn component_circular_icon(ui: &mut Ui<'_>, rect: [f32; 4], icon: Icon) {
     let th = active_theme();
-    panel(ui, rect, rect[3] / 2., true);
+    let old = th.experience == ExperiencePreset::OldSchool;
+    if old {
+        ui.rounded(rect[0], rect[1], rect[2], rect[3], 9., th.surface_selected);
+        ui.stroke_rounded(rect[0], rect[1], rect[2], rect[3], 9., 0.9, th.accent);
+    } else {
+        panel(ui, rect, rect[3] / 2., true);
+    }
     let size = (rect[3] * 0.46).clamp(16., 24.);
     ui.icon(icon, rect[0] + (rect[2] - size) / 2.,
         rect[1] + (rect[3] - size) / 2., size, th.text_primary);
