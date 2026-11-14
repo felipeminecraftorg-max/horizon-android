@@ -77,7 +77,7 @@ mod tests {
     use super::Palette;
     fn luminance(rgb: u32) -> f32 {
         let c = |shift| {
-            let x = ((rgb >> shift) & 255) as f32 / 255.;
+            let x = ((rgb >> shift) & 255_u32) as f32 / 255.;
             if x <= 0.04045 { x / 12.92 } else { ((x + 0.055) / 1.055).powf(2.4) }
         };
         0.2126 * c(16) + 0.7152 * c(8) + 0.0722 * c(0)
