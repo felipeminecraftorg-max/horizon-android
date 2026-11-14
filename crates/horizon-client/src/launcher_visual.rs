@@ -1981,6 +1981,33 @@ mod tests {
     }
 
     #[test]
+    fn jade_png_icon_shading_uses_live_gpu_vertex_data_only_when_enabled() {
+        let atlas = HudAtlas::boot();
+        let mut theme = LauncherThemeConfig::default();
+        for (preset, effects, expected_jade) in [
+            (ThemePreset::OldSchool, true, true),
+            (ThemePreset::OldSchool, false, false),
+            (ThemePreset::LiquidGlass, true, false),
+        ] {
+            theme.apply_preset(preset);
+            theme.glass_effects = effects;
+            set_active_for_test(&theme);
+            let mut batch = HudBatch::new([640, 360]);
+            {
+                let mut ui = Ui::new(&atlas, &mut batch, (144., 105.));
+                ui.icon(Icon::Gear, 122., 90., 26., u32::MAX);
+            }
+            assert!(batch.vertices.len() >= 6);
+            let lit = batch.vertices.iter().any(|v| v.glint_uv[0] < -2.);
+            assert_eq!(lit, expected_jade, "preset: {preset:?}");
+            if expected_jade {
+                assert!(batch.vertices.iter().all(|v| v.glint_uv[0] < -2.));
+                assert!(batch.vertices.iter().all(|v| v.glint_uv[1].is_finite()));
+            }
+        }
+    }
+
+    #[test]
     fn navigation_and_home_actions_stay_separate_on_phone_viewports() {
         for (w, h) in [(340., 640.), (410., 780.), (760., 410.), (980., 440.)] {
             let layout = Layout::new(w, h);
