@@ -37,7 +37,8 @@ uniform vec4 uGlassDetail; // fine grain, satin glint, contact shadow, tap tier
 uniform vec4 uGlassTargets;// hero, tiles, system chrome, play CTA
 uniform sampler2D uSceneTexture;
 uniform int uScenePass; // 1=backdrop draw, 0=composite, 2=fallback
-uniform vec4 uEnvironment; // environment neutral, pearl highlight, warmth, light spread
+uniform vec4 uEnvironment; // ambient strength, material energy, warmth, spread
+uniform vec4 uSceneNeutral[3]; // independent silver backdrop, brushed metal and pearl light
 
 float hash12(vec2 p) {
   vec3 p3=fract(vec3(p.xyx)*0.1031);
@@ -170,23 +171,25 @@ vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
 // All offset positions stay in viewport coordinates despite render scaling.
 vec3 frostedBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
   // Read the cached GPU scene; no more recursive expensive ribbons.
-  vec3 center=texture(uSceneTexture,uv).rgb;
+  // WebGL framebuffer stores texture Y bottom-up, while scene UV uses top-down.
+  vec2 texUv=vec2(uv.x,1.0-uv.y);
+  vec3 center=texture(uSceneTexture,texUv).rgb;
   if(uGlassDetail.w<.5||uGlassModel.z<=.001)return center;
   float radius=1.5+19.0*clamp(uGlassModel.z,0.0,1.0);
   vec2 dx=vec2(radius/max(uViewport.x,1.0),0.0);
   vec2 dy=vec2(0.0,radius/max(uViewport.y,1.0));
   vec3 sum=center*4.0;
-  sum+=texture(uSceneTexture,clamp(uv+dx,vec2(0.),vec2(1.))).rgb;
-  sum+=texture(uSceneTexture,clamp(uv-dx,vec2(0.),vec2(1.))).rgb;
-  sum+=texture(uSceneTexture,clamp(uv+dy,vec2(0.),vec2(1.))).rgb;
-  sum+=texture(uSceneTexture,clamp(uv-dy,vec2(0.),vec2(1.))).rgb;
+  sum+=texture(uSceneTexture,clamp(texUv+dx,vec2(0.),vec2(1.))).rgb;
+  sum+=texture(uSceneTexture,clamp(texUv-dx,vec2(0.),vec2(1.))).rgb;
+  sum+=texture(uSceneTexture,clamp(texUv+dy,vec2(0.),vec2(1.))).rgb;
+  sum+=texture(uSceneTexture,clamp(texUv-dy,vec2(0.),vec2(1.))).rgb;
   float weight=8.0;
   if(uGlassDetail.w>1.5){
     vec2 dxy=vec2(dx.x*.7071068,dy.y*.7071068);
-    sum+=texture(uSceneTexture,clamp(uv+dxy,vec2(0.),vec2(1.))).rgb;
-    sum+=texture(uSceneTexture,clamp(uv-dxy,vec2(0.),vec2(1.))).rgb;
-    sum+=texture(uSceneTexture,clamp(uv+vec2(dxy.x,-dxy.y),vec2(0.),vec2(1.))).rgb;
-    sum+=texture(uSceneTexture,clamp(uv+vec2(-dxy.x,dxy.y),vec2(0.),vec2(1.))).rgb;
+    sum+=texture(uSceneTexture,clamp(texUv+dxy,vec2(0.),vec2(1.))).rgb;
+    sum+=texture(uSceneTexture,clamp(texUv-dxy,vec2(0.),vec2(1.))).rgb;
+    sum+=texture(uSceneTexture,clamp(texUv+vec2(dxy.x,-dxy.y),vec2(0.),vec2(1.))).rgb;
+    sum+=texture(uSceneTexture,clamp(texUv+vec2(-dxy.x,dxy.y),vec2(0.),vec2(1.))).rgb;
     weight=12.0;
   }
   return sum/weight;
@@ -201,13 +204,18 @@ void main() {
   if(uScenePass==1){
     vec3 background=renderBackdrop(uv,p,tt,cursor);
     float diffused=radial(uv,vec2(.5,.43),vec2(.85,.8));
-    background+=vec3(uEnvironment.x)*diffused*.20+
-      vec3(1.0,.96,.89)*uEnvironment.z*diffused*.015;
+    // Gray pearl and warm ivory coexist with a much smaller colored accent:
+    // the selected color no longer tints the entire dashboard.
+    background=mix(background,
+      mix(uSceneNeutral[0].rgb,uSceneNeutral[1].rgb,.25),
+      diffused*uEnvironment.x*.43);
+    background+=uSceneNeutral[2].rgb*
+      radial(uv,vec2(.75,.23),vec2(.67,.62))*uEnvironment.z*.037;
     fragmentColor=vec4(background,1.0);
     return;
   }
   vec3 result=uScenePass==2?renderBackdrop(uv,p,tt,cursor):
-    texture(uSceneTexture,uv).rgb;
+    texture(uSceneTexture,vec2(uv.x,1.0-uv.y)).rgb;
   cursor-=vec2(.5);
   float angle=uLight.x*3.14159265/180.0;
   vec3 light=normalize(vec3(cos(angle)*.87+cursor.x*uMotion.z,
@@ -413,7 +421,7 @@ void main() {
         "uFocusIndex","uSelectionStyle","uBackdropShape",
         "uBackdropLayers","uBackdropLight","uBackdropDetail",
         "uGlassModel","uGlassOptics","uGlassDetail","uGlassTargets",
-        "uSceneTexture","uScenePass","uEnvironment"];
+        "uSceneTexture","uScenePass","uEnvironment","uSceneNeutral[0]"];
       keys.forEach(k => { uniform[k] = gl.getUniformLocation(program, k); });
       gl.uniform1i(uniform.uSceneTexture,0);
       buffer = gl.createBuffer();
@@ -522,6 +530,9 @@ void main() {
     gl.useProgram(program);
     const e=preset.environmentLight??.3;
     gl.uniform4f(uniform.uEnvironment,e,.60,preset.environmentWarmth??.28,.60);
+    gl.uniform4fv(uniform["uSceneNeutral[0]"],new Float32Array(
+      ["sceneNeutral","sceneMetal","sceneHighlight"].flatMap(k=>color(preset[k]))
+    ));
     gl.uniform2f(uniform.uResolution,canvas.width,canvas.height);
     gl.uniform2f(uniform.uViewport,innerWidth,innerHeight);
     gl.uniform2f(uniform.uPointer,cursor[0],cursor[1]);
@@ -582,6 +593,11 @@ void main() {
       preset.glassHero?1:0,preset.glassCards?1:0,
       preset.glassChrome?1:0,preset.glassCTA?1:0
     ]);
+    if(!sceneAvailable){
+      // On devices without a renderable offscreen texture, avoid sampling
+      // undefined content. Solid material still receives a lit GGX response.
+      vec4("uGlassTargets",[0,0,0,0]);
+    }
     if(sceneAvailable){
       // Never sample the texture while it is bound as an FBO attachment.
       gl.activeTexture(gl.TEXTURE0);
