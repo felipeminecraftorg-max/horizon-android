@@ -1125,6 +1125,7 @@ impl Launcher {
             .rem_euclid(Page::ALL.len() as isize) as usize;
         let page = Page::ALL[next];
         self.select_launcher_page(page);
+        self.jade_navigation_cue("tabs");
         self.focus = None;
         self.pending_focus = Some(Action::Page(page));
         true
