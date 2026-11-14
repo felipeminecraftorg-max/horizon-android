@@ -1224,9 +1224,13 @@ impl Launcher {
             Key::Named(NamedKey::ArrowLeft) => Button::DPadLeft,
             Key::Named(NamedKey::ArrowRight) => Button::DPadRight,
             Key::Named(NamedKey::Tab) => {
-                let initial = self.targets.iter().position(|(_, a)| {
-                    *a == Action::Page(self.catalog.page)
-                }).unwrap_or(0);
+                let initial = if horizon_client::ui_theme::active_theme().experience
+                    == horizon_client::ui_theme::ExperiencePreset::OldSchool
+                {
+                    self.targets.iter().position(|(_, a)| {
+                        *a == Action::Page(self.catalog.page)
+                    }).unwrap_or(0)
+                } else { 0 };
                 self.focus = Some(self.focus.map_or(initial, |i| (i + 1) % self.targets.len()));
                 return true;
             }
@@ -1261,11 +1265,13 @@ impl Launcher {
             if let Some(index) = self.focus.filter(|i| *i < self.targets.len()) {
                 let rects: Vec<_> = self.targets.iter().map(|(rect, _)| *rect).collect();
                 gamepad::focus_step_rect(rects[index], button, &rects).unwrap_or(index)
-            } else {
+            } else if horizon_client::ui_theme::active_theme().experience
+                == horizon_client::ui_theme::ExperiencePreset::OldSchool
+            {
                 self.targets.iter().position(|(_, a)| {
                     *a == Action::Page(self.catalog.page)
                 }).unwrap_or(0)
-            },
+            } else { 0 },
         );
         true
     }
