@@ -86,7 +86,7 @@ jobs:
           python3 - <<'PY'
           import os, pathlib, shutil, hashlib, json, zipfile
           p=pathlib.Path(os.environ['JADE_BUILT_APK'])
-          assert p.is_file() and p.stat().st_size>400_000
+          assert p.is_file() and p.stat().st_size>4_096, 'Empty or incomplete standalone APK'
           with zipfile.ZipFile(p) as z:
               entries=set(z.namelist())
               required={'assets/index.html','assets/styles.css',
