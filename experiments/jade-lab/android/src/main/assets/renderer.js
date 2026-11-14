@@ -95,7 +95,7 @@ vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
         radial(uv,center+vec2(.58,-.31),vec2(.8,.62))*
         power*uBackdropDetail.w*.014;
 
-  if(style<3.5){
+  if(style<2.5){
     // Four constant-bound layers are safe in WebGL2 ES; the loop is masked
     // by a user-controlled integer uniform so low-power phones may use one.
     for(int layer=0;layer<4;layer++){
@@ -130,7 +130,7 @@ vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
            illuminated*weight*uBackdropDetail.z*.055;
       col-=ink*under*weight*.18;
     }
-  }else if(style<4.5){
+  }else if(style<3.5){
     // Halo: concentric diffuse fields and a short off-axis cold reflection.
     for(int i=0;i<3;i++){
       float layer=float(i);
