@@ -2101,7 +2101,7 @@ impl Launcher {
                 // geometry, while every controller activation uses the original
                 // unanimated action rectangle below.
                 ui.stroke_rounded(x - 2., y - 2., w + 4., h + 4.,
-                    9., 1.8, active_th.focus);
+                    9., 1.8, active_th.border_strong);
                 ui.stroke_rounded(x - 4., y - 4., w + 8., h + 8.,
                     11., 0.7, color::with_alpha(active_th.accent, 0.38));
             }
