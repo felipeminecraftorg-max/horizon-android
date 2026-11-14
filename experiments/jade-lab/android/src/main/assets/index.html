@@ -7,6 +7,7 @@
   <title>Horizon Jade Lab · Dark</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="palette.css">
+  <link rel="stylesheet" href="scene.css">
 </head>
 <body>
   <canvas id="gpu" aria-label="Prévia de shaders Jade em tempo real"></canvas>
@@ -29,7 +30,23 @@
       <button class="channel" data-page="Settings"><span>⚙</span><b>Settings</b></button>
       <button class="channel" data-page="Skins"><span>♧</span><b>Skins</b></button>
     </nav>
-    <div class="dashboard">
+    <div class="dashboard" id="console-scene" aria-label="Cena tridimensional do console">
+      <div class="scene-ambient-label" aria-hidden="true"><span>HORIZON</span><small>JADE · CONSOLE ATMOSPHERE</small></div>
+      <div class="avatar-stage" aria-label="Avatar original de demonstração" role="img">
+        <div class="avatar-halo"></div>
+        <div class="avatar-figure">
+          <div class="avatar-head">
+            <span class="avatar-head-top"></span><span class="avatar-head-side"></span>
+            <span class="avatar-head-front"><i></i><i></i><b></b></span>
+          </div>
+          <div class="avatar-neck"></div>
+          <div class="avatar-body"><span class="avatar-jacket"></span></div>
+          <div class="avatar-arm avatar-arm-left"></div><div class="avatar-arm avatar-arm-right"></div>
+          <div class="avatar-leg avatar-leg-left"></div><div class="avatar-leg avatar-leg-right"></div>
+        </div>
+        <div class="avatar-floor"></div>
+        <div class="avatar-caption">PLAYER <span>01</span></div>
+      </div>
       <article class="hero surface is-selected" data-surface="hero">
         <div class="hero-eyebrow"><span class="status-spark"></span><span id="hero-eyebrow">READY TO PLAY</span></div>
         <div class="hero-content"><h1 id="hero-title">MINECRAFT</h1><p id="hero-subtitle">JAVA EDITION 26.3</p>
@@ -37,7 +54,7 @@
         <div class="hero-bottom"><button class="play-cta" id="hero-action" data-surface="cta">▶ <span id="hero-button-label">Install Minecraft</span></button>
           <button class="profile-pill">Profile 1 <span>⌄</span></button></div>
       </article>
-      <section class="cards" aria-label="Módulos de teste">
+      <section class="cards" aria-label="Cartões em perspectiva, somente três visíveis">
         <button class="tile tone-jade surface" data-surface="mods" data-page="Mods"><small>EXTENSIONS</small><span class="tile-label">Mods</span><span class="tile-symbol">✣</span></button>
         <button class="tile tone-blue surface" data-surface="packs" data-page="Packs"><small>ASSETS</small><span class="tile-label">Packs</span><span class="tile-symbol">⬡</span></button>
         <button class="tile tone-amber surface" data-surface="shaders" data-page="Shaders"><small>VISUALS</small><span class="tile-label">Shaders</span><span class="tile-symbol">◭</span></button>
@@ -45,6 +62,12 @@
         <button class="tile tone-sage surface" data-surface="skins" data-page="Skins"><small>IDENTITY</small><span class="tile-label">Skins</span><span class="tile-symbol">♧</span></button>
         <button class="tile tone-metal surface" data-surface="settings" data-page="Settings"><small>SYSTEM</small><span class="tile-label">Settings</span><span class="tile-symbol">⚙</span></button>
       </section>
+      <div class="scene-navigation" aria-label="Navegação na pilha de cards">
+        <button type="button" id="scene-prev" aria-label="Seção anterior">‹</button>
+        <span id="scene-position" aria-live="polite">01 / 06</span>
+        <button type="button" id="scene-next" aria-label="Próxima seção">›</button>
+      </div>
+      <p class="scene-hint">‹  DESLIZE PARA NAVEGAR  ›</p>
     </div>
     <footer class="status-footer surface" data-surface="footer"><span>STATUS & SESSION REPORT</span><span id="live-hint">LIVE SHADER · DARK</span></footer>
   </main>
