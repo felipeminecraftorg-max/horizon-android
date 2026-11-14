@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - feature/jade-lab-dark-android
+      - feature/jade-lab-part2-visual-foundation
     paths:
       - 'experiments/jade-lab/**'
       - '.github/workflows/jade-lab-apk.yml'
@@ -29,6 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           node --version
+          node --check experiments/jade-lab/android/src/main/assets/palettes.js
           node --check experiments/jade-lab/android/src/main/assets/app.js
           node --check experiments/jade-lab/android/src/main/assets/renderer.js
           node --test experiments/jade-lab/tests/jade-lab.test.cjs
@@ -89,8 +91,8 @@ jobs:
           assert p.is_file() and p.stat().st_size>4_096, 'Empty or incomplete standalone APK'
           with zipfile.ZipFile(p) as z:
               entries=set(z.namelist())
-              required={'assets/index.html','assets/styles.css',
-                        'assets/renderer.js','assets/app.js'}
+              required={'assets/index.html','assets/styles.css','assets/palette.css',
+                        'assets/palettes.js','assets/renderer.js','assets/app.js'}
               assert required<=entries,sorted(required-entries)
           sha=os.environ['GITHUB_SHA']
           name=f'Horizon-Jade-Lab-Dark-{sha[:12]}.apk'
