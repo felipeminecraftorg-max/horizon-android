@@ -125,9 +125,9 @@ vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
                     layer==1?uPalette[2].rgb:
                     layer==2?uPalette[4].rgb:uPalette[3].rgb;
       float weight=(.78-.10*i)*power*horizonFade*uAtmos.y;
-      col+=spectral*envelope*weight*(.026+.025*turn);
+      col+=spectral*envelope*weight*(.102+.065*turn);
       col+=mix(spectral,vec3(.77,.84,.91),.21)*
-           illuminated*weight*uBackdropDetail.z*.018;
+           illuminated*weight*uBackdropDetail.z*.055;
       col-=ink*under*weight*.18;
     }
   }else if(style<4.5){
