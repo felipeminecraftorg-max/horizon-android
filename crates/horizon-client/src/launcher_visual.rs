@@ -1096,6 +1096,7 @@ pub fn shell_animated(
     let th = active_theme();
     let (w, h) = (ui.w, ui.h);
     let layout = Layout::new(w, h);
+    let jade_portrait = layout.console && layout.portrait;
     if layout.console && !layout.portrait {
         return shell_console(ui, items, selected, account, signed_in, version, focus[0], target);
     }
@@ -1104,7 +1105,12 @@ pub fn shell_animated(
     ui.text(Face::Regular, 10.5, 58., 37., th.text_muted, version);
     let aw = if layout.portrait { 118. } else { 166. };
     let account_r = [w - 20. - aw, 12., aw, 44.];
-    panel(ui, account_r, 22., false);
+    if jade_portrait {
+        ui.rounded(account_r[0], account_r[1], account_r[2], account_r[3], 10., th.surface_bright);
+        ui.stroke_rounded(account_r[0], account_r[1], account_r[2], account_r[3], 10., 0.8, th.border);
+    } else {
+        panel(ui, account_r, 22., false);
+    }
     ui.avatar_head_2d(account_r[0] + 6., 20., 28., account);
     if signed_in {
         ui.rounded(account_r[0] + 26., 40., 6., 6., 3., th.success);
@@ -1121,9 +1127,39 @@ pub fn shell_animated(
     ui.icon(Icon::ChevronDown, w - 40., 28., 12., th.text_muted);
     target(account_r, ShellAction::Account);
     let gear = [account_r[0] - 54., 12., 44., 44.];
-    panel(ui, gear, 22., false);
+    if jade_portrait {
+        ui.rounded(gear[0], gear[1], gear[2], gear[3], 10., th.surface_bright);
+        ui.stroke_rounded(gear[0], gear[1], gear[2], gear[3], 10., 0.8, th.border);
+    } else {
+        panel(ui, gear, 22., false);
+    }
     ui.icon(Icon::Gear, gear[0] + 12., 24., 20., th.text_primary);
     target(gear, ShellAction::Appearance);
+    if jade_portrait {
+        // The console's responsive mode is its OWN solid-bottom navigation,
+        // not the Liquid Glass round dock or a compressed Xbox/PS3 interface.
+        // Each immutable 44dp+ target contains a prepared PNG icon and label.
+        ui.rounded(12., h - 80., (w - 24.).max(0.), 70., 11., th.header_bg);
+        ui.stroke_rounded(12., h - 80., (w - 24.).max(0.), 70.,
+            11., 0.85, th.border);
+        for (i, (label, icon)) in items.iter().enumerate() {
+            let r = layout.nav_rect(w, h, i, items.len());
+            let active = i == selected;
+            if active {
+                ui.rounded(r[0] + 3., r[1] + 2., (r[2] - 6.).max(1.),
+                    49., 8., th.surface_selected);
+                ui.rounded(r[0] + r[2] * 0.22, r[1] + 51.,
+                    r[2] * 0.56, 2.5, 1.25, th.accent);
+            }
+            let ink = if active { th.text_primary } else { th.text_muted };
+            ui.icon(*icon, r[0] + (r[2] - 21.) / 2., r[1] + 4., 21., ink);
+            ui.centered_fit(Face::ConsoleMedium, 9.,
+                [r[0] + 2., r[1] + 29., (r[2] - 4.).max(10.), 17.],
+                ink, label);
+            target(r, ShellAction::Page(i));
+        }
+        return layout;
+    }
     // Liquid Glass: an entirely different narrow icon dock. Keep tab content
     // outside the glass layer; the icons and their hitboxes remain crisp.
     if th.experience == ExperiencePreset::LiquidGlass && !layout.portrait {
