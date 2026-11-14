@@ -12,6 +12,8 @@
 use crate::hud::{HudAtlas, HudBatch, Rect};
 use ab_glyph::{Font as _, FontRef, PxScale, ScaleFont as _};
 use std::{cell::RefCell, collections::HashMap, path::Path};
+#[path = "launcher_icon_assets.rs"]
+mod launcher_icon_assets;
 
 /// A Horizon-only preference from `horizon.txt` beside `options.txt`
 /// (`key:value` lines), so vanilla's options file stays exactly as vanilla
@@ -1265,6 +1267,20 @@ impl<'a> Ui<'a> {
         let (x0, y0) = (self.px_x(x), self.px_y(y));
         let px = (size * self.density).round().clamp(8.0, 128.0) as u16;
         let atlas = self.atlas;
+        // Old School's console icons are finished PNG images, not point-by-point
+        // sketches generated each time the atlas is rebuilt. The PNG pixels are
+        // decoded once, then uploaded once per atlas lifetime. Their tint and
+        // GPU shading may change every frame without regenerating any geometry.
+        if let Some((key, w, h, rgba)) = launcher_icon_assets::texture(icon)
+            && let Some(rect) = with_cache(atlas, |c| c.image(atlas, key, w, h, rgba))
+        {
+            let pxf = f32::from(px);
+            self.emit_clipped_uv(x0, y0, x0 + pxf, y0 + pxf,
+                rect.u0, rect.v0, rect.u1, rect.v1, color);
+            return;
+        }
+        // Existing standard and Liquid Glass icons keep their independent
+        // vector path; this is only a fallback when a Jade texture cannot load.
         if let Some(rect) = with_cache(atlas, |c| c.vector_icon(atlas, icon, px)) {
             let pxf = f32::from(px);
             self.emit_clipped_uv(
