@@ -2447,7 +2447,7 @@ impl ThemePreset {
             Self::Custom => "Personalized colors & gradients",
             Self::LiquidGlass => "Optical lenses and calm modern navigation",
             Self::DarkAero => "Black glass and polished silver",
-            Self::OldSchool => "Console-era silver channels and cinematic focus",
+            Self::OldSchool => "Horizon Jade: layered console navigation, graphite and quiet green",
         }
     }
 
@@ -2461,7 +2461,7 @@ impl ThemePreset {
                 0x050607, 0x191B1F, 0xE2E5EC, 0x17191D, 0x090A0D, 0x030405, false,
             ),
             Self::OldSchool => (
-                0x080B12, 0x252B32, 0xCEDBE8, 0x1D2430, 0x0B1019, 0x030509, false,
+                0x141816, 0x1D2420, 0x66C77A, 0x203028, 0x1B2920, 0x101713, false,
             ),
             Self::ObsidianViolet | Self::Custom => (
                 0x13111C, 0x1D192B, 0x9A7BFF, 0x161129, 0x1E1638, 0x0E0C16, false,
@@ -2811,7 +2811,8 @@ impl LauncherThemeConfig {
         self.preset = preset;
         self.wallpaper = match preset {
             ThemePreset::LiquidGlass => launcher_visual::Wallpaper::Aurora,
-            ThemePreset::DarkAero | ThemePreset::OldSchool => launcher_visual::Wallpaper::Graphite,
+            ThemePreset::DarkAero => launcher_visual::Wallpaper::Graphite,
+            ThemePreset::OldSchool => launcher_visual::Wallpaper::None,
             _ => launcher_visual::Wallpaper::None,
         };
         if preset != ThemePreset::Custom {
@@ -2948,7 +2949,7 @@ impl LauncherThemeConfig {
             bg_rgb
         };
 
-        ResolvedTheme {
+        let mut resolved = ResolvedTheme {
             experience: self.preset.into(),
             glass: self.current_optics(),
             wallpaper: self.wallpaper,
@@ -3000,7 +3001,38 @@ impl LauncherThemeConfig {
             ),
             success: color::hex(if is_light { 0x15803D } else { 0x4ADE80 }, 255),
             danger: color::hex(if is_light { 0xDC2626 } else { 0xF87171 }, 255),
+        };
+        // The console experience owns its surfaces: a flat, legible Xbox-360-era
+        // inspired hierarchy instead of the retired XMB/aero chrome. Keep the
+        // persisted OldSchool name for existing users; do not change Liquid Glass.
+        if self.preset == ThemePreset::OldSchool {
+            let jade = launcher_jade::Palette::for_appearance(is_light);
+            let opaque = |rgb| color::hex(rgb, 255);
+            resolved.material = launcher_visual::Material::Opaque;
+            resolved.wallpaper = launcher_visual::Wallpaper::None;
+            resolved.is_gradient = false; // dedicated, cached Jade backdrop
+            resolved.bg_solid = opaque(jade.background);
+            resolved.gradient_start = opaque(jade.gradient_start);
+            resolved.gradient_mid = opaque(jade.gradient_mid);
+            resolved.gradient_end = opaque(jade.gradient_end);
+            resolved.sidebar_bg = opaque(jade.sidebar);
+            resolved.header_bg = opaque(jade.header);
+            resolved.surface = opaque(jade.surface);
+            resolved.surface_dim = opaque(jade.surface_dim);
+            resolved.surface_bright = opaque(jade.surface_high);
+            resolved.surface_selected = opaque(jade.selected);
+            resolved.border = opaque(jade.border);
+            resolved.border_strong = opaque(jade.focus);
+            resolved.accent = opaque(jade.accent);
+            resolved.accent_soft = color::hex(jade.accent, 56);
+            resolved.on_accent = opaque(jade.on_accent);
+            resolved.accent_text = opaque(jade.on_accent);
+            resolved.text_primary = opaque(jade.text);
+            resolved.text_muted = opaque(jade.muted);
+            resolved.success = opaque(jade.success);
+            resolved.danger = opaque(jade.danger);
         }
+        resolved
     }
 }
 
@@ -3299,6 +3331,8 @@ mod tests {
     }
 }
 
+#[path = "launcher_jade.rs"]
+pub mod launcher_jade;
 #[path = "launcher_visual.rs"]
 pub mod launcher_visual;
 #[path = "launcher_preset_pack.rs"]
