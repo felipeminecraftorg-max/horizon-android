@@ -590,11 +590,14 @@ fn draw_setting_card(
     let console = experience == horizon_client::ui_theme::ExperiencePreset::OldSchool;
     if let SettingControl::SectionHeader(badge, icon) = right_control {
         if console {
-            visual::panel(ui, [x, y + 6.0, w, h - 10.0], 10.0, true);
+            // A Jade section header is a high-contrast surface, not a giant
+            // green primary button underneath three competing text colours.
+            visual::component_card(ui, [x, y + 6.0, w, h - 10.0], false);
+            ui.rounded(x + 4., y + 18., 3., (h - 34.).max(0.), 1.5, my3_accent());
         } else {
             ui.rounded(x, y + 6.0, w, h - 10.0, 16.0, my3_surface());
+            ui.border(x, y + 6.0, w, h - 10.0, 16.0, my3_border());
         }
-        ui.border(x, y + 6.0, w, h - 10.0, 16.0, my3_border());
         ui.rounded(x + 12.0, y + 13.0, 34.0, 34.0, 11.0, my3_accent_soft());
         ui.icon(icon, x + 20.0, y + 21.0, 18.0, my3_accent());
         let text_max = (w - 170.0).max(90.0);
@@ -815,7 +818,7 @@ fn page_icon(page: Page) -> Icon {
         Page::Shaders => Icon::Shaders,
         Page::Installed => Icon::Installed,
         Page::Settings => Icon::Settings,
-        Page::Skins => Icon::Installed,
+        Page::Skins => Icon::Person,
     }
 }
 
@@ -934,7 +937,9 @@ fn draw_my3_progress_view(
                 sw,
                 bar_h - 4.0,
                 4.0,
-                color::hex(0xC9B8FF, 165),
+                if horizon_client::ui_theme::active_theme().experience
+                    == horizon_client::ui_theme::ExperiencePreset::OldSchool
+                { my3_accent() } else { color::hex(0xC9B8FF, 165) },
             );
         }
     }
@@ -1928,17 +1933,14 @@ impl Launcher {
             let y = self.anim.soft_scroll_thumb(desired, [top, top + height - thumb]);
             let style = horizon_client::ui_theme::active_theme().experience;
             let track = if style == horizon_client::ui_theme::ExperiencePreset::OldSchool {
-                horizon_client::ui_theme::color::hex(0xA6B1C4, 38)
+                my3_surface()
             } else {
                 horizon_client::ui_theme::color::hex(0xDCECF7, 34)
             };
             ui.rounded(w - 12., top, 7., height, 3.5, track);
             if style == horizon_client::ui_theme::ExperiencePreset::OldSchool {
-                // Opaque brushed-steel thumb, independent of the refracting track.
-                ui.rounded(w - 12.5, y, 8., thumb, 3.5,
-                    horizon_client::ui_theme::color::hex(0xDCE4ED, 218));
-                ui.fill(w - 11., y + 4., 1., (thumb - 8.).max(1.),
-                    horizon_client::ui_theme::color::hex(0xFFFFFF, 105));
+                // Jade's thumb is a single clearly visible accent shape.
+                ui.rounded(w - 12.5, y, 8., thumb, 3.5, my3_accent());
             } else {
                 // Liquid Glass stays translucent with a quiet white edge.
                 ui.rounded(w - 12., y, 7., thumb, 3.5,
@@ -2287,8 +2289,14 @@ impl Launcher {
             if filtered.is_empty() {
                 self.list_view = None;
                 let card_h = (bottom - top - 8.0).clamp(110.0, 176.0);
-                ui.rounded(content_x, top, content_w, card_h, 18.0, my3_surface());
-                ui.border(content_x, top, content_w, card_h, 18.0, my3_border());
+                if horizon_client::ui_theme::active_theme().experience
+                    == horizon_client::ui_theme::ExperiencePreset::OldSchool
+                {
+                    visual::component_card(ui, [content_x, top, content_w, card_h], false);
+                } else {
+                    ui.rounded(content_x, top, content_w, card_h, 18.0, my3_surface());
+                    ui.border(content_x, top, content_w, card_h, 18.0, my3_border());
+                }
                 ui.rounded(
                     content_x + 20.0,
                     top + 18.0,
@@ -2380,19 +2388,17 @@ impl Launcher {
                 if y + card_h < top || y > bottom {
                     continue;
                 }
-                ui.rounded(content_x, y, content_w, card_h, 14.0, my3_card_bg());
-                ui.border(
-                    content_x,
-                    y,
-                    content_w,
-                    card_h,
-                    14.0,
-                    if item.enabled {
-                        my3_accent()
-                    } else {
-                        my3_card_border()
-                    },
-                );
+                if horizon_client::ui_theme::active_theme().experience
+                    == horizon_client::ui_theme::ExperiencePreset::OldSchool
+                {
+                    visual::component_card(ui, [content_x, y, content_w, card_h], item.enabled);
+                } else {
+                    ui.rounded(content_x, y, content_w, card_h, 14.0, my3_card_bg());
+                    ui.border(
+                        content_x, y, content_w, card_h, 14.0,
+                        if item.enabled { my3_accent() } else { my3_card_border() },
+                    );
+                }
 
                 // Left file-type icon + badge pill (MOD / PACK / SHADER)
                 let kind_icon = match item.kind {
@@ -2689,8 +2695,14 @@ impl Launcher {
         if self.catalog.fm_entries.is_empty() {
             self.list_view = None;
             let empty_h = (bottom - top - 8.0).clamp(96.0, 152.0);
-            ui.rounded(content_x, top, content_w, empty_h, 16.0, my3_surface());
-            ui.border(content_x, top, content_w, empty_h, 16.0, my3_border());
+            if horizon_client::ui_theme::active_theme().experience
+                == horizon_client::ui_theme::ExperiencePreset::OldSchool
+            {
+                visual::component_card(ui, [content_x, top, content_w, empty_h], false);
+            } else {
+                ui.rounded(content_x, top, content_w, empty_h, 16.0, my3_surface());
+                ui.border(content_x, top, content_w, empty_h, 16.0, my3_border());
+            }
             ui.icon(
                 Icon::Folder,
                 content_x + 20.0,
@@ -2757,30 +2769,16 @@ impl Launcher {
             if y + card_h < top || y > bottom {
                 continue;
             }
-            ui.rounded(
-                content_x,
-                y,
-                content_w,
-                card_h,
-                12.0,
-                if selected {
-                    my3_nav_active()
-                } else {
-                    my3_card_bg()
-                },
-            );
-            ui.border(
-                content_x,
-                y,
-                content_w,
-                card_h,
-                12.0,
-                if selected {
-                    my3_accent()
-                } else {
-                    my3_card_border()
-                },
-            );
+            if horizon_client::ui_theme::active_theme().experience
+                == horizon_client::ui_theme::ExperiencePreset::OldSchool
+            {
+                visual::component_card(ui, [content_x, y, content_w, card_h], selected);
+            } else {
+                ui.rounded(content_x, y, content_w, card_h, 12.0,
+                    if selected { my3_nav_active() } else { my3_card_bg() });
+                ui.border(content_x, y, content_w, card_h, 12.0,
+                    if selected { my3_accent() } else { my3_card_border() });
+            }
 
             ui.m3_checkbox(content_x + 11.0, y + 13.0, 20.0, selected, "");
             if let Some(c) = ui.clip_rect(check_r) {
@@ -3785,10 +3783,16 @@ impl Launcher {
                 let cy = grid_top + row as f32 * (card_h + gap_y);
                 let rect = [cx, cy, card_w, card_h];
 
-                ui.rounded(cx, cy, card_w, card_h, 16.0, my3_card_bg());
-                ui.border(cx, cy, card_w, card_h, 16.0, my3_card_border());
+                if horizon_client::ui_theme::active_theme().experience
+                    == horizon_client::ui_theme::ExperiencePreset::OldSchool
+                {
+                    visual::component_card(ui, rect, false);
+                } else {
+                    ui.rounded(cx, cy, card_w, card_h, 16.0, my3_card_bg());
+                    ui.border(cx, cy, card_w, card_h, 16.0, my3_card_border());
+                }
 
-                // Left vector icon + vertical divider line matching 45062.jpg
+                // Icon and information remain in separate text and focus lanes.
                 let icon_size = 20.0;
                 ui.icon(
                     icon,
