@@ -1086,6 +1086,108 @@ pub(super) fn cancel_slider_drag() {
 }
 
 impl Launcher {
+    /// One authoritative page transition, used by taps, swipes, shoulders and
+    /// the contextual sheet. The original browser/import state remains intact.
+    pub(super) fn select_launcher_page(&mut self, page: Page) {
+        if page == Page::Skins {
+            self.wardrobe.open(
+                &self.catalog.config.name,
+                &self.catalog.config.microsoft_client_id,
+            );
+        }
+        self.quick_panel_open = false;
+        self.catalog.editing = None;
+        self.catalog.project_modal = None;
+        self.catalog.modal_worker = None;
+        if crate::platform::active() {
+            crate::platform::hide();
+        }
+        if page == Page::Settings && self.catalog.page == Page::Settings {
+            self.catalog.settings_category = SettingsCategory::Overview;
+        }
+        self.catalog.page = page;
+        self.catalog.scroll = 0.0;
+        self.error = None;
+        self.catalog.offset = 0;
+        self.catalog.browse(&self.home);
+        self.anim.trigger_page_transition();
+    }
+
+    /// Shoulder bumper, keyboard PageUp/PageDown or touch on the console
+    /// category strip. This method never steals input from open modals.
+    pub(super) fn cycle_jade_page(&mut self, direction: i8) -> bool {
+        if !self.jade_nav_ready() || direction == 0 {
+            return false;
+        }
+        let index = Page::ALL.iter().position(|p| *p == self.catalog.page).unwrap_or(0);
+        let next = (index as isize + direction as isize)
+            .rem_euclid(Page::ALL.len() as isize) as usize;
+        let page = Page::ALL[next];
+        self.select_launcher_page(page);
+        self.focus = None;
+        self.pending_focus = Some(Action::Page(page));
+        true
+    }
+
+    /// Fully native Jade quick access sheet, activated by holding a channel
+    /// or pressing controller Start. No PS3/Xbox proprietary branding.
+    fn draw_jade_quick_panel(&mut self, ui: &mut Ui<'_>, w: f32, h: f32) {
+        if !self.quick_panel_open { return; }
+        let th = horizon_client::ui_theme::active_theme();
+        self.targets.clear();
+        self.list_targets.clear();
+        self.list_view = None;
+        let columns = if h < 510. && w >= 630. { 2usize } else { 1usize };
+        let count = Page::ALL.len() + 1;
+        let rows = count.div_ceil(columns);
+        let row_h = if columns == 2 { 47. } else { ((h - 102.) / rows as f32).clamp(33., 48.) };
+        let panel_w = (w - 32.).min(if columns == 2 { 495. } else { 348. });
+        let panel_h = 75. + rows as f32 * row_h;
+        let x = (w - panel_w - 16.).max(8.);
+        let y = ((h - panel_h) * 0.5).max(8.);
+        ui.fill(0., 0., w, h, color::hex(0x08130D, 192));
+        ui.rounded(x, y, panel_w, panel_h, 12., th.bg_solid);
+        ui.stroke_rounded(x, y, panel_w, panel_h, 12., 1., th.border_strong);
+        ui.rounded(x + 15., y + 14., 3., 36., 1.5, th.accent);
+        ui.text(Face::ConsoleDisplay, 19., x + 28., y + 14.,
+            th.text_primary, "Quick access");
+        ui.text(Face::ConsoleMedium, 10.5, x + 29., y + 40.,
+            th.text_muted, "Navigate between Horizon channels");
+        let close = [x + panel_w - 47., y + 12., 35., 35.];
+        ui.rounded(close[0], close[1], close[2], close[3], 8., th.surface_high);
+        ui.icon(Icon::Close, close[0] + 10., close[1] + 10., 16., th.text_primary);
+        self.targets.push((close, Action::CloseQuickPanel));
+
+        let gap = 7.;
+        let item_w = (panel_w - 28. - (columns - 1) as f32 * gap) / columns as f32;
+        for i in 0..count {
+            let (label, icon, action, selected) = if i < Page::ALL.len() {
+                let page = Page::ALL[i];
+                (page.name(), page_icon(page), Action::Page(page),
+                    self.catalog.page == page)
+            } else {
+                ("Account", Icon::Person, Action::Account, false)
+            };
+            let column = i % columns;
+            let row = i / columns;
+            let rect = [x + 14. + column as f32 * (item_w + gap),
+                y + 60. + row as f32 * row_h, item_w, row_h - 5.];
+            ui.rounded(rect[0], rect[1], rect[2], rect[3], 8.,
+                if selected { th.surface_selected } else { th.surface });
+            ui.stroke_rounded(rect[0], rect[1], rect[2], rect[3], 8.,
+                if selected { 1.1 } else { 0.7 },
+                if selected { th.accent } else { th.border });
+            ui.icon(icon, rect[0] + 12., rect[1] + (rect[3] - 22.) / 2.,
+                22., if selected { th.accent } else { th.text_primary });
+            let text = ui.fit_text(Face::ConsoleMedium, 12.5,
+                label, (rect[2] - 51.).max(18.));
+            ui.text(Face::ConsoleMedium, 12.5,
+                rect[0] + 42., rect[1] + (rect[3] - 17.) / 2.,
+                th.text_primary, &text);
+            self.targets.push((rect, action));
+        }
+    }
+
     pub(super) fn pointer_action(&self) -> Option<Action> {
         let d = self.ui_density();
         let (x, y) = (self.cursor.0 as f32 / d, self.cursor.1 as f32 / d);
