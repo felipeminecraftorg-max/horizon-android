@@ -168,6 +168,7 @@
   const PARAM_KEYS=Object.keys(SPECS);
   let state=clone(DEFAULTS),tabId="Atmosfera",page="Play",paused=false,toastId=0;
   const groupOpen={},storeKey="horizon.jade.lab.dark.v1";
+  let lastSavedAt=0;
   function sanitizeName(name) {
     const clean=String(name||"jade-lab").replace(/[^a-zA-Z0-9._-]/g,"-").replace(/^-+|-+$/g,"").slice(0,64);
     return clean||"jade-lab";
@@ -177,7 +178,11 @@
     node.textContent=String(message);node.classList.add("show");
     clearTimeout(toastId);toastId=setTimeout(()=>node.classList.remove("show"),2800);
   }
-  function safeSave() {
+  function safeSave(force=false) {
+    const now=Date.now();
+    // localStorage is synchronous on Android: never write it per slider pixel.
+    if(!force && now-lastSavedAt<280)return;
+    lastSavedAt=now;
     try{localStorage.setItem(storeKey,JSON.stringify(state));}catch(e){}
   }
   function restore() {
@@ -493,7 +498,8 @@
       "Shared environment colors are distinct from accent colors.\n"+
       "uSceneNeutral[0] supplies neutral metal/pearl illumination from the same moving light.\n"+
       "Glass uniforms: uGlassModel, uGlassOptics, uGlassDetail, uGlassTargets.\n"+
-      "Glass diffusion samples ONLY the procedural background, not native/DOM text or other panels.\n"+
+      "Glass diffusion samples the low resolution cached procedural GPU scene; text stays crisp.\n"+
+      "The deck is the only navigation; the top channel strip is gone.\n"+
       "This is an engineering reference pack, not a compiled Rust/WGSL mod.\n"+
       "The image preview is the GPU backdrop/material shader, not DOM text.\n"+
       "Import this ZIP back into Jade Lab using Import preset/pack.\n"
@@ -611,6 +617,11 @@
     el("download-section").addEventListener("click",()=>doExport("section"));
     el("save-preset").addEventListener("click",()=>doExport("preset"));
     el("download-pack").addEventListener("click",()=>doExport("pack"));
+    window.addEventListener("pagehide",()=>safeSave(true));
+    document.addEventListener("visibilitychange",()=>{
+      if(document.hidden)safeSave(true);
+    });
+    body.addEventListener("pointerup",()=>safeSave(true),{passive:true});
     el("import-file").addEventListener("change",async e=>{
       try{await importFile(e.target.files&&e.target.files[0]);}
       catch(err){toast("Importação: "+(err.message||err));}
@@ -635,7 +646,8 @@
       }
     });
   }
-  const STACK_PAGES=["Mods","Packs","Shaders","Files","Skins","Settings"];
+  // The spatial deck is the ONLY app navigation. Hero is contextual content.
+  const STACK_PAGES=["Play","Mods","Packs","Shaders","Files","Skins","Settings"];
   let stackIndex=0;
   function updateStack(selected){
     const direct=STACK_PAGES.indexOf(selected);
@@ -654,7 +666,11 @@
     if(position)position.textContent=String(stackIndex+1).padStart(2,"0")+
       " / "+String(STACK_PAGES.length).padStart(2,"0");
     const scene=el("console-scene");
-    if(scene)scene.dataset.page=selected;
+    if(scene){
+      scene.dataset.page=selected;
+      // The focused region and player avatar respond to one shared light.
+      scene.style.setProperty("--light-strength",selected==="Play"?"0.75":"1");
+    }
   }
   function cycleStack(direction){
     const next=(stackIndex+direction+STACK_PAGES.length)%STACK_PAGES.length;
