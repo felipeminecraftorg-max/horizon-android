@@ -164,6 +164,9 @@ impl Drop for MixerBackend {
         }
     }
 }
+#[path = "audio/jade_ui.rs"]
+mod jade_ui;
+
 /// Splitscreen: each shared backend's channel ids start at a block of their own, never handed out
 /// again, so a player in a seat used before never reuses an id a departed one's decoder may
 /// still attach to. The game's own backend counts from 0, as before.
@@ -1802,6 +1805,41 @@ impl Audio {
         self.play(event, at, volume, pitch);
         self.capture = capture;
     }
+    /// Original Horizon Jade UI synth. No archive decoding, disk I/O,
+    /// external samples or async decode thread is involved. One small PCM
+    /// buffer per cue is generated once and reused; only one UI channel plays
+    /// at a time. The user's existing retro Ogg pack remains available to the
+    /// normal touch-component sound assignments.
+    pub fn play_jade_ui_sfx(&mut self, kind: &'static str, volume: f32) {
+        if !self.backend.live || volume <= 0. {
+            return;
+        }
+        static JADE_CACHE: std::sync::OnceLock<Mutex<HashMap<&'static str, Samples>>> =
+            std::sync::OnceLock::new();
+        let cache = JADE_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+        let cached = cache.lock().ok().and_then(|map| map.get(kind).cloned());
+        let samples = cached.unwrap_or_else(|| {
+            let rendered = jade_ui::synthesize(kind)
+                .map(|(samples, rate, channels)| (Arc::new(samples), rate, channels));
+            if let Ok(mut map) = cache.lock() {
+                map.insert(kind, rendered.clone());
+            }
+            rendered
+        });
+        if samples.is_none() {
+            return;
+        }
+        if let Some(old) = self.ui_pack_channel.take() {
+            self.backend.destroy(old);
+        }
+        let Some(channel) = self.backend.create(false) else { return; };
+        self.backend.set_relative(channel, true);
+        self.backend.set_volume(channel,
+            volume.clamp(0., 1.) * self.master.clamp(0., 1.));
+        self.ui_pack_channel = Some(channel);
+        attach(&self.backend.mixer, channel, samples, false);
+    }
+
     /// Play precisely one Glass Lab V7 sample selected for this component.
     ///
     /// Bundled Ogg/Vorbis is derived from the user's original 66 Ogg/Opus
