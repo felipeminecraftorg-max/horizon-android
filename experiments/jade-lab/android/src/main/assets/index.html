@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0b1110">
+  <title>Horizon Jade Lab · Dark</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <canvas id="gpu" aria-label="Prévia de shaders Jade em tempo real"></canvas>
+  <div id="gpu-fallback" hidden>A GPU WebGL2 não está disponível neste aparelho. Os controles e exportações permanecem acessíveis.</div>
+
+  <main id="preview" class="preview" aria-label="Prévia completa do Horizon Jade">
+    <header class="topbar surface" data-surface="topbar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">H</span>
+        <div><strong>Horizon</strong><small>Android 0.7.8 · JADE LAB</small></div>
+      </div>
+      <div class="account"><span class="pixel-avatar" aria-hidden="true">▣</span><span class="account-name">Conta</span></div>
+      <button class="top-settings" id="quick-settings" aria-label="Abrir configurações do laboratório">⚙</button>
+    </header>
+    <nav class="channels surface" data-surface="nav" aria-label="Canais do console">
+      <button class="channel active" data-page="Play" aria-current="page"><span>▶</span><b>Play</b></button>
+      <button class="channel" data-page="Mods"><span>✣</span><b>Mods</b></button>
+      <button class="channel" data-page="Packs"><span>⬡</span><b>Packs</b></button>
+      <button class="channel" data-page="Shaders"><span>◭</span><b>Shaders</b></button>
+      <button class="channel" data-page="Files"><span>▱</span><b>My Files</b></button>
+      <button class="channel" data-page="Settings"><span>⚙</span><b>Settings</b></button>
+      <button class="channel" data-page="Skins"><span>♧</span><b>Skins</b></button>
+    </nav>
+    <div class="dashboard">
+      <article class="hero surface" data-surface="hero">
+        <div class="hero-eyebrow"><span class="status-spark"></span><span id="hero-eyebrow">READY TO PLAY</span></div>
+        <div class="hero-content"><h1 id="hero-title">MINECRAFT</h1><p id="hero-subtitle">JAVA EDITION 26.3</p>
+          <p class="substatus" id="hero-status">● Install needed</p></div>
+        <div class="hero-bottom"><button class="play-cta" id="hero-action" data-surface="cta">▶ <span id="hero-button-label">Install Minecraft</span></button>
+          <button class="profile-pill">Profile 1 <span>⌄</span></button></div>
+      </article>
+      <section class="cards" aria-label="Módulos de teste">
+        <button class="tile tone-jade surface" data-surface="mods" data-page="Mods"><small>EXTENSIONS</small><span class="tile-label">Mods</span><span class="tile-symbol">✣</span></button>
+        <button class="tile tone-blue surface" data-surface="packs" data-page="Packs"><small>ASSETS</small><span class="tile-label">Packs</span><span class="tile-symbol">⬡</span></button>
+        <button class="tile tone-amber surface" data-surface="shaders" data-page="Shaders"><small>VISUALS</small><span class="tile-label">Shaders</span><span class="tile-symbol">◭</span></button>
+        <button class="tile tone-teal surface" data-surface="files" data-page="Files"><small>STORAGE</small><span class="tile-label">My Files</span><span class="tile-symbol">▱</span></button>
+        <button class="tile tone-sage surface" data-surface="skins" data-page="Skins"><small>IDENTITY</small><span class="tile-label">Skins</span><span class="tile-symbol">♧</span></button>
+        <button class="tile tone-metal surface" data-surface="settings" data-page="Settings"><small>SYSTEM</small><span class="tile-label">Settings</span><span class="tile-symbol">⚙</span></button>
+      </section>
+    </div>
+    <footer class="status-footer surface" data-surface="footer"><span>STATUS & SESSION REPORT</span><span id="live-hint">LIVE SHADER · DARK</span></footer>
+  </main>
+
+  <div class="floating-tools" aria-label="Controles da prévia">
+    <button id="open-editor" class="float-button" aria-label="Abrir editor" title="Editor">☷ <span>EDITOR</span></button>
+    <button id="toggle-compare" class="float-button" aria-label="Alternar comparação sem shaders" title="Antes e depois">◐</button>
+    <button id="toggle-pause" class="float-button" aria-label="Pausar animações" title="Pausar animações">Ⅱ</button>
+    <button id="reset-view" class="float-button" aria-label="Centralizar iluminação" title="Centralizar luz">◎</button>
+  </div>
+
+  <aside id="editor" class="editor" aria-label="Editor de materiais e shaders">
+    <header class="editor-head" id="drag-handle">
+      <div class="drag-grip" aria-hidden="true"></div>
+      <div class="editor-title"><div><strong>JADE <em>LAB</em></strong><small>DARK ONLY · LIVE GPU</small></div>
+        <span id="render-badge">WEBGL2</span></div>
+      <div class="editor-buttons">
+        <button id="maximize-editor" title="Expandir editor" aria-label="Expandir editor">↕</button>
+        <button id="minimize-editor" title="Minimizar editor" aria-label="Minimizar editor">▁</button>
+        <button id="hide-editor" title="Ocultar painel" aria-label="Ocultar painel">×</button>
+      </div>
+    </header>
+    <nav class="editor-tabs" id="editor-tabs" role="tablist" aria-label="Categorias de ajustes"></nav>
+    <div class="editor-body" id="editor-body" tabindex="0"></div>
+    <footer class="editor-foot"><button id="download-section">↓ BAIXAR ABA</button><button id="save-preset">↓ PRESET JSON</button><button id="download-pack" class="primary">↓ PACK ZIP</button></footer>
+  </aside>
+
+  <input id="import-file" type="file" accept=".json,.zip,application/json,application/zip" hidden>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="renderer.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
