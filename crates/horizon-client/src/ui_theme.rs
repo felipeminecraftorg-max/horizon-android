@@ -1110,7 +1110,8 @@ impl<'a> Ui<'a> {
                     profile[2][0] *= (tuning.refraction / 20.).clamp(0., 1.5);
                     profile[5][0] = (profile[5][0] + (tuning.blur - 1.) * 0.14).clamp(0., 2.2);
                     if theme.experience == ExperiencePreset::OldSchool {
-                        profile[5][1] = ((tuning.opacity - 0.06) / 0.44).clamp(0., 1.) * 0.56;
+                        // Jade stays satin rather than reverting to glossy XMB pearl.
+                        profile[5][1] = 0.20 + ((tuning.opacity - 0.06) / 0.44).clamp(0., 1.) * 0.26;
                     }
                 }
                 profile
@@ -2745,6 +2746,8 @@ pub struct ResolvedTheme {
     pub experience: ExperiencePreset,
     pub glass: launcher_visual::GlassTuning,
     pub material: launcher_visual::Material,
+    /// Jade's selective real-time GGX surfaces, independent of the Liquid Glass renderer.
+    pub jade_gpu_fx: bool,
     pub wallpaper: launcher_visual::Wallpaper,
     pub is_light: bool,
     pub is_gradient: bool,
@@ -2969,6 +2972,7 @@ impl LauncherThemeConfig {
             experience: self.preset.into(),
             glass: self.current_optics(),
             wallpaper: self.wallpaper,
+            jade_gpu_fx: self.preset == ThemePreset::OldSchool && self.glass_effects,
             material: if self.glass_effects {
                 match self.preset {
                     ThemePreset::LiquidGlass => launcher_visual::Material::Glass,
