@@ -9,6 +9,12 @@
   if(!PALETTES)throw new Error("O catálogo de paletas não foi carregado");
   const DEFAULTS=Object.freeze({
     paletteId:"jade",selectionStyle:"halo",
+    sceneDepth:.68,sceneSpacing:.64,sceneTilt:13,avatarMotion:.48,
+    glassStyle:"frosted",glassQuality:"balanced",
+    glassOpacity:.38,glassBlur:.69,glassTransmission:.78,
+    glassTint:.35,glassScatter:.42,glassFresnel:.58,glassRim:.64,
+    glassGrain:.15,glassHighlight:.62,glassShadow:.52,
+    glassHero:true,glassCards:true,glassChrome:false,glassCTA:false,
     backgroundStyle:"ribbons",backgroundIntensity:1.05,
     backgroundScale:1.12,backgroundFlow:.32,
     ribbonLayers:3,ribbonCurve:.95,ribbonWidth:.73,ribbonSoftness:1.10,
@@ -27,6 +33,28 @@
   const SPECS={
     paletteId:["Preset cromático","palette",null,null,"Cada perfil também altera luz, atmosfera e material"],
     selectionStyle:["Tipo de seleção","select",["halo","rim","underline","quiet"],null,"Halo, borda física, linha inferior ou seleção discreta"],
+    sceneDepth:["Profundidade da pilha",0,1.4,.01,"Separação tridimensional entre os cards"],
+    sceneSpacing:["Espaçamento entre cards",0,1.4,.01,"Distância vertical entre superfícies"],
+    sceneTilt:["Inclinação 3D",0,25,1,"Quanto os botões giram em perspectiva"],
+    avatarMotion:["Movimento do personagem",0,1,.01,"Flutuação suave do avatar original"],
+    glassStyle:["Material dos painéis","select",["frosted","tinted","matte","solid"],null,
+      "Vidro fosco, polímero colorido, matte espesso ou sólido original"],
+    glassQuality:["Amostragem da difusão","select",["fast","balanced","high"],null,
+      "Fast 1 avaliação, Balanced 5, High 9 — influencia o custo na GPU"],
+    glassOpacity:["Densidade do pigmento",0,1,.01,"Quanto mais alto, menos fundo atravessa o painel"],
+    glassBlur:["Raio da difusão",0,1,.01,"Distância entre as amostras do fundo renderizado"],
+    glassTransmission:["Transmissão do cenário",0,1,.01,"Quanto da paisagem luminosa aparece através do material"],
+    glassTint:["Cor do material",0,1,.01,"Tonalidade de cada painel sem aplicar cor chapada"],
+    glassScatter:["Espalhamento de luz",0,1.5,.01,"Névoa luminosa difusa dentro do vidro"],
+    glassFresnel:["Fresnel de borda",0,1.8,.01,"Reflexo angular do material"],
+    glassRim:["Aro refrativo",0,1.8,.01,"Luz no contorno curvo do objeto"],
+    glassGrain:["Microtextura do vidro",0,.8,.01,"Grão óptico estável e fino"],
+    glassHighlight:["Reflexo superior",0,1.7,.01,"Brilho largo, sem barra fixa"],
+    glassShadow:["Sombra de espessura",0,1,.01,"Densidade da superfície nas áreas inferiores"],
+    glassHero:["Material no painel principal","toggle",null,null,"Ativar vidro no hero"],
+    glassCards:["Material nos cards","toggle",null,null,"Ativar vidro nos módulos laterais"],
+    glassChrome:["Material nas barras","toggle",null,null,"Ativar vidro no topo, navegação e rodapé"],
+    glassCTA:["Material no botão principal","toggle",null,null,"Revestimento opcional no botão Play"],
     backgroundStyle:["Linguagem do fundo","select",["ribbons","aurora","satin","halo","minimal"],null,
       "Ondas fluidas, aurora difusa, cetim, halos ou degradê"],
     backgroundIntensity:["Intensidade do fundo",0,1.8,.01,"Força visual das curvas e das luzes"],
@@ -88,6 +116,11 @@
     {id:"Luz",icon:"☀",intro:"Iluminação direcional com resposta especular em tempo real.",groups:[
       ["Luz principal",["azimuth","elevation","intensity","ambient"]],
       ["Luz nos componentes",["edgeLight","heroGlow","bloom"]]]},
+    {id:"Vidro",icon:"◇",intro:"Materiais dark com difusão real do fundo procedural, transmissão, reflexo e microtextura. Sem estética de iPhone.",groups:[
+      ["Tipo de superfície",["glassStyle","glassQuality"]],
+      ["Corpo do material",["glassOpacity","glassBlur","glassTransmission","glassTint","glassScatter"]],
+      ["Acabamento óptico",["glassFresnel","glassRim","glassHighlight","glassGrain","glassShadow"]],
+      ["Aplicar em",["glassHero","glassCards","glassChrome","glassCTA"]]]},
     {id:"Materiais",icon:"◈",intro:"Resposta física GGX: normal, micro-rugosidade e oclusão.",groups:[
       ["Acabamento",["roughness","metallic","reflectivity","bevel"]],
       ["Profundidade dos painéis",["depth","ao"]]]},
@@ -97,7 +130,8 @@
       ["Cores de superfície",["bg","surface","accent"]],
       ["Luzes auxiliares",["cool","warm"]],
       ["Tratamento final",["contrast","saturation"]]]},
-    {id:"Componentes",icon:"▦",intro:"Foco integrado ao material. Nenhuma barra lateral fixa.",groups:[
+    {id:"Componentes",icon:"▦",intro:"Cena com avatar original e três cartões tridimensionais. O fundo permanece visível.",groups:[
+      ["Cena 3D de console",["sceneDepth","sceneSpacing","sceneTilt","avatarMotion"]],
       ["Hierarquia da seleção",["selectionStyle"]],
       ["Hero + botão principal",["heroGlow","depth","bevel"]],
       ["Cards + navegação",["ao","edgeLight","reflectivity","bloom"]]]},
@@ -169,6 +203,27 @@
       preview.dataset.mode="dark";
       preview.dataset.palette=state.paletteId;
       preview.dataset.selection=state.selectionStyle;
+      preview.dataset.glass=state.glassStyle;
+    }
+    const editor=el("editor");
+    if(editor)editor.dataset.glass=state.glassStyle;
+    root.style.setProperty("--glass-blur",Math.round(state.glassBlur*23+5)+"px");
+    root.style.setProperty("--glass-opacity",String(state.glassOpacity));
+    root.style.setProperty("--glass-rim",String(state.glassRim));
+    root.style.setProperty("--scene-glass-blur",
+      String(state.glassCards?Math.round(4+state.glassBlur*17):0)+"px");
+    root.style.setProperty("--scene-glass-opacity",
+      String(state.glassCards?(0.07+state.glassOpacity*.37).toFixed(3):.27));
+    const scene=el("console-scene");
+    if(scene){
+      scene.style.setProperty("--deck-depth",Math.round(30+state.sceneDepth*100)+"px");
+      scene.style.setProperty("--deck-gap",Math.round(26+state.sceneSpacing*27)+"px");
+      scene.style.setProperty("--deck-tilt",String(state.sceneTilt)+"deg");
+      scene.style.setProperty("--avatar-idle-duration",
+        String((7.5-state.avatarMotion*4.5).toFixed(2))+"s");
+      scene.dataset.reducedMotion=state.reducedMotion?"true":"false";
+      const avatar=scene.querySelector?.(".avatar-figure");
+      if(avatar)avatar.style.animationPlayState=state.reducedMotion?"paused":"running";
     }
     const badge=el("live-hint");
     if(badge)badge.textContent="LIVE GPU · "+state.paletteId.toUpperCase()+" · "+state.fps+" FPS";
@@ -217,7 +272,10 @@
       control='<select data-param="'+key+'" aria-label="'+label+'">'+
         spec[2].map(v=>'<option value="'+v+'"'+(v===val?' selected':'')+'>'+v+' FPS</option>').join("")+'</select>';
     }else if(spec[1]==="select"){
-      const labels={halo:"Halo material",rim:"Borda luminosa",underline:"Linha inferior",quiet:"Discreto",
+      const labels={frosted:"Frosted Dark",tinted:"Tinted Frost",matte:"Dense Matte",
+        solid:"Sólido original",fast:"Rápida · 1 amostra",
+        balanced:"Equilibrada · 5 amostras",high:"Alta · 9 amostras",
+        halo:"Halo material",rim:"Borda luminosa",underline:"Linha inferior",quiet:"Discreto",
         ribbons:"Ondas fluidas",aurora:"Aurora difusa",satin:"Cetim diagonal",
         minimal:"Degradê minimalista"};
       control='<select data-param="'+key+'" aria-label="'+label+'">'+
@@ -403,7 +461,8 @@
       engine:"WebGL2 / GLSL ES 300",theme:"oldschool-dark",
       uniforms:["uAtmos","uLight","uMaterial","uSurface","uMotion","uDetail",
         "uPalette","uRects","uFocusIndex","uSelectionStyle",
-        "uBackdropShape","uBackdropLayers","uBackdropLight","uBackdropDetail"],
+        "uBackdropShape","uBackdropLayers","uBackdropLight","uBackdropDetail",
+        "uGlassModel","uGlassOptics","uGlassDetail","uGlassTargets"],
       controls:clone(state),note:"GPU rects use CSS viewport coordinates; see source app."
     }));
     entries.push(json("manifest.json",{
@@ -417,8 +476,11 @@
       "Preset: preset.json. Each category: tabs/*.json.\n"+
       "GPU shader sources: shaders/*.frag, *.vert (WebGL2 / GLSL ES 300).\n"+
       "Background parameters: tabs/fundo.json; styles ribbons, aurora, satin, halo, minimal.\n"+
+      "Glass parameters: tabs/vidro.json; styles frosted, tinted, matte, solid.\n"+
       "uniforms.json contains every live parameter used for this export.\n"+
       "Background uniforms are separate from GGX material uniforms for portability.\n"+
+      "Glass uniforms: uGlassModel, uGlassOptics, uGlassDetail, uGlassTargets.\n"+
+      "Glass diffusion samples ONLY the procedural background, not native/DOM text or other panels.\n"+
       "This is an engineering reference pack, not a compiled Rust/WGSL mod.\n"+
       "The image preview is the GPU backdrop/material shader, not DOM text.\n"+
       "Import this ZIP back into Jade Lab using Import preset/pack.\n"
@@ -559,6 +621,58 @@
       }
     });
   }
+  const STACK_PAGES=["Mods","Packs","Shaders","Files","Skins","Settings"];
+  let stackIndex=0;
+  function updateStack(selected){
+    const direct=STACK_PAGES.indexOf(selected);
+    if(direct!==-1)stackIndex=direct;
+    const cards=document.querySelectorAll(".cards .tile[data-page]");
+    cards.forEach(tile=>{
+      const i=STACK_PAGES.indexOf(tile.dataset.page);
+      const difference=(i-stackIndex+STACK_PAGES.length)%STACK_PAGES.length;
+      const pos=difference===0?"front":difference===1?"middle":
+        difference===2?"rear":"hidden";
+      tile.dataset.stack=pos;
+      tile.setAttribute("aria-hidden",pos==="hidden"?"true":"false");
+      tile.tabIndex=pos==="hidden"?-1:0;
+    });
+    const position=el("scene-position");
+    if(position)position.textContent=String(stackIndex+1).padStart(2,"0")+
+      " / "+String(STACK_PAGES.length).padStart(2,"0");
+    const scene=el("console-scene");
+    if(scene)scene.dataset.page=selected;
+  }
+  function cycleStack(direction){
+    const next=(stackIndex+direction+STACK_PAGES.length)%STACK_PAGES.length;
+    pageSelect(STACK_PAGES[next]);
+  }
+  function setupScene(){
+    const scene=el("console-scene");if(!scene)return;
+    const previous=el("scene-prev"),next=el("scene-next");
+    if(previous)previous.addEventListener("click",()=>cycleStack(-1));
+    if(next)next.addEventListener("click",()=>cycleStack(1));
+    let start=null;
+    scene.addEventListener("pointerdown",e=>{
+      if(e.target.closest("button,select,input"))return;
+      start={x:e.clientX,y:e.clientY};
+    },{passive:true});
+    scene.addEventListener("pointerup",e=>{
+      if(!start)return;
+      const dx=e.clientX-start.x,dy=e.clientY-start.y;start=null;
+      if(Math.abs(dx)>52&&Math.abs(dx)>Math.abs(dy)*1.5)
+        cycleStack(dx<0?1:-1);
+    },{passive:true});
+    scene.addEventListener("pointercancel",()=>{start=null;},{passive:true});
+    document.addEventListener("keydown",e=>{
+      if(e.altKey||e.ctrlKey||e.metaKey)return;
+      if(e.target?.closest?.("input,textarea,select,[contenteditable]"))return;
+      if(e.key==="ArrowRight"||e.key==="PageDown"){
+        cycleStack(1);e.preventDefault();
+      }else if(e.key==="ArrowLeft"||e.key==="PageUp"){
+        cycleStack(-1);e.preventDefault();
+      }
+    });
+  }
   const PAGE_DATA={
     Play:["READY TO PLAY","MINECRAFT","JAVA EDITION 26.3","● Install needed","Install Minecraft"],
     Mods:["EXTENSIONS","MODS","NATIVE + HNMOD","● Presets and projects","Open Mods"],
@@ -587,9 +701,12 @@
       if(node.matches("button"))node.setAttribute("aria-pressed",String(selected));
     });
     window.JadeRenderer.setPage?.(page);
+    updateStack(page);
+    const hero=el("preview")?.querySelector?.(".hero");
+    if(hero)hero.dataset.sceneActive=page==="Play"?"true":"false";
   }
   function init() {
-    restore();sync();renderPanel();setupEditor();
+    restore();sync();renderPanel();setupEditor();setupScene();
     window.JadeRenderer.init();
     document.querySelectorAll("[data-page]").forEach(button=>
       button.addEventListener("click",()=>pageSelect(button.dataset.page)));

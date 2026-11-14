@@ -52,8 +52,8 @@ test("default preset is dark-only and covers all material families",()=>{
 
 test("every settings tab can be exported as a separate JSON object",()=>{
   const x=sandbox();
-  for(const tab of ["Atmosfera","Luz","Materiais","Paletas","Cores","Componentes",
-    "Movimento","Desempenho","Exportar"]){
+  for(const tab of ["Fundo","Atmosfera","Luz","Vidro","Materiais",
+    "Paletas","Cores","Componentes","Movimento","Desempenho","Exportar"]){
     const one=x.JadeLab.getSection(tab);
     assert.equal(one.format,"HORIZON_JADE_TAB_V1");
     assert.equal(one.theme,"oldschool-dark");
@@ -257,6 +257,94 @@ test("selection is dynamic GPU lighting without fixed left-hand indicator",()=>{
   assert.match(x.JadeRenderer.fragmentSource,/uniform int uSelectionStyle/);
   assert.match(x.JadeRenderer.fragmentSource,/bool focused=i==uFocusIndex/);
   assert.match(dynamicCss,/\[data-selection="rim"\]/);
+});
+
+test("three optical dark glass variants use actual procedural backdrop sampling",()=>{
+  const x=sandbox(),source=x.JadeRenderer.fragmentSource;
+  for(const u of ["uGlassModel","uGlassOptics","uGlassDetail","uGlassTargets"])
+    assert.match(source,new RegExp("uniform vec4 "+u+";"));
+  assert.match(source,/vec3 frostedBackdrop/);
+  assert.match(source,/renderBackdrop\(clamp\(uv\+dx/);
+  assert.match(source,/uGlassDetail\.w>1\.5/);
+  assert.match(source,/backdropTone=mix\(backdropTone,base,\.48\)/);
+  for(const k of ["glassStyle","glassQuality","glassOpacity","glassBlur",
+    "glassTransmission","glassTint","glassScatter","glassFresnel",
+    "glassRim","glassGrain","glassHighlight","glassShadow",
+    "glassHero","glassCards","glassChrome","glassCTA"])
+    assert.ok(k in x.JadeLab.getSection("Vidro").controls,k);
+  assert.equal(x.JadeLab.getPreset().controls.glassChrome,false);
+  x.JadeLab.setField("glassStyle","matte");
+  x.JadeLab.setField("glassQuality","high");
+  x.JadeLab.setField("glassOpacity",100);
+  x.JadeLab.setField("glassBlur",-3);
+  assert.equal(x.JadeLab.getPreset().controls.glassStyle,"matte");
+  assert.equal(x.JadeLab.getPreset().controls.glassQuality,"high");
+  assert.equal(x.JadeLab.getPreset().controls.glassOpacity,1);
+  assert.equal(x.JadeLab.getPreset().controls.glassBlur,0);
+});
+
+test("seven palettes choose their own optical finishes without forcing FPS changes",()=>{
+  const x=sandbox(),kinds=new Set();
+  x.JadeLab.setField("fps",90);
+  x.JadeLab.setField("quality",.65);
+  for(const id of x.JadePalettes.ids){
+    x.JadeLab.applyPalette(id);
+    const p=x.JadeLab.getPreset().controls;
+    const optical=x.JadePalettes.profiles[id].glass;
+    assert.equal(p.glassStyle,optical.glassStyle);
+    assert.equal(p.glassTransmission,optical.glassTransmission);
+    assert.equal(p.glassHighlight,optical.glassHighlight);
+    assert.equal(p.fps,90);
+    assert.equal(p.quality,.65);
+    kinds.add(p.glassStyle);
+  }
+  assert.equal(kinds.size,3,"at least Frosted, Tinted and Matte finishes");
+});
+
+test("console scene gives the backdrop room and stacks just three 3D cards",()=>{
+  const html=fs.readFileSync(path.join(root,"index.html"),"utf8");
+  const css=fs.readFileSync(path.join(root,"scene.css"),"utf8");
+  assert.match(html,/id="console-scene"/);
+  assert.match(html,/class="avatar-stage"/);
+  assert.match(html,/class="avatar-figure"/);
+  assert.match(html,/id="scene-prev"/);
+  assert.match(html,/id="scene-next"/);
+  assert.match(html,/scene\.css/);
+  assert.match(css,/\.avatar-head-front/);
+  assert.match(css,/\.avatar-floor/);
+  assert.match(css,/\.scene-navigation/);
+  assert.match(css,/\.dashboard \.cards\{/);
+  assert.match(css,/perspective:940px/);
+  for(const mode of ["front","middle","rear","hidden"])
+    assert.ok(css.includes('[data-stack="'+mode+'"]'),"missing "+mode);
+  assert.match(css,/transform-style:preserve-3d/);
+  assert.match(css,/\.dashboard \.cards\s*\{[\s\S]*?position:absolute/);
+  assert.match(css,/\.dashboard \.hero[\s\S]*?width:clamp\(220px,33%,480px\)/);
+  assert.match(css,/@media\(max-width:720px\) and \(orientation:portrait\)/);
+  assert.match(css,/@media\(max-height:480px\) and \(orientation:landscape\)/);
+  assert.doesNotMatch(css,/\.hero:before\s*\{/);
+});
+
+test("scene interaction moves focus by swipe, arrows and page without adding static overlays",()=>{
+  const app=fs.readFileSync(path.join(root,"app.js"),"utf8");
+  const renderer=fs.readFileSync(path.join(root,"renderer.js"),"utf8");
+  const x=sandbox();
+  assert.match(app,/const STACK_PAGES=\["Mods","Packs","Shaders","Files","Skins","Settings"\]/);
+  assert.match(app,/difference===2\?"rear":"hidden"/);
+  assert.match(app,/Math\.abs\(dx\)>52/);
+  assert.match(app,/e\.key==="ArrowRight"/);
+  assert.match(app,/tile\.setAttribute\("aria-hidden"/);
+  assert.match(renderer,/if\(element\.classList\?\.contains\("tile"\)\)return;/);
+  assert.match(renderer,/rects\.set\(\[r\.x,r\.y,r\.width,r\.height\],index\*4\)/);
+  assert.match(renderer,/uniform1i\(uniform\.uRectCount,NAMES\.length\)/);
+  const controls=x.JadeLab.getSection("Componentes").controls;
+  for(const key of ["sceneDepth","sceneSpacing","sceneTilt","avatarMotion"])
+    assert.ok(Object.hasOwn(controls,key),key);
+  x.JadeLab.setField("sceneTilt",100);
+  x.JadeLab.setField("sceneDepth",-1);
+  assert.equal(x.JadeLab.getPreset().controls.sceneTilt,25);
+  assert.equal(x.JadeLab.getPreset().controls.sceneDepth,0);
+  assert.equal(x.JadeLab.getPreset().theme,"oldschool-dark");
 });
 
 test("Android manifest is a separate offline app with no broad permissions",()=>{

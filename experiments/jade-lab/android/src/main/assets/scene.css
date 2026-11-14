@@ -1,0 +1,280 @@
+/* Horizon Jade Lab — console scene with generous environmental negative space.
+ * Original block-avatar + CSS perspective deck; shader remains the real
+ * full-display GPU backdrop. Only three deck cards can be visible at once.
+ * These transformed cards use CSS material surfaces because the fragment
+ * renderer uses axis-aligned bounds: rendering the flat tiles underneath
+ * would create off-angle rectangles when the deck rotates.
+ */
+.preview{grid-template-rows:clamp(46px,9vh,73px) clamp(35px,7.5vh,55px) minmax(0,1fr) clamp(20px,4vh,36px);
+  gap:clamp(4px,.8vh,9px);
+  padding:clamp(7px,1.35vw,20px);
+  padding-top:max(6px,env(safe-area-inset-top));
+  padding-bottom:max(5px,env(safe-area-inset-bottom));}
+.topbar{border:none!important;background:transparent!important;box-shadow:none!important;
+  padding:0 clamp(5px,1.1vw,18px);border-radius:0}
+.brand-mark{font-size:clamp(22px,3vw,39px)}
+.brand strong{font-size:clamp(18px,1.75vw,27px)}
+.brand small{font-size:clamp(9px,1vw,12px)}
+.account{background:rgba(255,255,255,.035);width:clamp(85px,14vw,190px)}
+.top-settings{width:42px;background:rgba(var(--accent-rgb),.045)}
+.channels{border:none!important;background:transparent!important;border-radius:0;
+  padding:2px 0;max-width:min(100%,1000px);margin:0 auto;width:100%;
+  box-shadow:none!important;overflow-x:auto}
+.channel{padding:4px 9px;font-size:clamp(11px,1.12vw,16px);min-width:62px}
+.channel:not(.active){opacity:.76}
+.channel.active{background:rgba(var(--accent-rgb),.045)}
+.status-footer{background:transparent!important;border:none!important;opacity:.75;
+  font-size:clamp(9px,.92vw,12px);letter-spacing:.09em;min-height:0}
+.dashboard{position:relative;display:block;min-width:0;min-height:0;height:100%;
+  overflow:hidden;perspective:1100px;isolation:isolate}
+.scene-ambient-label{position:absolute;left:4.2%;top:2%;display:flex;flex-direction:column;
+  gap:2px;z-index:1;opacity:.5;pointer-events:none}
+.scene-ambient-label>span{font-weight:200;letter-spacing:.42em;
+  font-size:clamp(12px,1.65vw,26px);color:var(--ink)}
+.scene-ambient-label small{letter-spacing:.15em;font-size:clamp(8px,.73vw,11px);color:var(--muted)}
+/* The hero occupies a small left-bottom footprint rather than a full tall
+ * rectangle. The background and avatar remain legible around it. */
+.dashboard .hero{
+  position:absolute;left:4%;bottom:7%;top:auto;
+  width:clamp(220px,33%,480px);height:clamp(110px,51%,255px);
+  padding:clamp(12px,1.45vw,24px);z-index:3;
+  display:flex;flex-direction:column;justify-content:space-between;
+  background:transparent!important;
+  border-radius:clamp(14px,1.6vw,23px);
+  box-shadow:0 15px 40px rgba(0,0,0,.08);
+  transition:transform .55s cubic-bezier(.19,1,.22,1),opacity .4s ease,
+    box-shadow .3s ease,border-color .3s ease;
+  transform:rotateY(4deg) translateZ(14px);
+  transform-origin:20% 60%;
+}
+.dashboard .hero h1{font-size:clamp(19px,2.45vw,40px);margin-bottom:4px}
+.dashboard .hero-content>p:first-of-type{font-size:clamp(10px,1.06vw,18px)}
+.dashboard .hero-eyebrow{font-size:clamp(8px,.9vw,12px)}
+.dashboard .hero .substatus{margin-top:4px!important;font-size:clamp(9px,.95vw,13px)}
+.dashboard .hero-bottom{grid-template-columns:minmax(0,1fr) auto;gap:6px}
+.dashboard .play-cta{font-size:clamp(10px,1.15vw,16px);padding:clamp(8px,.9vw,14px);
+  border-radius:11px}
+.dashboard .profile-pill{font-size:clamp(9px,1vw,12px);padding:7px 9px;border-radius:10px}
+.dashboard .hero[data-scene-active="false"]{
+  opacity:.8;transform:rotateY(9deg) translateZ(-10px) scale(.97)}
+/* A spatial six-card ring. We render only the current face plus two cards
+ * physically layered BEHIND it; all other modules remain available in nav.
+ */
+.dashboard .cards{
+  position:absolute;display:block;overflow:visible;
+  width:clamp(205px,29%,410px);height:67%;
+  top:17%;right:7%;left:auto;min-height:0;
+  transform-style:preserve-3d;
+  perspective:940px;z-index:4;
+  --deck-depth:94px;--deck-gap:42px;--deck-tilt:13deg;
+}
+.dashboard .tile{
+  position:absolute;display:flex;inset:0 auto auto 0;
+  height:clamp(61px,37%,126px);width:100%;
+  box-sizing:border-box;min-width:0;min-height:0;
+  border-radius:clamp(13px,1.3vw,22px);
+  padding:clamp(9px,1.35vw,20px);
+  overflow:hidden;
+  text-align:left;justify-content:space-between;
+  border:1px solid rgba(var(--accent-rgb),.26);
+  color:var(--ink);
+  background:
+    radial-gradient(ellipse at 19% 0%,rgba(255,255,255,.10),transparent 72%),
+    linear-gradient(135deg,
+      rgba(var(--accent-rgb),var(--scene-glass-opacity,.13)),
+      color-mix(in srgb,var(--surface) 61%,transparent) 57%,
+      color-mix(in srgb,var(--bg) 74%,transparent))!important;
+  backdrop-filter:blur(var(--scene-glass-blur,9px)) saturate(1.14);
+  -webkit-backdrop-filter:blur(var(--scene-glass-blur,9px)) saturate(1.14);
+  transform-style:preserve-3d;
+  transform-origin:52% 52%;
+  backface-visibility:hidden;
+  box-shadow:0 18px 35px rgba(0,0,0,.22),
+    inset 0 1px 0 rgba(255,255,255,.10),
+    inset 0 -2px 6px rgba(0,0,0,.13);
+  transition:transform .62s cubic-bezier(.2,.8,.18,1),opacity .50s ease,
+    filter .5s ease,visibility .5s,box-shadow .5s ease;
+  will-change:transform,opacity;
+}
+.dashboard .tile:before{
+  content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:linear-gradient(115deg,rgba(255,255,255,.11),
+    rgba(255,255,255,.015) 42%,rgba(0,0,0,.10) 85%);
+  opacity:.7;
+}
+.dashboard .tile:after{
+  content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  border:1px solid rgba(255,255,255,.05);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.09),
+    inset -1px -2px 5px rgba(0,0,0,.18);
+}
+.dashboard .tile .tile-label{font-size:clamp(14px,1.75vw,25px);font-weight:650;
+  letter-spacing:-.02em}
+.dashboard .tile .tile-symbol{
+  right:8%;top:27%;font-size:clamp(20px,2.65vw,39px);
+  text-shadow:0 3px 13px rgba(0,0,0,.42);
+  transform:translateZ(24px);opacity:.83}
+.dashboard .tile small{font-size:clamp(8px,.92vw,12px);letter-spacing:.11em}
+.dashboard .tile[data-stack="front"]{
+  z-index:3;opacity:1;visibility:visible;
+  transform:translate3d(0,0,54px) rotateY(calc(-1 * var(--deck-tilt))) rotateX(4deg);
+  box-shadow:0 19px 48px rgba(0,0,0,.33),
+    0 0 30px rgba(var(--accent-rgb),.14),
+    inset 0 1px 0 rgba(255,255,255,.19);
+  filter:brightness(1.13)}
+.dashboard .tile[data-stack="middle"]{
+  z-index:2;opacity:.76;visibility:visible;
+  transform:translate3d(17px,var(--deck-gap),-26px)
+    rotateY(calc(-1 * var(--deck-tilt) * .8)) rotateX(7deg) scale(.95);
+  filter:brightness(.85)}
+.dashboard .tile[data-stack="rear"]{
+  z-index:1;opacity:.53;visibility:visible;
+  transform:translate3d(30px,calc(var(--deck-gap) * 2),calc(-1 * var(--deck-depth)))
+    rotateY(calc(-1 * var(--deck-tilt) * .65)) rotateX(9deg) scale(.90);
+  filter:brightness(.69)}
+.dashboard .tile[data-stack="hidden"],.dashboard .tile:not([data-stack]){
+  z-index:0;opacity:0;visibility:hidden;pointer-events:none;
+  transform:translate3d(36px,calc(var(--deck-gap) * 2.5),calc(-2 * var(--deck-depth)))
+    rotateY(-29deg) scale(.76)}
+.dashboard .tile[data-stack="front"]:hover,
+.dashboard .tile[data-stack="front"]:focus-visible{
+  border-color:rgba(var(--accent-rgb),.62);
+  filter:brightness(1.21)}
+/* Scene commands are small and separated from the cards so the visual
+ * target reads as a 3D gallery rather than a dashboard grid. */
+.scene-navigation{z-index:5;position:absolute;right:11%;bottom:8%;display:flex;
+  justify-content:center;align-items:center;gap:clamp(9px,2vw,22px);
+  min-height:36px;white-space:nowrap}
+.scene-navigation button{background:rgba(var(--accent-rgb),.07);
+  border:1px solid rgba(var(--accent-rgb),.25);border-radius:11px;
+  color:var(--ink);font-size:clamp(20px,2vw,27px);width:36px;height:36px;
+  box-shadow:0 4px 17px #0003}
+.scene-navigation button:active{transform:scale(.92)}
+#scene-position{font-variant-numeric:tabular-nums;color:var(--ink);
+  font-size:clamp(10px,.85vw,13px);letter-spacing:.18em}
+.scene-hint{position:absolute;right:8%;bottom:0;font-size:clamp(8px,.7vw,11px);
+  color:var(--muted);letter-spacing:.13em;opacity:.67;white-space:nowrap}
+/* Abstract ORIGINAL geometric console avatar, not a Minecraft/ Xbox asset.
+ * CSS three-dimensional faces make its head/body respond to perspective.
+ */
+.avatar-stage{position:absolute;left:41%;top:5%;width:20%;height:86%;
+  pointer-events:none;z-index:2;
+  transform-style:preserve-3d;perspective:900px}
+.avatar-halo{position:absolute;left:5%;right:5%;top:4%;bottom:10%;border-radius:50%;
+  background:radial-gradient(ellipse at 50% 59%,
+    rgba(var(--accent-rgb),.16),rgba(var(--accent-rgb),.055) 35%,transparent 73%);
+  filter:blur(7px)}
+.avatar-figure{position:absolute;left:50%;bottom:22%;width:92px;height:146px;
+  margin-left:-46px;transform-style:preserve-3d;
+  transform:rotateY(-17deg) rotateX(3deg) translateY(0);
+  filter:drop-shadow(0 14px 10px rgba(0,0,0,.3));
+  animation:avatar-idle var(--avatar-idle-duration,5s) ease-in-out infinite}
+.avatar-head{position:absolute;left:25px;top:0;width:42px;height:44px;
+  transform-style:preserve-3d;transform:translateZ(17px)}
+.avatar-head-front{position:absolute;inset:0;border-radius:6px 6px 9px 9px;
+  background:linear-gradient(145deg,#f5dfc4,#bfa68e);
+  box-shadow:inset 0 2px 6px #fff6,inset -4px -4px 7px #705c4770;
+  transform:translateZ(13px);overflow:hidden}
+.avatar-head-front:before{content:"";position:absolute;left:-3px;right:-3px;top:-4px;height:13px;
+  background:linear-gradient(130deg,#4d5b59,#252e35);border-radius:2px 2px 10px 3px}
+.avatar-head-front i{position:absolute;top:22px;left:11px;width:4px;height:4px;
+  border-radius:2px;background:#2c3638}
+.avatar-head-front i+i{left:28px}
+.avatar-head-front b{position:absolute;bottom:7px;left:20px;width:7px;height:2px;
+  background:#745c56;border-radius:5px}
+.avatar-head-top{position:absolute;inset:0;background:linear-gradient(100deg,#384c4c,#18282b);
+  transform:rotateX(90deg) translateZ(13px);height:26px;top:-13px;left:0;right:0}
+.avatar-head-side{position:absolute;right:-12px;top:1px;width:25px;height:42px;
+  background:linear-gradient(140deg,#a58b78,#dbc6aa);transform:rotateY(90deg) translateZ(1px);
+  box-shadow:inset -4px 0 6px #34312a38}
+.avatar-neck{position:absolute;left:38px;top:44px;width:17px;height:9px;background:#cfac8f}
+.avatar-body{position:absolute;left:21px;top:52px;width:50px;height:62px;
+  background:linear-gradient(122deg,
+     color-mix(in srgb,var(--cool) 40%,#263840),
+     color-mix(in srgb,var(--surface) 60%,#101c2b));
+  border-radius:9px 9px 6px 6px;transform:translateZ(4px);
+  box-shadow:inset 5px 0 7px #ffffff16,inset -8px -3px 9px #0009}
+.avatar-body:after{content:"";position:absolute;right:0;top:2px;bottom:1px;width:10px;
+  transform:skewY(-10deg);background:#0003;border-radius:0 7px 6px 0}
+.avatar-jacket{position:absolute;left:22px;top:4px;height:55px;width:3px;
+  border-radius:3px;background:rgba(255,255,255,.17)}
+.avatar-arm{position:absolute;top:55px;width:18px;height:58px;
+  background:linear-gradient(112deg,var(--cool),var(--surface));
+  border-radius:9px 9px 8px 8px;box-shadow:inset -3px -2px 5px #0008;
+  transform-origin:top center}
+.avatar-arm-left{left:1px;transform:rotateZ(8deg)}
+.avatar-arm-right{right:1px;transform:rotateZ(-8deg)}
+.avatar-leg{position:absolute;top:110px;width:21px;height:34px;
+  background:linear-gradient(95deg,#1c2838,#3c4855);border-radius:3px 3px 7px 7px;
+  box-shadow:inset -5px 0 6px #0006}
+.avatar-leg-left{left:23px}
+.avatar-leg-right{right:23px}
+.avatar-floor{position:absolute;left:2%;right:2%;bottom:10%;height:14%;border-radius:50%;
+  background:radial-gradient(ellipse at 50%,
+    rgba(var(--accent-rgb),.38),rgba(var(--accent-rgb),.10) 40%,transparent 74%);
+  transform:rotateX(69deg);filter:blur(4px)}
+.avatar-caption{position:absolute;bottom:0;left:0;right:0;text-align:center;
+  letter-spacing:.24em;font-size:clamp(9px,.8vw,12px);color:var(--muted)}
+.avatar-caption span{color:var(--accent);font-weight:700}
+@keyframes avatar-idle{
+  0%,100%{transform:rotateY(-17deg) rotateX(3deg) translateY(0)}
+  50%{transform:rotateY(-13deg) rotateX(3deg) translateY(-5px)}
+}
+@media(min-width:980px) and (min-height:550px){
+  .avatar-figure{transform-origin:50% 100%;scale:1.24}
+  .dashboard .hero{width:29%;height:45%}
+  .dashboard .cards{width:27%;right:8%}
+  .avatar-stage{left:40%;width:21%}
+}
+@media(max-width:720px) and (orientation:portrait){
+  .preview{grid-template-rows:56px 41px minmax(0,1fr) 21px;padding:8px;gap:4px}
+  .topbar{padding:0 4px}
+  .channels{padding:3px 0}
+  .channel{min-width:54px;padding:3px 7px;font-size:11px}
+  .dashboard .hero{left:4%;bottom:6%;width:91%;height:29%;min-height:118px;
+    transform:none;padding:13px}
+  .dashboard .hero[data-scene-active="false"]{transform:scale(.97)}
+  .dashboard .hero h1{font-size:clamp(20px,5vw,33px)}
+  .dashboard .hero .hero-bottom{grid-template-columns:minmax(0,1fr) auto}
+  .dashboard .cards{top:17%;right:5%;width:49%;height:38%;
+    --deck-gap:clamp(30px,4vh,48px)}
+  .dashboard .tile{height:clamp(71px,39%,115px)}
+  .dashboard .tile .tile-symbol{font-size:25px}
+  .avatar-stage{left:3%;top:3%;width:47%;height:62%}
+  .scene-ambient-label{top:0;left:5%;opacity:.35}
+  .scene-ambient-label small{display:none}
+  .scene-navigation{right:10%;bottom:35%;gap:10px}
+  .scene-hint{bottom:31%;right:4%;font-size:8px}
+  .avatar-figure{bottom:29%}
+  .avatar-floor{bottom:19%}
+  .avatar-caption{bottom:9%}
+  .status-footer{font-size:9px}
+}
+@media(max-height:480px) and (orientation:landscape){
+  .preview{grid-template-rows:43px 35px minmax(0,1fr) 18px;padding:6px;gap:3px}
+  .channel{min-width:54px;padding:3px 6px}
+  .dashboard .hero{left:4%;bottom:9%;width:34%;height:51%;min-height:103px;
+    padding:10px;border-radius:14px}
+  .dashboard .hero-content{margin:auto 0}
+  .dashboard .hero h1{font-size:clamp(18px,2.4vw,25px)}
+  .dashboard .hero-eyebrow{font-size:8px}
+  .dashboard .hero .substatus{font-size:9px}
+  .dashboard .hero .hero-bottom{gap:5px}
+  .dashboard .hero .profile-pill{display:none}
+  .dashboard .cards{top:16%;right:7%;width:29%;height:72%;--deck-gap:38px}
+  .dashboard .tile{height:clamp(66px,40%,93px);padding:10px}
+  .dashboard .tile .tile-label{font-size:clamp(15px,1.75vw,20px)}
+  .scene-navigation{right:11%;bottom:5%}
+  .scene-navigation button{width:29px;height:29px;font-size:21px}
+  .scene-hint{display:none}
+  .avatar-stage{left:38%;top:0;width:25%;height:91%}
+  .avatar-caption{display:none}
+  .avatar-figure{bottom:15%;scale:.89}
+  .avatar-floor{bottom:3%}
+  .scene-ambient-label{top:0;left:4%;opacity:.36}
+  .scene-ambient-label small{display:none}
+}
+@media(prefers-reduced-motion:reduce){
+  .avatar-figure{animation:none!important}
+  .dashboard .tile,.dashboard .hero{transition:none!important}
+}

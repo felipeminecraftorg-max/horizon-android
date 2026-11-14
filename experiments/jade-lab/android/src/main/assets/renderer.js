@@ -29,6 +29,12 @@ uniform vec4 uBackdropShape;  // style, brightness, scale, curvature
 uniform vec4 uBackdropLayers; // count, width, softness, flow rate
 uniform vec4 uBackdropLight;  // halo, depth, centerX, centerY
 uniform vec4 uBackdropDetail; // texture, parallax, edge gleam, color contrast
+// Independent dark glass system: style, translucency, diffusion and quality.
+// Each float is supplied from a real editable/exportable Jade Lab parameter.
+uniform vec4 uGlassModel;  // style [0..3], opacity, blurRadius, transmission
+uniform vec4 uGlassOptics; // tint, scatter, fresnel, chromatic rim
+uniform vec4 uGlassDetail; // fine grain, satin glint, contact shadow, tap tier
+uniform vec4 uGlassTargets;// hero, tiles, system chrome, play CTA
 
 float hash12(vec2 p) {
   vec3 p3=fract(vec3(p.xyx)*0.1031);
@@ -154,6 +160,36 @@ vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
   col*=1.0-smoothstep(.18,.79,vignette)*uAtmos.w*.56;
   return max(col,vec3(0.0));
 }
+// Blur the ACTUAL GPU-procedural scene defined above, not a CSS-opacity hack.
+// The background has no framebuffer backing, so we evaluate it spatially
+// (center + 4 axial + optionally 4 diagonal taps). This refracts the authored
+// landscape. It does not sample native/DOM text or completed UI layers.
+// All offset positions stay in viewport coordinates despite render scaling.
+vec3 frostedBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
+  vec3 center=renderBackdrop(uv,p,time,mouse);
+  if(uGlassDetail.w<.5 || uGlassModel.z<=.001) return center;
+  float radius=1.5+19.0*clamp(uGlassModel.z,0.0,1.0);
+  vec2 dx=vec2(radius/max(uViewport.x,1.0),0.0);
+  vec2 dy=vec2(0.0,radius/max(uViewport.y,1.0));
+  vec3 axial=renderBackdrop(clamp(uv+dx,vec2(0.),vec2(1.)),p+vec2(radius,0.),time,mouse);
+  axial+=renderBackdrop(clamp(uv-dx,vec2(0.),vec2(1.)),p-vec2(radius,0.),time,mouse);
+  axial+=renderBackdrop(clamp(uv+dy,vec2(0.),vec2(1.)),p+vec2(0.,radius),time,mouse);
+  axial+=renderBackdrop(clamp(uv-dy,vec2(0.),vec2(1.)),p-vec2(0.,radius),time,mouse);
+  vec3 sum=center*4.0+axial;
+  float weight=8.0;
+  if(uGlassDetail.w>1.5){
+    vec2 dxy=vec2(dx.x*.7071068,dy.y*.7071068);
+    vec2 dp=dxy*uViewport;
+    sum+=renderBackdrop(clamp(uv+dxy,vec2(0.),vec2(1.)),p+dp,time,mouse);
+    sum+=renderBackdrop(clamp(uv-dxy,vec2(0.),vec2(1.)),p-dp,time,mouse);
+    sum+=renderBackdrop(clamp(uv+vec2(dx.x,-dy.y)*.7071068,vec2(0.),vec2(1.)),
+          p+vec2(dp.x,-dp.y),time,mouse);
+    sum+=renderBackdrop(clamp(uv+vec2(-dx.x,dy.y)*.7071068,vec2(0.),vec2(1.)),
+          p+vec2(-dp.x,dp.y),time,mouse);
+    weight=12.0;
+  }
+  return sum/weight;
+}
 void main() {
   vec2 p=vec2(gl_FragCoord.x/uResolution.x,1.0-gl_FragCoord.y/uResolution.y)*uViewport;
   vec2 uv=p/max(uViewport,vec2(1.0));
@@ -217,6 +253,56 @@ void main() {
     float ao=1.0-uSurface.y*(.04+(.25*max(q.y-.48,0.0)));
     float lighting=uLight.w+nl*uLight.z*.39;
     vec3 mat=base*lighting*ao+spec*uMaterial.z*uLight.z*.47;
+    // Physically legible dark glass variants, drawn over the same original
+    // procedural backdrop: refracted transmission, matte pigment, Fresnel
+    // edge response, top-face microreflection and stable surface grain.
+    bool glassAllowed=(i==2?uGlassTargets.x>.5:
+      i==10?uGlassTargets.w>.5:
+      (i>=3 && i<=8)?uGlassTargets.y>.5:uGlassTargets.z>.5);
+    if(glassAllowed && uGlassModel.x<2.5) {
+      vec2 screenUv=p/max(uViewport,vec2(1.0));
+      vec2 pointerUv=cursor+vec2(.5);
+      vec3 behind=frostedBackdrop(screenUv,p,tt,pointerUv);
+      float model=uGlassModel.x;
+      float pigment=clamp(uGlassModel.y,0.0,1.0);
+      float transmission=clamp(uGlassModel.w,0.0,1.0);
+      float tint=clamp(uGlassOptics.x,0.0,1.0);
+      float scatter=clamp(uGlassOptics.y,0.0,1.0);
+      vec3 backdropTone=mix(behind,
+        mix(behind,uPalette[1].rgb,.28+.37*tint),tint);
+      if(model>.5 && model<1.5){
+        // Tinted Frost: tinted thicker polymer with more color and less
+        // transmission than Frosted Dark.
+        backdropTone=mix(backdropTone,uPalette[1].rgb,.20+.28*tint);
+        transmission*=.78;
+      }else if(model>1.5){
+        // Dense Matte: dense pigment, low transmission, broader reflected
+        // light; perceptibly different from a thin glass card.
+        backdropTone=mix(backdropTone,base,.48);
+        transmission*=.40;
+      }
+      float visible=transmission*(1.0-pigment*.76);
+      mat=mix(mat,backdropTone,visible);
+      // Turbid scattering grows toward glancing angles, never pure neon.
+      float glancing=pow(1.0-nv2,2.6);
+      mat+=uPalette[3].rgb*scatter*(.035+.065*glancing);
+      float fresnel=pow(1.0-clamp(dot(normal,view),0.0,1.0),4.5);
+      mat+=mix(uPalette[3].rgb,vec3(1.),.43)*
+          fresnel*uGlassOptics.z*.30;
+      float trim=bevelDistance*(.20+.80*max(dot(normal,light),0.0));
+      mat+=mix(uPalette[2].rgb,vec3(.82,.92,.96),.39)*
+          trim*uGlassOptics.w*.090;
+      // Long top reflection sits on the material, rather than a hard strip.
+      float topSweep=exp(-pow((q.y-(.11+.035*sin(q.x*4.1)))/.18,2.0))*
+                     smoothstep(.04,.26,q.x)*(1.0-smoothstep(.85,.98,q.x));
+      mat+=mix(vec3(1.),uPalette[3].rgb,.4)*
+          topSweep*uGlassDetail.y*(.036+.028*nl);
+      // Fine-grained roughness remains spatially stable at all frame rates.
+      float grain=(hash12(floor(p*.67))-0.5)*uGlassDetail.x*.035;
+      mat+=vec3(grain);
+      mat*=1.0-clamp(uGlassDetail.z,0.,1.)*
+          smoothstep(.42,.97,q.y)*.12;
+    }
     // Gradients are physically located near a light source, not tint overlays.
     vec2 pointToLight=q-vec2(.25+.20*cursor.x,.18+.16*cursor.y);
     mat+=uPalette[2].rgb*exp(-dot(pointToLight,pointToLight)*4.2)
@@ -312,7 +398,8 @@ void main() {
       const keys = ["uResolution","uViewport","uPointer","uTime","uReduced","uRectCount",
         "uRects[0]","uPalette[0]","uAtmos","uLight","uMaterial","uSurface","uMotion","uDetail",
         "uFocusIndex","uSelectionStyle","uBackdropShape",
-        "uBackdropLayers","uBackdropLight","uBackdropDetail"];
+        "uBackdropLayers","uBackdropLight","uBackdropDetail",
+        "uGlassModel","uGlassOptics","uGlassDetail","uGlassTargets"];
       keys.forEach(k => { uniform[k] = gl.getUniformLocation(program, k); });
       buffer = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -375,17 +462,23 @@ void main() {
     gl.uniform2f(uniform.uPointer,cursor[0],cursor[1]);
     gl.uniform1f(uniform.uTime,elapsed);
     gl.uniform1f(uniform.uReduced,preset.reducedMotion?1:0);
+    // Match every shader surface to its *stable* identifier. Hidden module
+    // cards are fully CSS-perspective transformed, so do NOT render flat
+    // axis-aligned GPU material rectangles behind them. CSS backdrop-filter
+    // handles their actual warped silhouette without ghost rectangles.
     const rects=new Float32Array(12*4);
-    let count=0;
-    NAMES.forEach(name=>{
-      const el=document.querySelector('[data-surface="'+name+'"]');
-      if(!el || getComputedStyle(el).display==="none") return;
-      const r=el.getBoundingClientRect();
-      if(r.width<2 || r.height<2 || count>=12)return;
-      rects.set([r.x,r.y,r.width,r.height],count*4);
-      count++;
+    NAMES.forEach((name,index)=>{
+      const element=document.querySelector('[data-surface="'+name+'"]');
+      if(!element)return;
+      if(element.classList?.contains("tile"))return;
+      if((name==="topbar"||name==="nav"||name==="footer") &&
+          !preset.glassChrome)return;
+      if(getComputedStyle(element).display==="none")return;
+      const r=element.getBoundingClientRect();
+      if(r.width<2||r.height<2)return;
+      rects.set([r.x,r.y,r.width,r.height],index*4);
     });
-    gl.uniform1i(uniform.uRectCount,count);
+    gl.uniform1i(uniform.uRectCount,NAMES.length);
     const surfaces={Play:"hero",Mods:"mods",Packs:"packs",Shaders:"shaders",
       Files:"files",Skins:"skins",Settings:"settings"};
     const selectedSurface=surfaces[selectedPage]||"hero";
@@ -419,6 +512,24 @@ void main() {
     vec4("uBackdropDetail",[
       preset.backgroundGrain,preset.backgroundParallax,
       preset.ribbonGleam,preset.backgroundContrast
+    ]);
+    const glassModels=["frosted","tinted","matte","solid"];
+    const tapTiers=["fast","balanced","high"];
+    vec4("uGlassModel",[
+      Math.max(0,glassModels.indexOf(preset.glassStyle)),
+      preset.glassOpacity,preset.glassBlur,preset.glassTransmission
+    ]);
+    vec4("uGlassOptics",[
+      preset.glassTint,preset.glassScatter,
+      preset.glassFresnel,preset.glassRim
+    ]);
+    vec4("uGlassDetail",[
+      preset.glassGrain,preset.glassHighlight,preset.glassShadow,
+      Math.max(0,tapTiers.indexOf(preset.glassQuality))
+    ]);
+    vec4("uGlassTargets",[
+      preset.glassHero?1:0,preset.glassCards?1:0,
+      preset.glassChrome?1:0,preset.glassCTA?1:0
     ]);
     gl.drawArrays(gl.TRIANGLES,0,6);
   }
