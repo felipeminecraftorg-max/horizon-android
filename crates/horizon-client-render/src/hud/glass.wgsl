@@ -129,7 +129,47 @@ fn normal_for(q: vec2<f32>, outside: vec2<f32>, p: vec2<f32>) -> vec2<f32> {
     let rim = exp(-depth / max(1.2 * dp, roll * 0.11));
     let inner = exp(-pow((depth - roll * 0.64) / max(dp, roll * 0.17), 2.));
     if oldschool {
-        // 2006–2012 black chrome: brushed anisotropic normal, environment
+        // Horizon Jade is a separate original contemporary console material.
+        // Finish 4 is compact satin graphite with physically calculated GGX
+        // specular and cursor-driven light; it deliberately avoids the old
+        // PS3-era mirrored chrome and blue pearl presets below.
+        if lens.profile[0].y >= 3.5 {
+            let tangent_grain = (sin(pos.y * 1.71 + sin(pos.x * 0.23) * 0.16)
+                + sin(pos.x * 0.84)) * 0.0035;
+            let n = normalize(normal + vec3(0., tangent_grain, 0.));
+            let nl_jade = max(dot(n, L), 0.0);
+            let nv_jade = max(dot(n, V), 0.02);
+            let nh_jade = max(dot(n, H), 0.0);
+            let vh_jade = max(dot(V, H), 0.0);
+            let rough = clamp(0.37 - gloss * 0.045, 0.29, 0.47);
+            let alpha = rough * rough;
+            let k = (alpha + 1.) * (alpha + 1.) / 8.;
+            let g = (nl_jade / (nl_jade * (1. - k) + k))
+                * (nv_jade / (nv_jade * (1. - k) + k));
+            let d = ggx_distribution(nh_jade, rough);
+            let f0 = vec3(0.052, 0.083, 0.061);
+            let f = f0 + (vec3(1.) - f0) * pow(1. - vh_jade, 5.);
+            let spec = min(vec3(0.16), f * (d * g / max(4. * nv_jade * nl_jade, 0.02)));
+            let lighting = 0.86 + 0.13 * nl_jade;
+            let jade_base = mix(vec3(0.048, 0.073, 0.055),
+                vec3(0.075, 0.118, 0.083), clamp(nl_jade, 0., 1.));
+            // Reflection uses only a very small local scene contribution,
+            // clamped to this tile so text from neighbours never ghosts.
+            let reflection_dir = reflect(incident, n);
+            let local_reflect = sample_scene(confined_sample_pos(
+                pos + reflection_dir.xy * (4.0 * dp), true));
+            let mask = clamp(0.1 + 0.28 * wall, 0., 0.35);
+            var matte = mix(jade_base, color, 0.085) * lighting;
+            matte += spec * (0.70 + 0.30 * lens.profile[1].w);
+            matte += local_reflect * mask * f * 0.18;
+            let edge = exp(-depth / max(1.5 * dp, roll * 0.17));
+            matte += vec3(0.13, 0.56, 0.27) * edge
+                * (0.028 + 0.065 * max(dot(outward, light_dir), 0.));
+            matte += vec3(0.13, 0.19, 0.16) * inner * 0.08;
+            return vec4(clamp(matte, vec3(0.), vec3(1.)),
+                coverage + shadow * (1. - coverage));
+        }
+        // Legacy chrome finish remains available only to archival presets:
         // probes, two analytic white strip lights and true microfacet GGX.
         let finish = lens.profile[0].y;
         let metal = lens.profile[0].z;
