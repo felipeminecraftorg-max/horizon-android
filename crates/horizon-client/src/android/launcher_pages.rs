@@ -95,6 +95,10 @@ pub(crate) struct AnimState {
     pub nav_velocity_x: f32,
     pub target_nav_x: f32,
     pub frame_dt: f32,
+    /// Visual focus spring is independent of the input/hit-test rectangle.
+    pub focus_rect: Option<[f32; 4]>,
+    pub focus_target: Option<[f32; 4]>,
+    pub focus_velocity: [f32; 4],
     pub scroll_thumb_y: Option<f32>,
     pub scroll_thumb_velocity: f32,
     pub scroll_thumb_view: Option<[f32; 2]>,
@@ -127,6 +131,9 @@ impl Default for AnimState {
             nav_velocity_x: 0.,
             target_nav_x: 24.0,
             frame_dt: 1. / 60.,
+            focus_rect: None,
+            focus_target: None,
+            focus_velocity: [0.; 4],
             scroll_thumb_y: None,
             scroll_thumb_velocity: 0.,
             scroll_thumb_view: None,
@@ -241,6 +248,36 @@ impl AnimState {
         self.shimmer_phase = (self.shimmer_phase + dt * 0.95) % 1.0;
     }
 
+    /// The focused control remains clickable at its true, stationary hitbox;
+    /// only this outline follows a frame-rate-independent spring. A changed
+    /// viewport or disabled animations snaps immediately.
+    pub fn focus_outline(&mut self, target: Option<[f32; 4]>) -> Option<[f32; 4]> {
+        let Some(target) = target else {
+            self.focus_rect = None;
+            self.focus_target = None;
+            self.focus_velocity = [0.; 4];
+            return None;
+        };
+        let changed = self.focus_target.is_none();
+        self.focus_target = Some(target);
+        if changed || horizon_client::ui_theme::motion::reduced_motion() {
+            self.focus_rect = Some(target);
+            self.focus_velocity = [0.; 4];
+            return Some(target);
+        }
+        let mut rect = self.focus_rect.unwrap_or(target);
+        let experience = horizon_client::ui_theme::active_theme().experience;
+        for i in 0..4 {
+            (rect[i], self.focus_velocity[i]) =
+                horizon_client::ui_theme::launcher_preset_pack::spring_position(
+                    experience, rect[i], self.focus_velocity[i], target[i],
+                    self.frame_dt.min(0.035),
+                );
+        }
+        self.focus_rect = Some(rect);
+        Some(rect)
+    }
+
     /// Only the *visual thumb* follows a spring. The actual scroll offset and
     /// hit-testing remain immediate and faithful to the user's gesture.
     pub fn soft_scroll_thumb(&mut self, target: f32, view: [f32; 2]) -> f32 {
@@ -300,6 +337,12 @@ impl AnimState {
             || (self.nav_pill_x - self.target_nav_x).abs() > 0.5
             || self.nav_velocity_x.abs() > 0.2
             || self.scroll_thumb_velocity.abs() > 0.2
+            || self.focus_rect.is_some_and(|rect|
+                self.focus_target.is_some_and(|target|
+                    rect.iter().zip(target.iter()).any(|(a, b)| (a - b).abs() > 0.45)
+                    || self.focus_velocity.iter().any(|v| v.abs() > 0.4)
+                )
+            )
             || (self.installed_tab_position - self.installed_tab_target).abs() > 0.003
             || self.installed_tab_velocity.abs() > 0.01
             || visual::switch_motion_active()
