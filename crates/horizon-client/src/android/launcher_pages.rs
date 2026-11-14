@@ -1211,13 +1211,23 @@ impl Launcher {
         if self.catalog.editing.is_some() || self.targets.is_empty() {
             return false;
         }
+        if self.jade_nav_ready() {
+            match key {
+                Key::Named(NamedKey::PageUp) => return self.cycle_jade_page(-1),
+                Key::Named(NamedKey::PageDown) => return self.cycle_jade_page(1),
+                _ => {}
+            }
+        }
         let button = match key {
             Key::Named(NamedKey::ArrowUp) => Button::DPadUp,
             Key::Named(NamedKey::ArrowDown) => Button::DPadDown,
             Key::Named(NamedKey::ArrowLeft) => Button::DPadLeft,
             Key::Named(NamedKey::ArrowRight) => Button::DPadRight,
             Key::Named(NamedKey::Tab) => {
-                self.focus = Some(self.focus.map_or(0, |i| (i + 1) % self.targets.len()));
+                let initial = self.targets.iter().position(|(_, a)| {
+                    *a == Action::Page(self.catalog.page)
+                }).unwrap_or(0);
+                self.focus = Some(self.focus.map_or(initial, |i| (i + 1) % self.targets.len()));
                 return true;
             }
             _ => return false,
@@ -1252,7 +1262,9 @@ impl Launcher {
                 let rects: Vec<_> = self.targets.iter().map(|(rect, _)| *rect).collect();
                 gamepad::focus_step_rect(rects[index], button, &rects).unwrap_or(index)
             } else {
-                0
+                self.targets.iter().position(|(_, a)| {
+                    *a == Action::Page(self.catalog.page)
+                }).unwrap_or(0)
             },
         );
         true
@@ -5597,6 +5609,7 @@ impl Launcher {
                         | Action::CancelCatalogDownload
                         | Action::Page(_)
                         | Action::Account
+                        | Action::CloseQuickPanel
                 )
             )
         {
@@ -5604,6 +5617,9 @@ impl Launcher {
         }
         self.feedback = action.map(|action| (action, std::time::Instant::now()));
         self.focus = None;
+        if self.quick_panel_open && !matches!(action, Some(Action::CloseQuickPanel)) {
+            self.quick_panel_open = false;
+        }
         // Every touch maps to ONE of the user's V7 component sounds.
         // Game-asset availability must not gate independently bundled UI SFX.
         if let Some(pressed) = action
@@ -5653,6 +5669,10 @@ impl Launcher {
             }
             Some(Action::ConfirmExit) => {
                 events.exit();
+            }
+            Some(Action::CloseQuickPanel) => {
+                self.quick_panel_open = false;
+                self.pending_focus = None;
             }
             Some(Action::SettingsCat(cat)) => {
                 self.catalog.page = Page::Settings;
@@ -6363,28 +6383,7 @@ impl Launcher {
                 self.refresh_wardrobe_account();
             }
             Some(Action::LoginLink) => self.login.open_link(),
-            Some(Action::Page(page)) => {
-                if page == Page::Skins {
-                    self.wardrobe.open(
-                        &self.catalog.config.name,
-                        &self.catalog.config.microsoft_client_id,
-                    );
-                }
-                self.catalog.editing = None;
-                self.catalog.project_modal = None;
-                self.catalog.modal_worker = None;
-                if crate::platform::active() {
-                    crate::platform::hide();
-                }
-                if page == Page::Settings && self.catalog.page == Page::Settings {
-                    self.catalog.settings_category = SettingsCategory::Overview;
-                }
-                self.catalog.page = page;
-                self.catalog.scroll = 0.0;
-                self.error = None;
-                self.catalog.offset = 0;
-                self.catalog.browse(&self.home);
-            }
+            Some(Action::Page(page)) => self.select_launcher_page(page),
             Some(Action::Play) => self.action(events)?,
             Some(Action::WardrobeKind(cape)) => {
                 self.wardrobe.set_tab(cape);
