@@ -259,6 +259,48 @@ test("selection is dynamic GPU lighting without fixed left-hand indicator",()=>{
   assert.match(dynamicCss,/\[data-selection="rim"\]/);
 });
 
+test("console scene gives the backdrop room and stacks just three 3D cards",()=>{
+  const html=fs.readFileSync(path.join(root,"index.html"),"utf8");
+  const css=fs.readFileSync(path.join(root,"scene.css"),"utf8");
+  assert.match(html,/id="console-scene"/);
+  assert.match(html,/class="avatar-stage"/);
+  assert.match(html,/class="avatar-figure"/);
+  assert.match(html,/id="scene-prev"/);
+  assert.match(html,/id="scene-next"/);
+  assert.match(html,/scene\.css/);
+  assert.match(css,/perspective:940px/);
+  for(const mode of ["front","middle","rear","hidden"])
+    assert.ok(css.includes('[data-stack="'+mode+'"]'),"missing "+mode);
+  assert.match(css,/transform-style:preserve-3d/);
+  assert.match(css,/\.dashboard \.cards\s*\{[\s\S]*?position:absolute/);
+  assert.match(css,/\.dashboard \.hero[\s\S]*?width:clamp\(220px,33%,480px\)/);
+  assert.match(css,/@media\(max-width:720px\) and \(orientation:portrait\)/);
+  assert.match(css,/@media\(max-height:480px\) and \(orientation:landscape\)/);
+  assert.doesNotMatch(css,/\.hero:before\s*\{/);
+});
+
+test("scene interaction moves focus by swipe, arrows and page without adding static overlays",()=>{
+  const app=fs.readFileSync(path.join(root,"app.js"),"utf8");
+  const renderer=fs.readFileSync(path.join(root,"renderer.js"),"utf8");
+  const x=sandbox();
+  assert.match(app,/const STACK_PAGES=\["Mods","Packs","Shaders","Files","Skins","Settings"\]/);
+  assert.match(app,/difference===2\?"rear":"hidden"/);
+  assert.match(app,/Math\.abs\(dx\)>52/);
+  assert.match(app,/e\.key==="ArrowRight"/);
+  assert.match(app,/tile\.setAttribute\("aria-hidden"/);
+  assert.match(renderer,/if\(element\.classList\?\.contains\("tile"\)\)return;/);
+  assert.match(renderer,/rects\.set\(\[r\.x,r\.y,r\.width,r\.height\],index\*4\)/);
+  assert.match(renderer,/uniform1i\(uniform\.uRectCount,NAMES\.length\)/);
+  const controls=x.JadeLab.getSection("Componentes").controls;
+  for(const key of ["sceneDepth","sceneSpacing","sceneTilt","avatarMotion"])
+    assert.ok(Object.hasOwn(controls,key),key);
+  x.JadeLab.setField("sceneTilt",100);
+  x.JadeLab.setField("sceneDepth",-1);
+  assert.equal(x.JadeLab.getPreset().controls.sceneTilt,25);
+  assert.equal(x.JadeLab.getPreset().controls.sceneDepth,0);
+  assert.equal(x.JadeLab.getPreset().theme,"oldschool-dark");
+});
+
 test("Android manifest is a separate offline app with no broad permissions",()=>{
   const xml=fs.readFileSync(path.resolve(__dirname,"../android/src/main/AndroidManifest.xml"),"utf8");
   assert.match(xml,/dev\.horizon\.jadelab/);
