@@ -476,7 +476,7 @@
       engine:"WebGL2 / GLSL ES 300",theme:"oldschool-dark",
       uniforms:["uAtmos","uLight","uMaterial","uSurface","uMotion","uDetail",
         "uPalette","uCenters","uAxesU","uAxesV","uMeta","uCount","uSelectionStyle",
-        "uBoxCenters","uBoxSizes","uNavigation",
+        "uBoxCenters","uBoxSizes","uNavigation","uBounds","uAvatarSphere","uAvatarBounds",
         "uBackdropShape","uBackdropLayers","uBackdropLight","uBackdropDetail",
         "uGlassModel","uGlassOptics","uGlassDetail","uGlassTargets",
         "uSceneTexture","uScenePass","uSceneNeutral"],
@@ -564,12 +564,11 @@
     // Start collapsed to maximize usable viewport. A simple floating button
     // can always restore the sheet, including on portrait phones.
     editor.classList.add("collapsed");
-    el("open-editor").addEventListener("click",()=>{editor.classList.remove("hidden","collapsed");});
-    el("quick-settings").addEventListener("click",()=>{editor.classList.remove("hidden","collapsed");});
-    el("minimize-editor").addEventListener("click",()=>editor.classList.toggle("collapsed"));
-    el("hide-editor").addEventListener("click",()=>editor.classList.add("hidden"));
+    el("open-editor").addEventListener("click",()=>{editor.inert=false;editor.classList.remove("hidden","collapsed");});
+    el("minimize-editor").addEventListener("click",()=>{editor.classList.toggle("collapsed");editor.inert=editor.classList.contains("collapsed");if(editor.inert)window.JadeScene?.focus();});
+    el("hide-editor").addEventListener("click",()=>{editor.classList.add("hidden");editor.inert=true;window.JadeScene?.focus();});
     el("maximize-editor").addEventListener("click",()=>{
-      editor.classList.remove("hidden","collapsed");
+      editor.inert=false;editor.classList.remove("hidden","collapsed");
       const isFull=editor.classList.toggle("maximized");
       editor.style.setProperty("--sheet-height",isFull?"calc(100dvh - 24px)":"min(540px,76dvh)");
     });
@@ -636,7 +635,7 @@
     });
     el("toggle-pause").addEventListener("click",e=>{
       paused=!paused;window.JadeRenderer.pause(paused);
-      e.currentTarget.textContent=paused?"▶":"Ⅱ";
+      e.currentTarget.textContent=paused?"▶ Continuar":"Ⅱ Pausar";
       toast(paused?"Animações pausadas":"Animações em execução");
     });
     el("reset-view").addEventListener("click",()=>{

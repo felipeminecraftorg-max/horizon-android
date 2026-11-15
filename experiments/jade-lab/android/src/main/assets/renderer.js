@@ -15,7 +15,8 @@ uniform vec4 uBackdropShape,uBackdropLayers,uBackdropLight,uBackdropDetail;
 uniform vec4 uGlassModel,uGlassOptics,uGlassDetail,uGlassTargets;
 uniform sampler2D uSceneTexture;
 uniform int uScenePass,uSelectionStyle,uCount;
-uniform vec4 uCenters[8],uAxesU[8],uAxesV[8],uMeta[8];
+uniform vec4 uCenters[8],uAxesU[8],uAxesV[8],uMeta[8],uBounds[8];
+uniform vec4 uAvatarSphere,uAvatarBounds;
 uniform vec4 uBoxCenters[6],uBoxSizes[6];
 float hash12(vec2 p) {
   vec3 p3=fract(vec3(p.xyx)*0.1031);
@@ -101,7 +102,7 @@ vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
         y=.40+(i-1.5)*.11+bend*.14*sin(pos.x*scale*2.1+t+i*.5);
       }
       float d=(pos.y-y);
-      float spread=max(.012,(.018+width*.071)*softness);
+      float spread=max(.007,(.009+width*.042)*softness);
       float envelope=exp(-pow(d/spread,2.0));
       float illuminated=exp(-pow((d-spread*.53)/max(spread*.55,.01),2.0));
       float under=exp(-pow((d+spread*.62)/max(spread*.89,.012),2.0));
@@ -112,10 +113,10 @@ vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
       vec3 spectral=layer==0?uPalette[3].rgb:
                     layer==1?uPalette[2].rgb:
                     layer==2?uPalette[4].rgb:uPalette[3].rgb;
-      float weight=(.92-.12*i)*power*horizonFade*uAtmos.y;
-      col+=spectral*envelope*weight*(.36+.16*turn);
+      float weight=(.78-.12*i)*power*horizonFade*uAtmos.y;
+      col+=spectral*envelope*weight*(.21+.11*turn);
       col+=mix(spectral,vec3(.77,.84,.91),.21)*
-           illuminated*weight*uBackdropDetail.z*.18;
+           illuminated*weight*uBackdropDetail.z*.16;
       col-=ink*under*weight*.18;
     }
   }else if(style<3.5){
@@ -139,14 +140,14 @@ vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
       (uAtmos.z+uBackdropDetail.x*.65)*.036;
   col+=grain;
   col+=uSceneNeutral[2].rgb*grad*uEnvironment.x*.018;
+  col=mix(col,col+uSceneNeutral[0].rgb*.025,uAtmos.x);
   float vignette=length((uv-.5)*vec2(1.04,.95));
   col*=1.0-smoothstep(.18,.79,vignette)*uAtmos.w*.56;
   return max(col,vec3(0.0));
 }
 // Blur the ACTUAL GPU-procedural scene defined above, not a CSS-opacity hack.
-// The background has no framebuffer backing, so we evaluate it spatially
-// (center + 4 axial + optionally 4 diagonal taps). This refracts the authored
-// landscape. It does not sample native/DOM text or completed UI layers.
+// The cached framebuffer is sampled with center + 4 axial and optionally
+// 4 diagonal taps. Crisp DOM text is never part of the blurred texture.
 // All offset positions stay in viewport coordinates despite render scaling.
 vec3 frostedBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
   // Read the cached GPU scene; no more recursive expensive ribbons.
@@ -201,19 +202,33 @@ float boxHit(vec3 ro,vec3 rd,int i,out vec3 normal,out vec3 local){
   else if(near3.y>=near3.z)n.y=-sign(d.y);else n.z=-sign(d.z);
   normal=rot*n;return nearT;
 }
+bool sphereAlongRay(vec3 ro,vec3 rd,float reach){
+  vec3 delta=uAvatarSphere.xyz-ro;
+  float t=clamp(dot(delta,rd),0.,reach);
+  vec3 nearPoint=delta-rd*t;
+  return dot(nearPoint,nearPoint)<uAvatarSphere.w*uAvatarSphere.w;
+}
 float shadowAt(vec3 p,vec3 normal,vec3 light,int selfPanel,int selfBox){
   vec3 ro=p+normal*1.3,rd=normalize(light-ro);
   float reach=length(light-ro),visibility=1.;
   for(int j=0;j<8;j++){
     if(j>=uCount)break;if(j==selfPanel)continue;
-    vec3 h;vec2 q;float t=panelHit(ro,rd,j,h,q);
-    if(t<reach)visibility*=mix(.23,.58,uMeta[j].z*uGlassModel.w);
+    vec3 n=cross(uAxesU[j].xyz,uAxesV[j].xyz);
+    float denom=dot(rd,n);if(abs(denom)<.0001)continue;
+    float t=dot(uCenters[j].xyz-ro,n)/denom;
+    if(t<=.05||t>=reach)continue;
+    vec3 d=ro+rd*t-uCenters[j].xyz;
+    vec2 local=vec2(dot(d,uAxesU[j].xyz),dot(d,uAxesV[j].xyz));
+    float sd=sround(local,vec2(0.),vec2(uCenters[j].w,uAxesU[j].w),uMeta[j].w);
+    float penumbra=4.+t*.13;
+    float cover=1.-smoothstep(-penumbra,penumbra,sd);
+    visibility*=1.-cover*mix(.48,.25,uMeta[j].z*uGlassModel.w);
   }
-  for(int j=0;j<6;j++){
+  if(sphereAlongRay(ro,rd,reach))for(int j=0;j<6;j++){
     if(j==selfBox)continue;vec3 n,q;
-    if(boxHit(ro,rd,j,n,q)<reach)visibility*=.30;
+    if(boxHit(ro,rd,j,n,q)<reach)visibility*=.56;
   }
-  return max(.18,visibility);
+  return max(.30,visibility);
 }
 vec3 boxColor(int i,vec3 q,vec3 n){
   float kind=uBoxCenters[i].w;
@@ -229,7 +244,7 @@ vec3 reflectionAt(vec3 p,vec3 ray,int self){
     float t=panelHit(p+ray*2.,ray,j,h,q);
     if(t<closest){closest=t;reflected=mix(uPalette[1].rgb,uPalette[2].rgb,uMeta[j].y*.25);}
   }
-  for(int j=0;j<6;j++){
+  if(sphereAlongRay(p,ray,1e6))for(int j=0;j<6;j++){
     vec3 n,q;float t=boxHit(p+ray*2.,ray,j,n,q);
     if(t<closest){closest=t;reflected=boxColor(j,q,n);}
   }
@@ -262,10 +277,13 @@ void main(){
   light.x+=sin(time*.7)*uViewport.x*.045*uMotion.y;
   float nearest=1e8;int panel=-1,box=-1;vec3 point=vec3(0.),normal=vec3(0.),boxLocal=vec3(0.);vec2 local=vec2(0.);
   for(int i=0;i<8;i++){
-    if(i>=uCount)break;vec3 h;vec2 q;float t=panelHit(eye,ray,i,h,q);
+    if(i>=uCount)break;
+    vec4 bounds=uBounds[i];
+    if(screen.x<bounds.x||screen.y<bounds.y||screen.x>bounds.z||screen.y>bounds.w)continue;
+    vec3 h;vec2 q;float t=panelHit(eye,ray,i,h,q);
     if(t<nearest){nearest=t;panel=i;point=h;local=q;}
   }
-  for(int i=0;i<6;i++){
+  if(screen.x>=uAvatarBounds.x&&screen.x<=uAvatarBounds.z&&screen.y>=uAvatarBounds.y&&screen.y<=uAvatarBounds.w)for(int i=0;i<6;i++){
     vec3 n,q;float t=boxHit(eye,ray,i,n,q);
     if(t<nearest){nearest=t;box=i;point=eye+ray*t;normal=n;boxLocal=q;panel=-1;}
   }
@@ -300,7 +318,7 @@ void main(){
       float fine=abs(fract(q.y*35.+floor(q.x*22.)*.09)-.5);
       base+=uPalette[2].rgb*terrain*(1.-smoothstep(.02,.05,fine))*.015;
     }
-    float visibility=shadowAt(point,normal,light,panel,-1);
+    float visibility=mix(1.,shadowAt(point,normal,light,panel,-1),uSurface.y);
     float rough=clamp(uMaterial.x,.075,.96),metal=clamp(uMaterial.y,0.,1.);
     result=lighting(base,point,normal,eye,light,rough,metal,visibility);
     bool glassAllowed=uMeta[panel].z>.5;
@@ -322,8 +340,8 @@ void main(){
     vec3 environment=texture(uSceneTexture,vec2(envUv.x,1.-envUv.y)).rgb;
     result+=environment*(.10+metal*.22)*uMaterial.z+uSceneNeutral[2].rgb*fresnel*uGlassOptics.z*.18;
     float border=1.-smoothstep(.25,1.3,abs(sd+.7));
-    result+=mix(uSceneNeutral[2].rgb,uPalette[2].rgb,.25)*border*(.09+selected*.11)*uSurface.z;
-    result+=uPalette[2].rgb*radial(q,vec2(.24,.2),vec2(1.,.9))*selected*uSurface.w*.045;
+    result+=mix(uSceneNeutral[2].rgb,uPalette[2].rgb,.25)*border*(.06+selected*.11)*uSurface.z*(.65+uGlassOptics.w*.55);
+    result+=uPalette[2].rgb*radial(q,vec2(.24,.2),vec2(1.,.9))*(selected*uSurface.w*.045+uSurface.x*.015);
     result+=uSceneNeutral[2].rgb*exp(-pow((q.y-.10)/.17,2.))*uGlassDetail.y*.025;
     result+=(hash12(floor(screen*.8))-.5)*(uGlassDetail.x*.02);
     result*=1.-q.y*uGlassDetail.z*.055;
@@ -361,7 +379,7 @@ void main(){
       const vs=compile(gl.VERTEX_SHADER,VERTEX_SOURCE),fs=compile(gl.FRAGMENT_SHADER,FRAGMENT_SOURCE);
       program=gl.createProgram();gl.attachShader(program,vs);gl.attachShader(program,fs);gl.bindAttribLocation(program,0,'aPosition');gl.linkProgram(program);gl.deleteShader(vs);gl.deleteShader(fs);
       if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));gl.useProgram(program);
-      const names=['uResolution','uViewport','uPointer','uTime','uReduced','uNavigation','uPalette[0]','uSceneNeutral[0]','uAtmos','uLight','uMaterial','uSurface','uMotion','uDetail','uEnvironment','uBackdropShape','uBackdropLayers','uBackdropLight','uBackdropDetail','uGlassModel','uGlassOptics','uGlassDetail','uGlassTargets','uSceneTexture','uScenePass','uSelectionStyle','uCount','uCenters[0]','uAxesU[0]','uAxesV[0]','uMeta[0]','uBoxCenters[0]','uBoxSizes[0]'];
+      const names=['uResolution','uViewport','uPointer','uTime','uReduced','uNavigation','uPalette[0]','uSceneNeutral[0]','uAtmos','uLight','uMaterial','uSurface','uMotion','uDetail','uEnvironment','uBackdropShape','uBackdropLayers','uBackdropLight','uBackdropDetail','uGlassModel','uGlassOptics','uGlassDetail','uGlassTargets','uSceneTexture','uScenePass','uSelectionStyle','uCount','uCenters[0]','uAxesU[0]','uAxesV[0]','uMeta[0]','uBounds[0]','uAvatarSphere','uAvatarBounds','uBoxCenters[0]','uBoxSizes[0]'];
       names.forEach(k=>uniform[k]=gl.getUniformLocation(program,k));
       buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
       timerExt=gl.getExtension('EXT_disjoint_timer_query_webgl2');
@@ -432,8 +450,19 @@ void main(){
     vec4('uBackdropShape',[Math.max(0,['ribbons','aurora','satin','halo','minimal'].indexOf(preset.backgroundStyle)),preset.backgroundIntensity,preset.backgroundScale,preset.ribbonCurve]);vec4('uBackdropLayers',[preset.ribbonLayers,preset.ribbonWidth,preset.ribbonSoftness,preset.backgroundFlow]);vec4('uBackdropLight',[preset.backgroundGlow,preset.gradientDepth,preset.backgroundCenterX,preset.backgroundCenterY]);vec4('uBackdropDetail',[preset.backgroundGrain,preset.backgroundParallax,preset.ribbonGleam,preset.backgroundContrast]);
     vec4('uGlassModel',[Math.max(0,['frosted','tinted','matte','solid'].indexOf(preset.glassStyle)),preset.glassOpacity,preset.glassBlur,preset.glassTransmission]);vec4('uGlassOptics',[preset.glassTint,preset.glassScatter,preset.glassFresnel,preset.glassRim]);vec4('uGlassDetail',[preset.glassGrain,preset.glassHighlight,preset.glassShadow,Math.max(0,['fast','balanced','high'].indexOf(preset.glassQuality))]);vec4('uGlassTargets',[+preset.glassHero,+preset.glassCards,+preset.glassChrome,+preset.glassCTA]);gl.uniform1i(uniform.uSelectionStyle,Math.max(0,['halo','rim','underline','quiet'].indexOf(preset.selectionStyle)));
     gl.uniform1i(uniform.uCount,sceneData.surfaces.length);
-    const centers=new Float32Array(32),us=new Float32Array(32),vs=new Float32Array(32),meta=new Float32Array(32),bc=new Float32Array(24),bs=new Float32Array(24);
-    sceneData.surfaces.forEach((p,i)=>{centers.set([...p.c,p.w],i*4);us.set([...p.u,p.h],i*4);vs.set([...p.v,0],i*4);meta.set([p.kind,+p.selected,+p.glass,12],i*4);});sceneData.boxes.forEach((b,i)=>{bc.set([...b.c,b.kind],i*4);bs.set([...b.size,b.angle],i*4);});
+    const centers=new Float32Array(32),us=new Float32Array(32),vs=new Float32Array(32),meta=new Float32Array(32),bounds=new Float32Array(32),bc=new Float32Array(24),bs=new Float32Array(24);
+    sceneData.surfaces.forEach((p,i)=>{centers.set([...p.c,p.w],i*4);us.set([...p.u,p.h],i*4);vs.set([...p.v,0],i*4);meta.set([p.kind,+p.selected,+p.glass,12],i*4);const xs=p.corners.map(q=>q[0]),ys=p.corners.map(q=>q[1]);bounds.set([Math.min(...xs)-2,Math.min(...ys)-2,Math.max(...xs)+2,Math.max(...ys)+2],i*4);});sceneData.boxes.forEach((b,i)=>{bc.set([...b.c,b.kind],i*4);bs.set([...b.size,b.angle],i*4);});
+    const boxes=sceneData.boxes;
+    if(boxes.length){
+      const low=[0,1,2].map(k=>Math.min(...boxes.map(b=>b.c[k]-Math.hypot(...b.size)))),high=[0,1,2].map(k=>Math.max(...boxes.map(b=>b.c[k]+Math.hypot(...b.size))));
+      const center=low.map((v,k)=>(v+high[k])/2),radius=Math.hypot(...low.map((v,k)=>(high[k]-v)/2));
+      vec4('uAvatarSphere',[...center,radius]);
+      const xs=[],ys=[];for(const b of boxes)for(const x of [-1,1])for(const y of [-1,1])for(const z of [-1,1]){
+        const c=Math.cos(b.angle),s=Math.sin(b.angle),wx=b.c[0]+x*b.size[0]*c+z*b.size[2]*s,wy=b.c[1]+y*b.size[1],wz=b.c[2]-x*b.size[0]*s+z*b.size[2]*c;
+        xs.push(innerWidth/2+(wx-innerWidth/2)*1200/(1200-wz));ys.push(innerHeight/2+(wy-innerHeight/2)*1200/(1200-wz));
+      }vec4('uAvatarBounds',[Math.min(...xs)-2,Math.min(...ys)-2,Math.max(...xs)+2,Math.max(...ys)+2]);
+    }
+    gl.uniform4fv(uniform['uBounds[0]'],bounds);
     gl.uniform4fv(uniform['uCenters[0]'],centers);gl.uniform4fv(uniform['uAxesU[0]'],us);gl.uniform4fv(uniform['uAxesV[0]'],vs);gl.uniform4fv(uniform['uMeta[0]'],meta);gl.uniform4fv(uniform['uBoxCenters[0]'],bc);gl.uniform4fv(uniform['uBoxSizes[0]'],bs);
     gl.activeTexture(gl.TEXTURE0);gl.uniform1i(uniform.uSceneTexture,0);gl.bindTexture(gl.TEXTURE_2D,null);gl.bindFramebuffer(gl.FRAMEBUFFER,sceneFbo);gl.viewport(0,0,...sceneSize);gl.uniform2f(uniform.uResolution,...sceneSize);gl.uniform1i(uniform.uScenePass,1);gl.drawArrays(gl.TRIANGLES,0,6);
     gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,canvas.width,canvas.height);gl.uniform2f(uniform.uResolution,canvas.width,canvas.height);gl.bindTexture(gl.TEXTURE_2D,sceneTexture);gl.uniform1i(uniform.uScenePass,0);gl.drawArrays(gl.TRIANGLES,0,6);lastScene=sceneData;

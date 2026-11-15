@@ -4,12 +4,9 @@ html,body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:v
 button:focus-visible{outline:1px solid var(--accent);outline-offset:3px}
 .editor{background:#0d151bf7!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;box-shadow:0 17px 50px #000b;border-color:#d5e5df35}
 .editor.collapsed{transform:translateY(calc(100% + 45px))!important;opacity:0!important;pointer-events:none!important}
-.floating-tools{top:auto!important;left:auto!important;right:max(10px,env(safe-area-inset-right))!important;bottom:55px!important;flex-direction:column;gap:5px}
-.floating-tools .float-button{height:36px;min-height:36px;width:36px;min-width:36px;padding:4px;border-radius:7px;font-size:15px;background:#142027d9;border:1px solid #d7e2df22;box-shadow:none;backdrop-filter:none}
-.floating-tools .float-button span{display:none}
+.preview-tools{display:flex;gap:6px;padding:8px 10px;border-bottom:1px solid #dce8dd18}.preview-tools button{flex:1;min-height:34px;border:1px solid #dce8dd22;background:#ffffff06;border-radius:6px;font-size:10px;color:#cbdad4}
 #gpu-fallback:not([hidden]){pointer-events:none;left:auto;right:12px;bottom:auto;top:62px;max-width:220px;padding:6px 9px;font-size:10px}
 .comparison .surface-face{background:#253038!important;border:1px solid #d2e1df44!important}
 .comparison #gpu{opacity:.12}
 body.gpu-unavailable .surface-face{background:#223039;border:1px solid #d2e1df44}
-@media(orientation:portrait){.floating-tools{right:6px!important;bottom:49px!important}.floating-tools .float-button{width:30px;height:30px;min-width:30px;min-height:30px}.editor{max-height:calc(100dvh - 12px)}}
-@media(max-height:500px) and (orientation:landscape){.floating-tools{bottom:42px!important;right:5px!important}.floating-tools .float-button{width:29px;height:29px;min-width:29px;min-height:29px;font-size:13px}}
+@media(orientation:portrait){.editor{max-height:calc(100dvh - 12px)}}

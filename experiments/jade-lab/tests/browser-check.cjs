@@ -19,7 +19,9 @@ const server=http.createServer((req,res)=>{const file=path.join(root,decodeURICo
     let gpu=await page.evaluate(()=>JadeRenderer.state());assert.equal(gpu.webgl2,true,gpu.error);
     await page.waitForFunction(()=>JadeRenderer.state().surfaces===4);
     for(const [width,height] of [[1280,720],[393,852],[852,393],[360,640]]){
-      await page.setViewportSize({width,height});await page.waitForTimeout(300);
+      await page.setViewportSize({width,height});
+      await page.waitForFunction(()=>Math.abs((JadeRenderer.geometry()?.surfaces[0]?.w||0)-document.querySelector('.art-slot').getBoundingClientRect().width)<.5);
+      await page.waitForTimeout(100);
       const data=await page.evaluate(()=>{
         const geom=JadeRenderer.geometry();
         return Array.from(document.querySelectorAll('[data-node]')).map((el,i)=>{

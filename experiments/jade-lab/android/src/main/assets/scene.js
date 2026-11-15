@@ -60,7 +60,7 @@
     active?.scrollIntoView?.({block:'nearest',inline:'nearest',behavior:'instant'});
     impulse=1;selectedAt=performance.now();animation=preset.reducedMotion?0:1;invalidate();
   }
-  function openEditor(tab){callbacks.changeTab?.(tab);$('editor').classList.remove('hidden','collapsed');nav.close();render();}
+  function openEditor(tab){callbacks.changeTab?.(tab);$('editor').inert=false;$('editor').classList.remove('hidden','collapsed');nav.close();render();}
   function activate(row){
     nav.enter(row); // Pointer activation enters the row directly.
     if(!nav.state().dialog)nav.enter(row);
@@ -77,7 +77,7 @@
     $('context-description').textContent=descriptions[s.page]?.[row]||'Prévia da interface do Horizon.';
     render();$('context-close').focus({preventScroll:true});
   }
-  function back(){const e=$('editor');if(e&&!e.classList.contains('hidden')&&!e.classList.contains('collapsed')){e.classList.add('collapsed');return true;}const result=nav.back();if(result)render(true);return result;}
+  function back(){const e=$('editor');if(e&&!e.classList.contains('hidden')&&!e.classList.contains('collapsed')){e.classList.add('collapsed');e.inert=true;render(true);return true;}const result=nav.back();if(result)render(true);return result;}
   function input(action){
     const before=nav.state();if(before.dialog){if(action==='back')back();return;}
     if(action==='left'||action==='right')nav.step(action==='left'?-1:1);
@@ -90,7 +90,7 @@
     callbacks=cb||{};if(initialized)return;initialized=true;
     $('console-categories').innerHTML=PAGES.map((p,i)=>'<button role="tab" data-category="'+i+'" aria-label="'+DATA[p].label+'">'+icon(DATA[p].symbol)+'<span>'+DATA[p].label+'</span></button>').join('');
     nodes=Array.from(document.querySelectorAll('[data-node]')).map(el=>({el,face:el.querySelector('.surface-face'),id:el.dataset.node}));
-    $('editor').classList.add('collapsed');
+    $('editor').classList.add('collapsed');$('editor').inert=true;
     $('console-categories').addEventListener('click',e=>{const b=e.target.closest('[data-category]');if(b){nav.select(Number(b.dataset.category));render();}});
     document.querySelectorAll('[data-option]').forEach(b=>b.addEventListener('click',()=>activate(Number(b.dataset.option))));
     $('context-close').addEventListener('click',()=>back());
@@ -108,7 +108,7 @@
       if(keys[e.key]){e.preventDefault();input(keys[e.key]);}
     });
     if(typeof ResizeObserver!=='undefined')new ResizeObserver(invalidate).observe($('preview'));
-    window.addEventListener('resize',()=>{invalidate();if(!window.JadeRenderer?.state?.().webgl2)tick(0);});window.addEventListener('gamepadconnected',()=>window.JadeRenderer?.invalidate?.());
+    window.addEventListener('resize',()=>{invalidate();tick(window.JadeRenderer?.state?.().elapsed||0);});window.addEventListener('gamepadconnected',()=>window.JadeRenderer?.invalidate?.());
     render();
   }
   function tick(time){
@@ -135,15 +135,15 @@
     if(art){
       const scale=Math.min(art.w/320,art.h/255)*.9;
       const x=art.c[0]+art.w*.18,y=art.c[1]+art.h*.03,z=92;
-      const sway=activeMotion?Math.sin(time*.65)*Number(preset.avatarMotion||0)*.04:0;
+      const sway=preset.reducedMotion?0:Math.sin(time*.65)*Number(preset.avatarMotion||0)*.04;
       const parts=[[-0,-58,0,19,20,18,0],[0,-14,0,24,26,13,1],[-34,-13,0,8,27,10,1],[34,-13,0,8,27,10,1],[-13,29,0,10,20,10,2],[13,29,0,10,20,10,2]];
       boxes=parts.map(a=>({c:[x+a[0]*scale,y+a[1]*scale,z+a[2]*scale],size:a.slice(3,6).map(n=>n*scale),kind:a[6],angle:-.32+sway}));
     }
     // Poll connected controllers without creating a second animation loop.
-    const pad=typeof navigator!=='undefined'&&navigator.getGamepads?.()?.find(p=>p?.connected);
-    if(pad){const b=pad.buttons,a=pad.axes;let command=b[12]?.pressed||a[1]<-.6?'up':b[13]?.pressed||a[1]>.6?'down':b[14]?.pressed||b[4]?.pressed||a[0]<-.6?'left':b[15]?.pressed||b[5]?.pressed||a[0]>.6?'right':b[0]?.pressed?'enter':b[1]?.pressed?'back':null;const now=performance.now();if(command&&(!gamepadHeld||now-gamepadLast>230)){input(command);gamepadLast=now;}gamepadHeld=!!command;}
+    let pad;try{pad=typeof navigator!=='undefined'&&navigator.getGamepads?.()?.find(p=>p?.connected);}catch(e){pad=null;}
+    if(pad){const b=pad.buttons,a=pad.axes;let command=b[12]?.pressed||a[1]<-.6?'up':b[13]?.pressed||a[1]>.6?'down':b[14]?.pressed||b[4]?.pressed||a[0]<-.6?'left':b[15]?.pressed||b[5]?.pressed||a[0]>.6?'right':b[0]?.pressed?'enter':b[1]?.pressed?'back':null;const now=performance.now();if(command&&(command!==lastInput||(['left','right','up','down'].includes(command)&&now-gamepadLast>230))){input(command);gamepadLast=now;}gamepadHeld=!!command;lastInput=command||'';}
     return {surfaces:geometry,boxes,impulse,animating:moving||animation>0||!!pad};
   }
-  window.JadeScene={init,tick,back,input,model,pose,icon,pages:PAGES,data:DATA,state:()=>nav.state(),
+  window.JadeScene={init,tick,back,input,focus:()=>render(true),model,pose,icon,pages:PAGES,data:DATA,state:()=>nav.state(),
     setPreset(p){preset=p;if(typeof document!=='undefined'){document.documentElement.style.setProperty('--option-gap',(4+Number(p.sceneSpacing||0)*5)+'px');}invalidate();},invalidate};
 })();

@@ -8,7 +8,7 @@
 <div id="gpu-fallback" hidden></div>
 <main id="preview" class="preview">
 <header class="masthead"><div class="wordmark"><span class="horizon-mark" aria-hidden="true">H</span><strong>horizon<span>OLD SCHOOL / JADE LAB</span></strong></div>
-<div class="system-info"><span class="online-dot"></span><span>PLAYER 01</span><button id="quick-settings" aria-label="Abrir editor de aparência">Ajustes</button></div></header>
+<div class="system-info"><span class="online-dot"></span><span>PLAYER 01</span><button id="open-editor" aria-label="Abrir editor">Ajustes</button></div></header>
 <nav id="console-categories" role="tablist" aria-label="Categorias do Horizon"></nav>
 <section id="console-scene" aria-label="Prévia do launcher">
 <div class="scene-copy"><p id="hero-eyebrow">SEU ESPAÇO PARA JOGAR</p><h1 id="hero-title">Um novo horizonte.</h1><p id="hero-subtitle">Minecraft · Java Edition 26.3</p></div>
@@ -22,13 +22,6 @@
 </section>
 <footer class="console-footer"><button id="console-back" aria-label="Voltar">‹ <span>Voltar</span></button><p id="scene-caption" aria-live="polite">01 / 07 · Jogar</p><span id="live-hint">CENA EM TEMPO REAL</span><small>Deslize · Toque · Controle</small></footer>
 </main>
-  <div class="floating-tools" aria-label="Controles da prévia">
-    <button id="open-editor" class="float-button" aria-label="Abrir editor" title="Editor">☷ <span>EDITOR</span></button>
-    <button id="toggle-compare" class="float-button" aria-label="Alternar comparação sem shaders" title="Antes e depois">◐</button>
-    <button id="toggle-pause" class="float-button" aria-label="Pausar animações" title="Pausar animações">Ⅱ</button>
-    <button id="reset-view" class="float-button" aria-label="Centralizar iluminação" title="Centralizar luz">◎</button>
-  </div>
-
   <aside id="editor" class="editor" aria-label="Editor de materiais e shaders">
     <header class="editor-head" id="drag-handle">
       <div class="drag-grip" aria-hidden="true"></div>
@@ -40,6 +33,7 @@
         <button id="hide-editor" title="Ocultar painel" aria-label="Ocultar painel">×</button>
       </div>
     </header>
+    <div class="preview-tools" aria-label="Controles da cena"><button id="toggle-compare" aria-label="Alternar comparação sem shaders">◐ Comparar</button><button id="toggle-pause" aria-label="Pausar animações">Ⅱ Pausar</button><button id="reset-view" aria-label="Centralizar iluminação">◎ Centralizar luz</button></div>
     <nav class="editor-tabs" id="editor-tabs" role="tablist" aria-label="Categorias de ajustes"></nav>
     <div class="editor-body" id="editor-body" tabindex="0"></div>
     <footer class="editor-foot"><button id="download-section">↓ BAIXAR ABA</button><button id="save-preset">↓ PRESET JSON</button><button id="download-pack" class="primary">↓ PACK ZIP</button></footer>
