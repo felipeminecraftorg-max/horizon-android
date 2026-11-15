@@ -1,3 +1,4 @@
+// Horizon Android UI preview: original offline test harness, not recovered game code.
 package dev.horizon.jadelab;
 
 import android.app.Activity;
@@ -51,13 +52,20 @@ public final class JadeLabActivity extends Activity {
             window.setAttributes(p);
         }
         immersive();
+        if (Build.VERSION.SDK_INT >= 33) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::onBackPressed);
+        }
 
         browser = new WebView(this);
-        browser.setBackgroundColor(Color.rgb(7, 17, 13));
+        browser.setBackgroundColor(getPackageName().contains("nexo") ? Color.rgb(16, 27, 43) : Color.rgb(7, 17, 13));
         browser.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         WebSettings settings = browser.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
+        if (getPackageName().contains("nexo")) {
+            settings.setTextZoom(Math.round(getResources().getConfiguration().fontScale * 100));
+        }
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
@@ -134,10 +142,26 @@ public final class JadeLabActivity extends Activity {
     @Override public void onBackPressed() {
         if (browser == null) { super.onBackPressed(); return; }
         browser.evaluateJavascript(
-            "Boolean(window.JadeLab && window.JadeLab.back())",
+            "Boolean(window.Nexo ? window.Nexo.back(true) : window.JadeLab && window.JadeLab.back())",
             result -> {
                 if (!"true".equals(result)) JadeLabActivity.super.onBackPressed();
             });
+    }
+
+    @Override protected void onPause() {
+        if (browser != null) {
+            browser.evaluateJavascript("window.Nexo && window.Nexo.setVisible(false)", null);
+            browser.onPause();
+        }
+        super.onPause();
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (browser != null) {
+            browser.onResume();
+            browser.evaluateJavascript("window.Nexo && window.Nexo.setVisible(true)", null);
+        }
     }
 
     @Override protected void onDestroy() {
@@ -160,6 +184,11 @@ public final class JadeLabActivity extends Activity {
 
     /** Restricted local-save bridge; it never grants arbitrary filesystem access. */
     private final class DownloadsBridge {
+        @JavascriptInterface public void haptic() {
+            main.post(() -> {
+                if (browser != null) browser.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+            });
+        }
         @JavascriptInterface public void saveBase64(String name, String mime, String content) {
             if (name == null || !SAFE_NAME.matcher(name).matches()) {
                 message("Nome do arquivo inválido");return;
@@ -178,7 +207,8 @@ public final class JadeLabActivity extends Activity {
                 ContentValues values = new ContentValues();
                 values.put(MediaStore.Downloads.DISPLAY_NAME, name);
                 values.put(MediaStore.Downloads.MIME_TYPE, m);
-                values.put(MediaStore.Downloads.RELATIVE_PATH, "Download/JadeLab");
+                String folder = getPackageName().contains("nexo") ? "Nexo" : "JadeLab";
+                values.put(MediaStore.Downloads.RELATIVE_PATH, "Download/"+folder);
                 values.put(MediaStore.Downloads.IS_PENDING, 1);
                 Uri uri = getContentResolver().insert(
                     MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
@@ -191,7 +221,7 @@ public final class JadeLabActivity extends Activity {
                     values.clear();
                     values.put(MediaStore.Downloads.IS_PENDING, 0);
                     getContentResolver().update(uri, values, null, null);
-                    message("Salvo em Downloads/JadeLab: "+name);
+                    message("Salvo em Downloads/"+folder+": "+name);
                 } catch (Exception writeError) {
                     getContentResolver().delete(uri, null, null);
                     throw writeError;
