@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101b2b"><title>Horizon Nexo — Prévia 1</title>
+<link rel="stylesheet" href="nexo.css">
+</head>
+<body>
+<main id="nexo-app" class="nexo-study">
+  <header class="app-header"><div><span class="wordmark">NEXO</span><small>PRÉVIA 1 · INTERFACE</small></div><div class="header-actions"><button id="profile-button" type="button" aria-label="Trocar perfil">Meu perfil</button><button id="settings-button" type="button">Ajustes</button></div></header>
+  <div id="scene-wrap"><canvas id="scene" aria-label="Carrossel 3D. Arraste para selecionar e toque na aba em destaque para abrir.">Nexo: Jogar, Mods, Pacotes, Shaders e Skins.</canvas>
+    <section id="module" hidden inert aria-labelledby="module-title"><header class="module-header"><div><small id="module-eyebrow">BIBLIOTECA DE PRÉVIA</small><h1 id="module-title">Mods</h1></div></header><div id="module-content"></div></section>
+  </div>
+  <nav class="nexo-categories" aria-label="Seções">
+    <button type="button" data-page="0" aria-pressed="true">Jogar</button><button type="button" data-page="1" aria-pressed="false">Mods</button><button type="button" data-page="2" aria-pressed="false">Pacotes</button><button type="button" data-page="3" aria-pressed="false">Shaders</button><button type="button" data-page="4" aria-pressed="false">Skins</button>
+  </nav>
+  <footer class="app-footer"><span class="nexo-state" aria-live="polite">Meu perfil · 26.3</span><button type="button" class="nexo-back" hidden>Voltar às abas</button></footer>
+  <p class="nexo-error" role="alert" hidden></p>
+</main>
+<dialog id="settings-dialog" aria-labelledby="settings-title"><header><h2 id="settings-title">Ajustes do Nexo</h2><button type="button" data-close>Fechar</button></header><div class="dialog-body">
+<label>Tamanho do texto<select data-pref="textScale"><option value="1">Padrão</option><option value="1.15">Ampliado</option><option value="1.3">Grande</option></select></label>
+<label>Movimento reduzido<input type="checkbox" data-pref="reducedMotion"></label>
+<label>Limite de quadros<select data-pref="fps"><option value="30">30 FPS</option><option value="45">45 FPS</option><option value="60">60 FPS</option></select></label>
+<label>Resolução dos efeitos<select data-pref="renderScale"><option value="1">Completa</option><option value="0.75">Equilibrada</option><option value="0.6">Econômica</option></select></label>
+<label>Cor de apoio<input type="range" data-pref="warmth" min="0" max="1" step="0.05" aria-label="Intensidade da luz quente"></label>
+<label>Efeitos sonoros<input type="range" data-pref="sound" min="0" max="1" step="0.05" aria-label="Volume dos efeitos sonoros"></label>
+<label>Retorno tátil<input type="checkbox" data-pref="haptics"></label>
+<div class="actions"><button id="reset-appearance" type="button">Restaurar aparência</button><button id="undo-appearance" type="button">Desfazer alteração</button></div>
+<p class="note">Este APK testa a interface. A conexão com o jogo, as contas e os arquivos do Horizon ainda está pendente.</p>
+</div></dialog>
+<dialog id="profiles-dialog" aria-labelledby="profiles-title"><header><h2 id="profiles-title">Perfis de prévia</h2><button type="button" data-close>Fechar</button></header><div class="dialog-body"><div id="profile-list"></div><form id="profile-form"><label for="profile-name">Novo perfil</label><input id="profile-name" name="name" maxlength="50" autocomplete="off" placeholder="Nome do perfil"><button type="submit">Adicionar</button><p id="profile-error" role="alert"></p></form></div></dialog>
+<dialog id="details-dialog" aria-labelledby="details-title"><header><h2 id="details-title">Detalhes</h2><button type="button" data-close>Fechar</button></header><div id="details-content" class="dialog-body"></div></dialog>
+<input type="file" id="catalog-file" accept="application/json,.json" hidden>
+<div id="notice" role="status" hidden><span></span><button type="button" id="notice-undo" hidden>Desfazer</button><button type="button" id="notice-close" aria-label="Dispensar aviso">Fechar</button></div>
+<script src="state.js"></script><script src="app.js"></script><script src="scene.js"></script>
+</body></html>

@@ -1,0 +1,58 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),http=require('node:http');
+const {chromium}=require(process.env.NEXO_PLAYWRIGHT_MODULE||'playwright');
+const root=path.resolve(__dirname,'../android/src/main/assets'),out=path.resolve('dist/nexo-qa');fs.mkdirSync(out,{recursive:true});
+const server=http.createServer((req,res)=>{const name=decodeURIComponent(req.url.split('?')[0]),file=path.resolve(root,'.'+(name==='/'?'/index.html':name));if(!file.startsWith(root+path.sep)){res.writeHead(403).end();return;}fs.readFile(file,(error,data)=>{if(error){res.writeHead(404).end();return;}res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(data);});});
+(async()=>{
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ const browser=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+ const context=await browser.newContext({viewport:{width:736,height:820},hasTouch:true,deviceScaleFactor:1});const page=await context.newPage(),errors=[],checks=[];
+ page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));const cdp=await context.newCDPSession(page);
+ const settle=()=>page.waitForFunction(()=>window.NexoScene&&Math.abs(NexoScene.getState().position-NexoScene.getState().target)<.001&&Math.abs(NexoScene.getState().velocity)<.002);
+ async function select(i){const current=await page.evaluate(()=>NexoScene.getState().selected);if(current!==i)await page.locator('[data-page="'+i+'"]').click();await settle();}
+ async function frontPoint(){return page.evaluate(()=>{const s=NexoScene.getState(),p=s.faces.find(p=>p.index===s.selected).points,r=document.querySelector('#scene').getBoundingClientRect();return{x:r.left+(p.reduce((a,p)=>a+p[0],0)/4+1)*r.width/2,y:r.top+(1-p.reduce((a,p)=>a+p[1],0)/4)*r.height/2};});}
+ async function open(i){console.log('Open',i);await select(i);const p=await frontPoint();await page.touchscreen.tap(p.x,p.y);await page.waitForFunction(()=>NexoScene.getState().opening>.9999);assert.equal(await page.locator('#module').evaluate(e=>e.hidden||e.inert),false);}
+ async function close(){await page.getByRole('button',{name:'Voltar às abas',exact:true}).click();await page.waitForFunction(()=>NexoScene.getState().opening<.0001);}
+ try{
+  await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>document.querySelector('#nexo-app').dataset.webgl==='ready');await settle();
+  assert.equal(await page.getByRole('button',{name:/Entrar/}).count(),0);await page.screenshot({path:path.join(out,'home-736x820.png')});
+  await select(1);assert.equal(await page.evaluate(()=>NexoScene.getState().open),false,'selection opened a section');
+  const start=await frontPoint();await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{...start,id:1}]});
+  for(let i=1;i<=4;i++)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:start.x-i*15,y:start.y,id:1}]});
+  await page.waitForTimeout(50);const during=await page.evaluate(()=>NexoScene.getState());assert.ok(during.dragging);assert.ok(during.position>1.05);assert.equal(during.target,1);
+  await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:start.x-110,y:start.y,id:1}]});await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await settle();assert.equal(await page.evaluate(()=>NexoScene.getState().open),false);
+  checks.push('native touch follows finger; release selects without opening; active card opens directly');
+  await open(1);const search=page.getByRole('searchbox',{name:'Buscar em Mods'});await search.fill('audio');assert.equal(await page.locator('.catalog-row').count(),1);
+  await page.getByRole('button',{name:'Ativar Áudio espacial',exact:true}).click();assert.equal(await page.getByRole('button',{name:'Desativar Áudio espacial',exact:true}).count(),1);
+  await page.getByRole('button',{name:'Detalhes de Áudio espacial',exact:true}).click();await page.getByRole('button',{name:'Adicionar aos favoritos',exact:true}).click();
+  await close();await open(1);assert.equal(await search.inputValue(),'audio');await page.getByRole('button',{name:'Limpar busca',exact:true}).click();await page.getByRole('combobox',{name:'Filtrar estado'}).selectOption('favorite');assert.equal(await page.locator('.catalog-row').count(),1);
+  await page.reload();await page.waitForFunction(()=>document.querySelector('#nexo-app').dataset.webgl==='ready');await open(1);assert.equal(await page.getByRole('combobox',{name:'Filtrar estado'}).inputValue(),'favorite');assert.equal(await page.getByRole('button',{name:'Desativar Áudio espacial',exact:true}).count(),1);
+  checks.push('accent-insensitive search, separate toggle/details, favorites and view state persist after restart');
+  const before=await page.evaluate(()=>Nexo.state().catalog.length);
+  await page.locator('#catalog-file').setInputFiles({name:'bad.json',mimeType:'application/json',buffer:Buffer.from('{bad')});await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('JSON válido'));assert.equal(await page.evaluate(()=>Nexo.state().catalog.length),before);
+  const downloadPromise=page.waitForEvent('download');await page.getByRole('button',{name:'Exportar lista',exact:true}).click();const download=await downloadPromise;assert.equal(JSON.parse(fs.readFileSync(await download.path(),'utf8')).format,'HORIZON_NEXO_CATALOG_V1');
+  checks.push('invalid import preserves catalog; export downloads an actual JSON manifest');
+  await close();await page.locator('#profile-button').click();await page.locator('#profile-name').fill('Redmi');await page.getByRole('button',{name:'Adicionar',exact:true}).click();await page.locator('#profiles-dialog [data-close]').click();assert.equal(await page.locator('#profile-button').textContent(),'Redmi');
+  await select(0);const playPoint=await frontPoint();await page.touchscreen.tap(playPoint.x,playPoint.y);await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('lançamento pelo Horizon'));assert.equal(await page.evaluate(()=>NexoScene.getState().open),false);assert.equal(await page.evaluate(()=>NexoScene.getState().launching),false);
+  await page.evaluate(()=>{window.launchRequests=[];window.NexoNativeHost={launchGame:request=>{window.launchRequests.push(request);return new Promise(resolve=>window.finishLaunch=resolve);}};});
+  await page.touchscreen.tap(playPoint.x,playPoint.y);await page.touchscreen.tap(playPoint.x,playPoint.y);assert.equal(await page.evaluate(()=>window.launchRequests.length),1);assert.equal(await page.evaluate(()=>window.launchRequests[0].profile.name),'Redmi');await page.evaluate(()=>window.finishLaunch());await page.waitForFunction(()=>!Nexo.state().launchBusy);
+  checks.push('profile picker persists; missing game host is explicit; host launch boundary receives one request for repeated taps');
+  await open(2);await page.getByRole('button',{name:'Detalhes de Camadas minerais',exact:true}).click();await page.getByRole('button',{name:'Subir prioridade',exact:true}).click();await page.locator('#details-dialog [data-close]').click();assert.equal(await page.locator('.catalog-row').first().getAttribute('data-item'),'mineral');await close();
+  await open(4);const beforeTurn=await page.evaluate(()=>Nexo.state().skinTurn);await page.getByRole('button',{name:'Girar à direita',exact:true}).click();assert.ok(await page.evaluate(()=>Nexo.state().skinTurn)>beforeTurn);await page.screenshot({path:path.join(out,'skins-736x820.png')});await close();
+  await page.getByRole('button',{name:'Ajustes',exact:true}).click();await page.locator('[data-pref="textScale"]').selectOption('1.3');await page.locator('[data-pref="reducedMotion"]').check();await page.locator('[data-pref="renderScale"]').selectOption('0.6');await page.locator('#settings-dialog [data-close]').click();await page.reload();await page.waitForFunction(()=>document.querySelector('#nexo-app').dataset.webgl==='ready');assert.equal(await page.evaluate(()=>Nexo.state().preferences.textScale),1.3);assert.equal(await page.locator('#profile-button').textContent(),'Redmi');
+  await open(1);await page.getByRole('combobox',{name:'Filtrar estado'}).selectOption('all');await close();
+  await page.evaluate(()=>{NexoApp.store.preference('textScale',1);NexoApp.store.preference('reducedMotion',false);NexoApp.store.preference('renderScale',1);NexoScene.refresh();});await page.reload();await page.waitForFunction(()=>document.querySelector('#nexo-app').dataset.webgl==='ready');
+  checks.push('pack priority, 3D character rotation, text scale, reduced motion and render-scale persistence');
+  for(const [width,height] of [[393,852],[852,393],[360,640],[1280,720]]){
+   await page.setViewportSize({width,height});await page.waitForTimeout(600);await select(1);await page.screenshot({path:path.join(out,`home-${width}x${height}.png`)});await open(1);
+   const module=await page.locator('#module').boundingBox(),list=await page.locator('.catalog-list').boundingBox(),back=await page.getByRole('button',{name:'Voltar às abas',exact:true}).boundingBox();
+   assert.ok(module&&module.x>=0&&module.y>=0&&module.x+module.width<=width+1&&module.y+module.height<=height+1,`module outside ${width}x${height}: `+JSON.stringify(module));
+   assert.ok(list&&list.height>=35,'list is unusably short: '+JSON.stringify(list));assert.ok(back&&back.y+back.height<=height+1,'back is clipped: '+JSON.stringify(back));
+   await page.screenshot({path:path.join(out,`mods-${width}x${height}.png`)});await close();
+  }
+  await page.evaluate(()=>Nexo.setVisible(false));assert.equal(await page.evaluate(()=>NexoScene.getState().visible),false);await page.evaluate(()=>Nexo.setVisible(true));
+  assert.deepEqual(errors,[]);checks.push('responsive portrait/landscape modules and return control stay within viewport; background rendering can pause');
+  fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify({passed:true,checks,note:'Browser tests do not establish Redmi FPS or a working game-host integration.'},null,2));console.log('Nexo browser checks passed');
+ }catch(error){await page.screenshot({path:path.join(out,'failure.png')});console.error('Page errors',errors);console.error('State',await page.evaluate(()=>({app:window.Nexo?.state(),scene:window.NexoScene?.getState()})));throw error;}
+ finally{await browser.close();server.close();}
+})().catch(error=>{console.error(error);server.close();process.exitCode=1;});
