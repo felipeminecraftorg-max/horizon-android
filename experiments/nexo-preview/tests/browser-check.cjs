@@ -11,10 +11,10 @@ const server=http.createServer((req,res)=>{const name=decodeURIComponent(req.url
  const settle=()=>page.waitForFunction(()=>window.NexoScene&&Math.abs(NexoScene.getState().position-NexoScene.getState().target)<.001&&Math.abs(NexoScene.getState().velocity)<.002);
  async function select(i){const current=await page.evaluate(()=>NexoScene.getState().selected);if(current!==i)await page.locator('[data-page="'+i+'"]').click();await settle();}
  async function frontPoint(){return page.evaluate(()=>{const s=NexoScene.getState(),p=s.faces.find(p=>p.index===s.selected).points,r=document.querySelector('#scene').getBoundingClientRect();return{x:r.left+(p.reduce((a,p)=>a+p[0],0)/4+1)*r.width/2,y:r.top+(1-p.reduce((a,p)=>a+p[1],0)/4)*r.height/2};});}
- async function open(i){console.log('Open',i);await select(i);const p=await frontPoint();await page.touchscreen.tap(p.x,p.y);await page.waitForFunction(()=>NexoScene.getState().opening>.9999);assert.equal(await page.locator('#module').evaluate(e=>e.hidden||e.inert),false);}
+ async function open(i){console.log('Open',i);await select(i);const p=await frontPoint();await page.touchscreen.tap(p.x,p.y);await page.waitForFunction(()=>NexoScene.getState().opening>.9999);assert.equal(await page.locator('#module').evaluate(e=>e.hidden||e.inert),false);await page.waitForTimeout(250);assert.equal(await page.locator('dialog[open]').count(),0,'opening a card also activated an item in the new surface');}
  async function close(){await page.getByRole('button',{name:'Voltar às abas',exact:true}).click();await page.waitForFunction(()=>NexoScene.getState().opening<.0001);}
  try{
-  await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>document.querySelector('#nexo-app').dataset.webgl==='ready');await settle();
+  await page.addInitScript(()=>{window.nexoEventTrace=[];for(const kind of ['pointerdown','pointerup','click'])document.addEventListener(kind,e=>{window.nexoEventTrace.push({kind,target:e.target.tagName,text:e.target.textContent?.slice(0,35),detail:e.detail,x:e.clientX,y:e.clientY,at:Math.round(performance.now())});if(window.nexoEventTrace.length>35)window.nexoEventTrace.shift();},true);});await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>document.querySelector('#nexo-app').dataset.webgl==='ready');await settle();
   assert.equal(await page.getByRole('button',{name:/Entrar/}).count(),0);await page.screenshot({path:path.join(out,'home-736x820.png')});
   await select(1);assert.equal(await page.evaluate(()=>NexoScene.getState().open),false,'selection opened a section');
   const start=await frontPoint();await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{...start,id:1}]});
@@ -53,6 +53,6 @@ const server=http.createServer((req,res)=>{const name=decodeURIComponent(req.url
   await page.evaluate(()=>Nexo.setVisible(false));assert.equal(await page.evaluate(()=>NexoScene.getState().visible),false);await page.evaluate(()=>Nexo.setVisible(true));
   assert.deepEqual(errors,[]);checks.push('responsive portrait/landscape modules and return control stay within viewport; background rendering can pause');
   fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify({passed:true,checks,note:'Browser tests do not establish Redmi FPS or a working game-host integration.'},null,2));console.log('Nexo browser checks passed');
- }catch(error){await page.screenshot({path:path.join(out,'failure.png')});console.error('Page errors',errors);console.error('State',await page.evaluate(()=>({app:window.Nexo?.state(),scene:window.NexoScene?.getState()})));throw error;}
+ }catch(error){await page.screenshot({path:path.join(out,'failure.png')});console.error('Page errors',errors);console.error('Input trace',await page.evaluate(()=>window.nexoEventTrace));console.error('State',await page.evaluate(()=>({app:window.Nexo?.state(),scene:window.NexoScene?.getState()})));throw error;}
  finally{await browser.close();server.close();}
 })().catch(error=>{console.error(error);server.close();process.exitCode=1;});
