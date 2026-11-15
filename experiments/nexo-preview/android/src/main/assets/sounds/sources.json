@@ -1,0 +1,81 @@
+{
+  "license": "CC0-1.0",
+  "mirror": "https://github.com/GeorgeQLe/assets-sfx-ui",
+  "sourceCommit": "760afd035e8fc3cd7fb5bc58d49a967649875e3e",
+  "packs": [
+    "https://kenney.nl/assets/interface-sounds",
+    "https://kenney.nl/assets/ui-audio"
+  ],
+  "samples": [
+    {
+      "event": "select",
+      "file": "sounds/select_001.ogg",
+      "author": "Kenney",
+      "pack": "interface-sounds",
+      "sourcePath": "assets/kenney/interface-sounds/Audio/select_001.ogg",
+      "gitBlob": "0f81a639ca63328d5c065b27d4000cbabc22065d",
+      "sha256": "aec0c31ea934a35936ae0d2ab8fac8123c93aa5647f935853a58dbaf90278b7a",
+      "modified": false
+    },
+    {
+      "event": "open",
+      "file": "sounds/maximize_007.ogg",
+      "author": "Kenney",
+      "pack": "interface-sounds",
+      "sourcePath": "assets/kenney/interface-sounds/Audio/maximize_007.ogg",
+      "gitBlob": "123a76c34835bd67551e9c02dbe7b122846d0368",
+      "sha256": "3400931f3f3a1e9cf253efef9069bcdf053edd2234e4ee9bf88977c389943484",
+      "modified": false
+    },
+    {
+      "event": "back",
+      "file": "sounds/minimize_007.ogg",
+      "author": "Kenney",
+      "pack": "interface-sounds",
+      "sourcePath": "assets/kenney/interface-sounds/Audio/minimize_007.ogg",
+      "gitBlob": "d45a554fcfb8a1fdae26ba61a1d1bce53f84a759",
+      "sha256": "e951505044de0d5d87b72ce7f312ac3fbbdde025ec8c10db70f9d2651a2c8947",
+      "modified": false
+    },
+    {
+      "event": "confirm",
+      "file": "sounds/confirmation_001.ogg",
+      "author": "Kenney",
+      "pack": "interface-sounds",
+      "sourcePath": "assets/kenney/interface-sounds/Audio/confirmation_001.ogg",
+      "gitBlob": "78f119c626bd8e9c18a19c0c9175d3e37d3a7a22",
+      "sha256": "063564703b6094d70718a3e787a55cc9141611e4ecd6b6637f8828f79b4a8c3a",
+      "modified": false
+    },
+    {
+      "event": "error",
+      "file": "sounds/error_003.ogg",
+      "author": "Kenney",
+      "pack": "interface-sounds",
+      "sourcePath": "assets/kenney/interface-sounds/Audio/error_003.ogg",
+      "gitBlob": "f7e413727d47a67a9b025e7ba828319140bc593b",
+      "sha256": "885b28175c7b511118bcffab95675b48bbac9005cf6514656ebdad979276b3ab",
+      "modified": false
+    },
+    {
+      "event": "toggle",
+      "file": "sounds/toggle_001.ogg",
+      "author": "Kenney",
+      "pack": "interface-sounds",
+      "sourcePath": "assets/kenney/interface-sounds/Audio/toggle_001.ogg",
+      "gitBlob": "3848ea8734b7b84a80ea72a5a3522706db3314a2",
+      "sha256": "ca1d2dde5f0b286abac4f070e23edab8f30927c8a533665cdf2ac6492a415e49",
+      "modified": false
+    },
+    {
+      "event": "click",
+      "file": "sounds/rollover2.ogg",
+      "author": "Kenney",
+      "pack": "ui-audio",
+      "sourcePath": "assets/kenney/ui-audio/Audio/rollover2.ogg",
+      "gitBlob": "d1964d061d1e0bf9a2396158b703e4508e718cd0",
+      "sha256": "d0bc0fcba496d73df1da8c145e5330df75f87ab5a4f33a9b71461b006b5c338e",
+      "modified": false
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-# Horizon Nexo — Preview Update 2 — Y2K materials
+# Horizon Nexo — Preview Update 3 — direct tabs and sampled audio
 
 The approved five-panel 3D carousel is the source of this implementation. Geometry,
 closed depth path, directional lighting and the one-shot icon presentation remain
@@ -6,9 +6,13 @@ in `scene.js`. This is a new interface foundation, separate from the rejected Ja
 layout and separate from the actual Horizon game launcher.
 
 An exposed rear card selects; touching the front card opens that same surface.
+There is no separate navigation strip: the actual panels are the navigation.
 The surface expands to fit the phone, the 3D icon travels into its header and
 accessible native text/controls follow its projected face. Swiping never opens a
-section. Back restores the selected card. There is no separate Enter control.
+section. A return arrow inside the panel or a tap on the outside background
+restores the selected card. Outside drags and list scrolling never dismiss it.
+The return keeps its reverse animation and fades the content with the same
+surface. There is no separate Enter control.
 
 ## Working in this preview
 
@@ -21,7 +25,7 @@ section. Back restores the selected card. There is no separate Enter control.
 - Real JSON catalog import/export with validation and atomic failure recovery.
 - A real 3D demonstration character with independent touch rotation in Skins.
 - Persistent text size, reduced motion, frame limit, GPU render scale, warm-light
-  adjustment, original short procedural sound effects and optional native haptics.
+  adjustment, seven bundled CC0 audio recordings and optional native haptics.
 - Android Back delegation, native pause/resume, suspended-background rendering and a separate
   Android identity: `dev.horizon.nexo.preview`. Existing Horizon/Jade apps remain.
 
@@ -30,8 +34,11 @@ section. Back restores the selected card. There is no separate Enter control.
 The same scene/controller now has original stylized chrome and smoke-polymer
 materials: analytic reflected softboxes, a Fresnel response, a clear-coat lobe,
 mipmapped seeded microtexture, thin machined edges and actual beveled prism icons.
-The implementation is a lightweight artistic model, not full physically based
-rendering, ray tracing, screen-space reflections or a shadow-map pipeline.
+The implementation is a lightweight artistic material model. Update 3 adds an
+actual geometry shadow map with four filtered depth comparisons and a clipped
+planar reflection pass for the selected panel. The reflection renders the same
+mesh commands from a mirrored view and uses a small frosted filter. It is not
+recursive reflection, refraction, ray tracing or full physically based transport.
 
 Three layered shader ribbons flow behind the carousel. The same monotonic
 animation clock moves the material lighting. Idle atmosphere renders at no more
@@ -45,6 +52,34 @@ readable system sans. Its SIL OFL 1.1 license and copyright are bundled as
 `android/src/main/assets/OFL-Michroma.txt`. See `THIRD_PARTY_NOTICES.md` for the
 pinned source. No Sony/Microsoft logos, proprietary typefaces or console assets
 are included. The existing preview state migrates without replacing the catalog.
+
+## Update 3 navigation, background and audio
+
+The WebGL background now covers the entire viewport, including behind the header
+and footer. A separate viewport inside that same renderer keeps the actual
+carousel and open panels within the safe content area. Screen hit-testing,
+projected native text and the 3D header icon use the corresponding full-screen
+coordinates. No duplicated background canvas or CSS-height crop is used.
+
+Only the physical cards select/open sections. Invisible native button targets
+follow those same projected faces for keyboard/screen-reader activation and
+focus; there is no secondary row or global arrow-key menu. The integrated return
+arrow is a 48-pixel target in the panel header. Android Back is retained.
+
+The oscillator cues are replaced by seven original, unmodified Kenney recordings
+(CC0), from Interface Sounds 1.0 and UI Audio. Selection, expansion, return,
+confirmation, toggles, details and errors have separate short cues. A local
+HTMLAudio player preloads the files, respects the saved volume, limits repeated
+cues and stops all playback on native pause/hidden state. There is no generated
+fallback tone or remote request. Pack notices and exact provenance/checksums are
+bundled in `android/src/main/assets/sounds/`; see THIRD_PARTY_NOTICES.md.
+
+Transitions now use velocity-dependent blur, with a small blur during panel
+expansion/collapse; the native text layer receives a matching screen-space blur.
+The blur settles to zero and reduced motion disables it. Shadows and the selected
+panel's planar reflections can be switched off together in settings. Their map
+resolution follows the existing render-scale setting; native pause cancels all
+render passes. Shadow and reflection maps reuse the actual scene meshes.
 
 ## Explicit integration limits
 

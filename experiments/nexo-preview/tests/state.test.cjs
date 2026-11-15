@@ -59,6 +59,6 @@ test('appearance undo restores only preferences and keeps later catalog changes'
 test('old preview state migrates without losing data and ambient choice survives restart', () => {
   const storage=memory();storage.setItem('horizon.nexo.preview.v1',JSON.stringify({version:1,selected:2,preferences:{warmth:.7},catalog:[{id:'mine',page:'Mods',name:'Meu mod',enabled:true}]}));
   const s=createStore(storage);assert.equal(s.get().preferences.ambientMotion,true);assert.equal(s.get().selected,2);assert.equal(s.rows('Mods')[0].name,'Meu mod');
-  s.preference('ambientMotion',false);const again=createStore(storage);assert.equal(again.get().preferences.ambientMotion,false);assert.equal(again.get().preferences.warmth,.7);
+  s.preference('ambientMotion',false);s.preference('sceneLighting',false);const again=createStore(storage);assert.equal(again.get().preferences.sceneLighting,false);assert.equal(again.get().preferences.ambientMotion,false);assert.equal(again.get().preferences.warmth,.7);
   again.resetAppearance();again.undoAppearance();assert.equal(again.get().preferences.ambientMotion,false);assert.equal(again.rows('Mods')[0].enabled,true);
 });
