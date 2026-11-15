@@ -29,7 +29,7 @@ uniform float uAlpha,uTex,uBlend,uMetal,uWarmth,uTime,uSurface;
 uniform sampler2D uPoster,uModule,uGrain;
 vec3 environment(vec3 r,float rough){
   float bend=.10*sin(r.x*3.4+uTime*.17);
-  float strip=exp(-pow((r.y-.34-bend)/(.045+rough*.22),2.));
+  float strip=exp(-pow((r.y-.07-bend)/(.045+rough*.22),2.));
   float high=exp(-pow((r.y-.79)/(.09+rough*.12),2.));
   float warm=exp(-pow((r.x-.64)/(.16+rough*.2),2.))*exp(-pow((r.y+.12)/.7,2.));
   return vec3(.055,.085,.12)+vec3(.49,.69,.78)*strip+vec3(.44,.50,.54)*high
@@ -148,7 +148,7 @@ function render(now){const w=canvas.clientWidth,h=canvas.clientHeight,ratio=Math
  if(isFront){NexoApp.onHomeFace(points.map(p=>[(p[0]+1)*w/2,(1-p[1])*h/2]),i,(1-op)*(1-launching));if(op>0)NexoApp.onFrame({opening:op,rect:face});}
  const parent=mul(trans(x,y,z),mul(ry(yaw),rx(-.055*Math.sin(Math.PI*op))));
  const iconDepth=.36+pulse*.30+.30*Math.sin(Math.PI*op),iconDistance=eye-z-iconDepth,pixel=2*iconDistance/(h*f),headerX=((face.left+(w<480?36:40))/w*2-1)*iconDistance*aspect/f-x,headerY=(1-(face.top+(w<480?45:50))/h*2)*iconDistance/f+.08-y,headerScale=Math.min(48,face.width*.18)*pixel/.9;
- const iconM=mul(parent,mul(trans(mix(0,headerX,op),mix(.25,headerY,op),iconDepth),mul(ry(-.2+spin+.18*Math.sin(Math.PI*op)),mul(rx(.10),scale(mix(1,headerScale,op))))));const cool=[.62,.76,.80],warm=[.62,.37,.14];gl.uniform1f(U.uTex,0);
+ const iconM=mul(parent,mul(trans(mix(0,headerX,op),mix(.25,headerY,op),iconDepth),mul(ry(-.2+spin+.18*Math.sin(Math.PI*op)),mul(rx(.10),scale(mix(1,headerScale,op))))));const cool=[.62,.76,.80],warm=[.64,.49,.29];gl.uniform1f(U.uTex,0);
  if(i===0)drawMesh(triangle,iconM,cool,alpha,0,.9);
  if(i===1){object(block,mul(iconM,trans(-.20,-.13,0)),cool,alpha,.88);object(block,mul(iconM,trans(.20,.20,.04)),warm,alpha,.7);}
  if(i===2)for(let k=0;k<3;k++)object(plate,mul(iconM,mul(trans((k-1)*.035,(k-1)*.19,(k-1)*.13),rz(-.1))),k===2?warm:cool,alpha,.82);
