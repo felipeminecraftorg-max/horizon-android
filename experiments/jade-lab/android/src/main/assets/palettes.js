@@ -8,21 +8,21 @@
   const PROFILES = {
     jade: {
       name:"Jade", tagline:"Console orgânico · luz viva e metal acetinado",
-      colors:{bg:"#192328",surface:"#354249",accent:"#85d3a0",cool:"#b4d0cc",warm:"#d9c9aa"},
+      colors:{bg:"#192328",surface:"#354249",accent:"#85d3a0",cool:"#b4d0cc",warm:"#d3a0b8"},
       atmosphere:{fog:.48,waves:.33,vignette:.35,noise:.09,contrast:1.10,saturation:1.07},
       lighting:{azimuth:-38,elevation:.72,intensity:1.24,ambient:.66,edgeLight:.74,heroGlow:.79,bloom:.38},
       material:{roughness:.29,metallic:.31,reflectivity:.72,bevel:.57,depth:.65,ao:.43}
     },
     amethyst: {
       name:"Amethyst", tagline:"Ametista · roxo profundo e brilho de lavanda",
-      colors:{bg:"#201d2c",surface:"#423d51",accent:"#c5a4ed",cool:"#a9b8da",warm:"#e4c3b8"},
+      colors:{bg:"#201d2c",surface:"#423d51",accent:"#c5a4ed",cool:"#a9b8da",warm:"#ccd5ac"},
       atmosphere:{fog:.59,waves:.22,vignette:.43,noise:.10,contrast:1.11,saturation:1.10},
       lighting:{azimuth:-53,elevation:.64,intensity:1.16,ambient:.63,edgeLight:.89,heroGlow:.92,bloom:.43},
       material:{roughness:.34,metallic:.28,reflectivity:.83,bevel:.62,depth:.77,ao:.51}
     },
     azure: {
       name:"Azure", tagline:"Azul glacial · superfícies cristalinas e névoa fria",
-      colors:{bg:"#1a2832",surface:"#34495a",accent:"#8fd3eb",cool:"#b9dfe7",warm:"#ddc9ac"},
+      colors:{bg:"#1a2832",surface:"#34495a",accent:"#8fd3eb",cool:"#b9dfe7",warm:"#e0b29b"},
       atmosphere:{fog:.44,waves:.25,vignette:.30,noise:.07,contrast:1.07,saturation:1.02},
       lighting:{azimuth:-24,elevation:.84,intensity:1.34,ambient:.74,edgeLight:.90,heroGlow:.66,bloom:.31},
       material:{roughness:.24,metallic:.35,reflectivity:.94,bevel:.54,depth:.60,ao:.35}
@@ -43,7 +43,7 @@
     },
     cobalt: {
       name:"Cobalt", tagline:"Azul elétrico refinado · energia e profundidade",
-      colors:{bg:"#19253d",surface:"#3a4964",accent:"#a5b9ed",cool:"#a6cce6",warm:"#d6c0d3"},
+      colors:{bg:"#19253d",surface:"#3a4964",accent:"#a5b9ed",cool:"#a6cce6",warm:"#d9c094"},
       atmosphere:{fog:.51,waves:.35,vignette:.38,noise:.08,contrast:1.16,saturation:1.09},
       lighting:{azimuth:-30,elevation:.68,intensity:1.33,ambient:.67,edgeLight:.98,heroGlow:1.04,bloom:.42},
       material:{roughness:.25,metallic:.43,reflectivity:1.01,bevel:.66,depth:.84,ao:.47}

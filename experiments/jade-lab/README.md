@@ -1,5 +1,18 @@
 # Horizon Jade Lab — DARK (Android)
 
+### 1.4.1 — original spatial deck retained
+
+The v1.4 layout, three-card perspective stack, original CSS character, hero,
+editor and effects remain in place. This refinement adds a transparent WebGL
+finish precisely aligned to the cards' measured projective corners, clearer
+wave highlights and complementary secondary accents. Swipes can start on a
+card, Up/Down navigates the same stack, and pause freezes the character too.
+The character remains CSS geometry; this is a targeted hybrid improvement,
+not the rejected separate category/menu redesign or a fully mesh-based scene.
+`deck-browser-check.cjs` compares the actual geometry with commit
+`7ae67d72d4663d0a5aefa421c8a14cb9882b426d` at four viewport sizes.
+
+
 Standalone, **offline**, original companion to the Horizon launcher and Glass Lab.
 This is **not** a reskin of the Glass Lab APK: it is a new app with a completely
 independent Android package identity (\`dev.horizon.jadelab\`). It is designed to

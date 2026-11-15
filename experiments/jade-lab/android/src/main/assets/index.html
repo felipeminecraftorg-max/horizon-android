@@ -14,6 +14,8 @@
   <canvas id="gpu" aria-label="Prévia de shaders Jade em tempo real"></canvas>
   <div id="gpu-fallback" hidden>A GPU WebGL2 não está disponível neste aparelho. Os controles e exportações permanecem acessíveis.</div>
 
+  <canvas id="deck-coat" aria-hidden="true" hidden></canvas>
+
   <main id="preview" class="preview" aria-label="Prévia completa do Horizon Jade">
     <header class="topbar surface" data-surface="topbar">
       <div class="brand"><span class="brand-mark" aria-hidden="true">H</span>
@@ -92,6 +94,7 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="palettes.js"></script>
   <script src="renderer.js"></script>
+  <script src="deck-finish.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -134,9 +134,7 @@ public final class JadeLabActivity extends Activity {
     @Override public void onBackPressed() {
         if (browser == null) { super.onBackPressed(); return; }
         browser.evaluateJavascript(
-            "(function(){var e=document.getElementById('editor');"+
-            "if(e&&!e.classList.contains('hidden')&&!e.classList.contains('collapsed')){"+
-            "e.classList.add('collapsed');return true;}return false;})()",
+            "Boolean(window.JadeLab && window.JadeLab.back())",
             result -> {
                 if (!"true".equals(result)) JadeLabActivity.super.onBackPressed();
             });

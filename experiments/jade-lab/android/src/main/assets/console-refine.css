@@ -183,3 +183,11 @@
   padding:6px 9px;
   font-size:10px;opacity:.80;
 }
+
+/* v1.4 composition retained. This transparent GPU layer only adds live
+   highlights to the original measured CSS card planes. */
+#deck-coat{position:fixed;z-index:2;pointer-events:none;display:block}
+#deck-coat[hidden]{display:none}
+.comparison #deck-coat{opacity:0}
+body[data-paused="true"] .avatar-figure{animation-play-state:paused!important}
+.avatar-head-front,.avatar-body,.avatar-arm{filter:brightness(var(--avatar-light,1))}

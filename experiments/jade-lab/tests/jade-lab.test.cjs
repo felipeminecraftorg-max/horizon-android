@@ -406,3 +406,16 @@ test("Android manifest is a separate offline app with no broad permissions",()=>
   assert.match(xml,/hardwareAccelerated="true"/);
   assert.match(xml,/usesCleartextTraffic="false"/);
 });
+
+
+test("deck finish preserves the projected four corners and perspective center",()=>{
+  const env={window:{}};vm.createContext(env);
+  vm.runInContext(fs.readFileSync(path.join(root,"deck-finish.js"),"utf8"),env);
+  const f=env.window.JadeDeckFinish;
+  const points=[[0,0],[100,0],[75,100],[25,100]],m=f.homography(points);
+  for(const [u,v,i] of [[0,0,0],[1,0,1],[1,1,2],[0,1,3]]){
+    const p=f.project(m,u,v);assert.ok(Math.abs(p[0]-points[i][0])<1e-8);assert.ok(Math.abs(p[1]-points[i][1])<1e-8);
+  }
+  const center=f.project(m,.5,.5);assert.ok(Math.abs(center[0]-50)<1e-8);assert.ok(Math.abs(center[1]-200/3)<1e-8);
+  assert.equal(f.homography([[0,0],[0,0],[0,0],[0,0]]),null);
+});
