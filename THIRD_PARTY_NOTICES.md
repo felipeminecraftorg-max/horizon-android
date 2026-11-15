@@ -93,3 +93,16 @@ by Vernon Adams, under the SIL Open Font License 1.1. This is a font asset, not
 imported program or shader source. Source: [google/fonts at cc39c4c2](https://github.com/google/fonts/tree/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/michroma),
 font Git blob `59e8c534349962143f45b48152f80524fe9045bc`.
 The complete notice and license are bundled beside it in `OFL-Michroma.txt`.
+
+## Nexo preview interface audio
+
+Seven unmodified Ogg samples in `experiments/nexo-preview/android/src/main/assets/sounds/`
+are by Kenney (Kenney Vleugels), dedicated to the public domain under CC0 1.0:
+six from [Interface Sounds 1.0](https://kenney.nl/assets/interface-sounds) and one
+from [UI Audio](https://kenney.nl/assets/ui-audio). Original pack notices are
+bundled as `LICENSE-Interface-Sounds.txt` and `LICENSE-UI-Audio.txt`.
+
+Download mirror: [GeorgeQLe/assets-sfx-ui at 760afd03](https://github.com/GeorgeQLe/assets-sfx-ui/tree/760afd035e8fc3cd7fb5bc58d49a967649875e3e).
+`sounds/sources.json` records the exact original paths, Git blobs and SHA-256
+checksums. Official pack pages and the included notices both confirm CC0.
+Playback volume is adjusted at runtime; the recording files are unchanged.

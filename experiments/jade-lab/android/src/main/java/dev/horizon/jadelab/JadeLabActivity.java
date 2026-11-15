@@ -71,7 +71,7 @@ public final class JadeLabActivity extends Activity {
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
         settings.setSupportMultipleWindows(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setMediaPlaybackRequiresUserGesture(true);
+        settings.setMediaPlaybackRequiresUserGesture(!getPackageName().contains("nexo"));
         browser.setOverScrollMode(View.OVER_SCROLL_NEVER);
         browser.setWebContentsDebuggingEnabled(false);
         browser.setWebChromeClient(new WebChromeClient() {

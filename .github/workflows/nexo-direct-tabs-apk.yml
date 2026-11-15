@@ -1,0 +1,93 @@
+name: Horizon Nexo Direct Tabs APK
+run-name: Nexo Update 3 · ${{ github.sha }}
+on:
+  push:
+    branches: [feature/nexo-direct-tabs-audio]
+    paths: ['experiments/nexo-preview/**', 'experiments/jade-lab/android/src/main/java/**', '.github/workflows/nexo-direct-tabs-apk.yml', 'tools/check_public_tree.py', 'tests/test_nexo_public_tree.py']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: nexo-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify original preview bridge and private-artifact protection
+        run: |
+          python3 tools/check_public_tree.py
+          python3 -m unittest tests.test_nexo_public_tree tests.test_android_source_export
+      - name: Check JavaScript and local state behavior
+        run: |
+          for file in experiments/nexo-preview/android/src/main/assets/*.js; do node --check "$file"; done
+          node --test experiments/nexo-preview/tests/state.test.cjs experiments/jade-lab/tests/jade-lab.test.cjs
+      - name: Exercise real 3D navigation, controls and responsive layouts
+        timeout-minutes: 10
+        run: |
+          npm install --prefix /tmp/nexo-browser --no-audit --no-fund playwright@1.56.1
+          NEXO_PLAYWRIGHT_MODULE=/tmp/nexo-browser/node_modules/playwright node experiments/nexo-preview/tests/browser-check.cjs
+      - name: Upload actual interface captures and behavior report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: nexo-interface-qa
+          path: dist/nexo-qa/
+          retention-days: 14
+          if-no-files-found: warn
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a
+        with:
+          gradle-version: '8.14'
+      - name: Install Android toolchain and create disposable preview identity
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" 'platforms;android-35' 'build-tools;35.0.0'
+          mkdir -p experiments/nexo-preview/android/.local
+          keytool -genkeypair -keystore experiments/nexo-preview/android/.local/nexo-test.keystore -storepass android -keypass android -alias nexotest -keyalg RSA -keysize 2048 -validity 365 -dname "CN=Horizon Nexo Temporary Preview"
+      - name: Compile Nexo preview APK
+        run: gradle --no-daemon -p experiments/nexo-preview/android assembleRelease
+      - name: Verify signature, separate identity and packaged source
+        run: |
+          set -euo pipefail
+          APK=$(find experiments/nexo-preview/android/build/outputs/apk/release -name '*.apk' | head -n 1)
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q "package: name='dev.horizon.nexo.preview'"
+          export NEXO_BUILT_APK="$APK"
+          python3 - <<'PY'
+          import pathlib, os, zipfile, shutil, hashlib, json
+          source=pathlib.Path('experiments/nexo-preview/android/src/main/assets')
+          apk=pathlib.Path(os.environ['NEXO_BUILT_APK'])
+          with zipfile.ZipFile(apk) as z:
+              for file in source.rglob('*'):
+                  if file.is_file(): assert z.read('assets/'+file.relative_to(source).as_posix())==file.read_bytes(), file.name
+          target=pathlib.Path('dist')/('Horizon-Nexo-Update3-'+os.environ['GITHUB_SHA'][:12]+'.apk')
+          shutil.copyfile(apk,target)
+          digest=hashlib.sha256(target.read_bytes()).hexdigest()
+          pathlib.Path('dist/BUILD.json').write_text(json.dumps({'package':'dev.horizon.nexo.preview','sourceCommit':os.environ['GITHUB_SHA'],'sha256':digest,'version':'1.2.0-update3','gameHostConnected':False,'signing':'temporary preview key'},indent=2))
+          pathlib.Path('dist/SHA256SUMS.txt').write_text(digest+'  '+target.name+'\n')
+          shutil.copyfile('experiments/nexo-preview/README.md','dist/README.md')
+          print(target.name,apk.stat().st_size,'bytes',digest)
+          PY
+      - name: Upload signed APK and source verification metadata
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: horizon-nexo-update3-apk
+          path: |
+            dist/*.apk
+            dist/BUILD.json
+            dist/SHA256SUMS.txt
+            dist/README.md
+          retention-days: 14
+          if-no-files-found: error
+      - name: Remove disposable signing identity
+        if: always()
+        run: rm -f experiments/nexo-preview/android/.local/nexo-test.keystore
