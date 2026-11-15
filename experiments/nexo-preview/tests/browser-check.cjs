@@ -53,7 +53,7 @@ const server=http.createServer((req,res)=>{const name=decodeURIComponent(req.url
   const lit=await page.screenshot({clip:await page.locator('#scene').boundingBox(),path:path.join(out,'scene-lighting-on.png')});
   await page.evaluate(()=>{NexoApp.store.preference('sceneLighting',false);NexoScene.refresh();});await page.waitForFunction(()=>!NexoScene.getState().lighting.enabled);const unlit=await page.screenshot({clip:await page.locator('#scene').boundingBox(),path:path.join(out,'scene-lighting-off.png')});assert.notDeepEqual(lit,unlit,'scene shadow/reflection passes did not affect rendered pixels');
   await page.evaluate(()=>{NexoApp.store.preference('sceneLighting',true);NexoApp.store.preference('ambientMotion',true);NexoScene.refresh();});
-  assert.equal(await page.evaluate(()=>NexoScene.getState().blur),0,'blur did not settle to zero');checks.push('actual mesh shadow/reflection maps contain geometry and change scene pixels; transition blur settles to sharp text');
+  assert.equal(await page.evaluate(()=>NexoScene.getState().blur),0,'blur did not settle to zero');await page.evaluate(()=>{NexoApp.store.preference('renderScale',.6);NexoScene.refresh();});checks.push('actual mesh shadow/reflection maps contain geometry and change scene pixels; transition blur settles to sharp text');
 
   await open(1);const search=page.getByRole('searchbox',{name:'Buscar em Mods'});await search.fill('audio');assert.equal(await page.locator('.catalog-row').count(),1);
   await page.getByRole('button',{name:'Ativar Áudio espacial',exact:true}).click();assert.equal(await page.getByRole('button',{name:'Desativar Áudio espacial',exact:true}).count(),1);

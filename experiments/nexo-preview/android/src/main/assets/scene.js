@@ -176,7 +176,7 @@ function lightView(){
  ortho[0]=1/9;ortho[5]=1/7;ortho[10]=-2/35;ortho[14]=-1.01;return mul(ortho,view);
 }
 const lightVP=lightView(),emptyTexture=gl.createTexture();gl.activeTexture(gl.TEXTURE5);gl.bindTexture(gl.TEXTURE_2D,emptyTexture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,1,1,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array(4));gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
-let shadowTarget=null,reflectionTarget=null,lightingStats={enabled:false,shadowDraws:0,reflectionDraws:0};
+let shadowTarget=null,reflectionTarget=null,lightingStats={enabled:false,shadowDraws:0,reflectionDraws:0},shadowKey=null,reflectionKey=null,reflectionTime=-1;
 function mapTarget(width,height,linear=false){
  const texture=gl.createTexture(),buffer=gl.createFramebuffer(),depth=gl.createRenderbuffer();gl.activeTexture(gl.TEXTURE5);gl.bindTexture(gl.TEXTURE_2D,texture);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,width,height,0,gl.RGBA,gl.UNSIGNED_BYTE,null);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,linear?gl.LINEAR:gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,linear?gl.LINEAR:gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.bindRenderbuffer(gl.RENDERBUFFER,depth);gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT16,width,height);gl.bindFramebuffer(gl.FRAMEBUFFER,buffer);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,texture,0);gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,depth);
  const ready=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;gl.bindFramebuffer(gl.FRAMEBUFFER,null);return {width,height,texture,buffer,depth,ready};
@@ -192,14 +192,19 @@ function paintScene(commands,selected,viewport,width,height){
  lightingStats={enabled:false,shadowDraws:0,reflectionDraws:0};
  if(enabled){const size=NexoApp.store.get().preferences.renderScale>.8?768:384;shadowTarget=resizeTarget(shadowTarget,size,size,false);const ratio=Math.min(.42,512/width,512/height);reflectionTarget=resizeTarget(reflectionTarget,Math.max(64,Math.round(width*ratio)),Math.max(64,Math.round(height*ratio)),true);}
  const ready=!!enabled&&shadowTarget.ready&&reflectionTarget.ready;
- if(ready){
+ let hash=2166136261;for(const c of commands){for(const value of c.model)hash=Math.imul(hash^Math.round(value*100000),16777619);hash=Math.imul(hash^Math.round(c.alpha*10000),16777619);}
+ const key=[hash,width,height,NexoApp.store.get().preferences.renderScale,NexoApp.store.get().preferences.warmth,NexoApp.profile().name].join('|'),updateShadow=ready&&key!==shadowKey,updateReflection=ready&&(key!==reflectionKey||Math.abs(ambientTime-reflectionTime)>1/12);
+ lightingStats.shadowReused=ready&&!updateShadow;lightingStats.reflectionReused=ready&&!updateReflection;
+ if(updateShadow){
   gl.bindFramebuffer(gl.FRAMEBUFFER,shadowTarget.buffer);gl.viewport(0,0,shadowTarget.width,shadowTarget.height);gl.clearColor(1,1,1,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.enable(gl.DEPTH_TEST);gl.disable(gl.BLEND);gl.useProgram(shadowProgram);gl.uniformMatrix4fv(shadowU.uLightVP,false,lightVP);
-  for(const c of commands){gl.uniformMatrix4fv(shadowU.uModel,false,c.model);gl.uniform1f(shadowU.uAlpha,c.alpha);gl.bindBuffer(gl.ARRAY_BUFFER,c.m.buffer);gl.enableVertexAttribArray(shadowA);gl.vertexAttribPointer(shadowA,3,gl.FLOAT,false,32,0);gl.drawArrays(gl.TRIANGLES,0,c.m.count);lightingStats.shadowDraws++;}
+  for(const c of commands){gl.uniformMatrix4fv(shadowU.uModel,false,c.model);gl.uniform1f(shadowU.uAlpha,c.alpha);gl.bindBuffer(gl.ARRAY_BUFFER,c.m.buffer);gl.enableVertexAttribArray(shadowA);gl.vertexAttribPointer(shadowA,3,gl.FLOAT,false,32,0);gl.drawArrays(gl.TRIANGLES,0,c.m.count);lightingStats.shadowDraws++;}shadowKey=key;
  }
  gl.useProgram(p);gl.uniformMatrix4fv(U.uLightVP,false,lightVP);gl.uniform1f(U.uLighting,ready?1:0);gl.uniform1i(U.uShadowMap,3);gl.uniform1i(U.uReflection,4);gl.activeTexture(gl.TEXTURE3);gl.bindTexture(gl.TEXTURE_2D,ready?shadowTarget.texture:emptyTexture);gl.uniform2f(U.uShadowTexel,ready?1/shadowTarget.width:1,ready?1/shadowTarget.height:1);gl.activeTexture(gl.TEXTURE4);gl.bindTexture(gl.TEXTURE_2D,emptyTexture);
- if(ready){
+ if(updateReflection){
   const mirror=planeMirror(frontModel),m=mirror.matrix;gl.bindFramebuffer(gl.FRAMEBUFFER,reflectionTarget.buffer);gl.viewport(0,0,reflectionTarget.width,reflectionTarget.height);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.uniformMatrix4fv(U.uMirror,false,m);gl.uniform1f(U.uReflectPass,1);gl.uniform4fv(U.uClipPlane,mirror.plane);gl.uniform3f(U.uEye,m[4]*.08+m[8]*eye+m[12],m[5]*.08+m[9]*eye+m[13],m[6]*.08+m[10]*eye+m[14]);
-  for(const c of commands){if(c.page===selected&&[panel.body,panel.front,rim.body,rim.front].includes(c.m))continue;issue(c);lightingStats.reflectionDraws++;}
+  for(const c of commands){if(c.page===selected&&[panel.body,panel.front,rim.body,rim.front].includes(c.m))continue;issue(c);lightingStats.reflectionDraws++;}reflectionKey=key;reflectionTime=ambientTime;
+ }
+ if(ready){
   gl.activeTexture(gl.TEXTURE4);gl.bindTexture(gl.TEXTURE_2D,reflectionTarget.texture);gl.uniform2f(U.uReflectionTexel,1/reflectionTarget.width,1/reflectionTarget.height);lightingStats.enabled=true;
  }
  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(...viewport);gl.useProgram(p);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.uniformMatrix4fv(U.uMirror,false,I());gl.uniform1f(U.uReflectPass,0);gl.uniform3f(U.uEye,0,.08,eye);
