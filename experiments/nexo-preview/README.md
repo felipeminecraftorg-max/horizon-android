@@ -13,6 +13,8 @@ section. Back restores the selected card. There is no separate Enter control.
 ## Working in this preview
 
 - Real mesh/depth rendering, reversible spring motion and pointer capture.
+- Native-resolution front-card text follows the projected geometry independently
+  of GPU render scale; module text uses the same sharp native layer.
 - Mods/Packs/Shaders example catalogs with accent-insensitive local search,
   on/off/favorite filters, sorting, separate details/toggles and persistent state.
 - Preview profile creation/selection, favorites, undo and pack priority controls.

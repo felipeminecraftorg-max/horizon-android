@@ -37,6 +37,18 @@
       oscillator.connect(gain); gain.connect(audio.destination); oscillator.start(now); oscillator.stop(now + .11);
     } catch (_) { /* audio is optional */ }
   }
+  let lastLabelKey = null;
+  function projectLabel(points, index, opacity) {
+    const [a,b,c,d]=points,dx1=b[0]-c[0],dx2=d[0]-c[0],dx3=a[0]-b[0]+c[0]-d[0],dy1=b[1]-c[1],dy2=d[1]-c[1],dy3=a[1]-b[1]+c[1]-d[1],det=dx1*dy2-dx2*dy1;
+    if(Math.abs(det)<.000001)return;
+    const g=(dx3*dy2-dx2*dy3)/det,h=(dx1*dy3-dx3*dy1)/det;
+    const matrix=[(b[0]-a[0]+g*b[0])/1024,(b[1]-a[1]+g*b[1])/1024,0,g/1024,(d[0]-a[0]+h*d[0])/668,(d[1]-a[1]+h*d[1])/668,0,h/668,0,0,1,0,a[0],a[1],0,1];
+    $('front-label').style.transform='matrix3d('+matrix.join(',')+')';$('front-label').style.opacity=opacity;
+    const labelKey=index+'|'+profile().name+'|'+profile().version;if(lastLabelKey===labelKey)return;lastLabelKey=labelKey;
+    $('front-label').querySelector('.front-prefix').textContent=String(index+1).padStart(2,'0')+' / HORIZON';
+    $('front-label').querySelector('.front-title').textContent=NexoState.PAGES[index];
+    $('front-label').querySelector('.front-caption').textContent=index===0?profile().name+' · '+profile().version:['','Sua experiência','Camadas e texturas','Luz e atmosfera','Sua identidade'][index];
+  }
   function refreshPreferences() {
     const prefs = store.get().preferences;
     document.documentElement.style.setProperty('--scale', prefs.textScale);
@@ -212,7 +224,7 @@
   document.addEventListener('visibilitychange', () => setVisible(!document.hidden));
   window.addEventListener('pagehide', rememberScroll);
   window.NexoApp = {
-    store, profile, play, sound, skinRect(){ if(page!=='Skins')return null;const r=document.querySelector('.skin-space').getBoundingClientRect(),c=$('scene').getBoundingClientRect();return {x:r.left-c.left,y:r.top-c.top,width:r.width,height:r.height}; }, ready() { refreshPreferences(); if (store.storageFailed()) notice('O armazenamento está indisponível; esta sessão continuará em memória.'); },
+    store, profile, play, sound, onHomeFace:projectLabel, skinRect(){ if(page!=='Skins')return null;const r=document.querySelector('.skin-space').getBoundingClientRect(),c=$('scene').getBoundingClientRect();return {x:r.left-c.left,y:r.top-c.top,width:r.width,height:r.height}; }, ready() { refreshPreferences(); if (store.storageFailed()) notice('O armazenamento está indisponível; esta sessão continuará em memória.'); },
     selectionChanged(index, isOpen) { const changed = store.get().selected !== index; store.select(index); moduleChanged(NexoState.PAGES[index], isOpen); if (changed) sound(); },
     onFrame({ opening, rect }) {
       if (!page) return;
