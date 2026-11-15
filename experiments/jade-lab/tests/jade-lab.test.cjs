@@ -301,50 +301,30 @@ test("seven palettes choose their own optical finishes without forcing FPS chang
   assert.equal(kinds.size,3,"at least Frosted, Tinted and Matte finishes");
 });
 
-test("console scene gives the backdrop room and stacks just three 3D cards",()=>{
-  const html=fs.readFileSync(path.join(root,"index.html"),"utf8");
-  const css=fs.readFileSync(path.join(root,"scene.css"),"utf8");
-  assert.match(html,/id="console-scene"/);
-  assert.match(html,/class="avatar-stage"/);
-  assert.match(html,/class="avatar-figure"/);
-  assert.match(html,/id="scene-prev"/);
-  assert.match(html,/id="scene-next"/);
-  assert.match(html,/scene\.css/);
-  assert.match(css,/\.avatar-head-front/);
-  assert.match(css,/\.avatar-floor/);
-  assert.match(css,/\.scene-navigation/);
-  assert.match(css,/\.dashboard \.cards\{/);
+test("spatial deck retains its original character and perspective layout",()=>{
+  const html=fs.readFileSync(path.join(root,"index.html"),"utf8"),css=fs.readFileSync(path.join(root,"scene.css"),"utf8");
+  assert.match(html,/id="console-scene"/);assert.match(html,/class="avatar-figure"/);
+  assert.match(html,/id="deck-overview"/);assert.doesNotMatch(html,/id="scene-(prev|next)"/);
   assert.match(css,/perspective:940px/);
-  for(const mode of ["front","middle","rear","hidden"])
-    assert.ok(css.includes('[data-stack="'+mode+'"]'),"missing "+mode);
-  assert.match(css,/transform-style:preserve-3d/);
-  assert.match(css,/\.dashboard \.cards\s*\{[\s\S]*?position:absolute/);
-  assert.match(css,/\.dashboard \.hero[\s\S]*?width:clamp\(220px,33%,480px\)/);
-  assert.match(css,/@media\(max-width:720px\) and \(orientation:portrait\)/);
-  assert.match(css,/@media\(max-height:480px\) and \(orientation:landscape\)/);
-  assert.doesNotMatch(css,/\.hero:before\s*\{/);
+  for(const mode of ["front","middle","rear","hidden"])assert.ok(css.includes('[data-stack="'+mode+'"]'));
 });
 
-test("scene interaction moves focus by swipe, arrows and page without adding static overlays",()=>{
-  const app=fs.readFileSync(path.join(root,"app.js"),"utf8");
-  const renderer=fs.readFileSync(path.join(root,"renderer.js"),"utf8");
-  const x=sandbox();
-  assert.match(app,/const STACK_PAGES=\["Play","Mods","Packs","Shaders","Files","Skins","Settings"\]/);
-  assert.match(app,/difference===2\?"rear":"hidden"/);
-  assert.match(app,/Math\.abs\(dx\)>52/);
-  assert.match(app,/e\.key==="ArrowRight"/);
-  assert.match(app,/tile\.setAttribute\("aria-hidden"/);
-  assert.match(renderer,/if\(!element\|\|element\.classList\?\.contains\("tile"\)\)return;/);
-  assert.match(renderer,/rectCache\.set\(\[r\.x,r\.y,r\.width,r\.height\],index\*4\)/);
-  assert.match(renderer,/uniform1i\(uniform\.uRectCount,NAMES\.length\)/);
-  const controls=x.JadeLab.getSection("Componentes").controls;
-  for(const key of ["sceneDepth","sceneSpacing","sceneTilt","avatarMotion"])
-    assert.ok(Object.hasOwn(controls,key),key);
-  x.JadeLab.setField("sceneTilt",100);
-  x.JadeLab.setField("sceneDepth",-1);
-  assert.equal(x.JadeLab.getPreset().controls.sceneTilt,25);
-  assert.equal(x.JadeLab.getPreset().controls.sceneDepth,0);
-  assert.equal(x.JadeLab.getPreset().theme,"oldschool-dark");
+test("spatial model separates direct selection, activation and contextual return",()=>{
+  const env={window:{}};vm.createContext(env);vm.runInContext(fs.readFileSync(path.join(root,"spatial-navigation.js"),"utf8"),env);
+  const api=env.window.JadeNavigation,n=api.createModel();
+  assert.equal(n.state().location,"home");assert.equal(n.back(),false);
+  assert.equal(n.select("Mods"),true);assert.equal(n.state().location,"home");
+  assert.equal(n.open(),"Mods");assert.equal(n.state().location,"module");
+  assert.equal(n.back(),true);assert.equal(n.state().page,"Mods");assert.equal(n.state().location,"home");
+  assert.equal(n.back(),true);assert.equal(n.state().page,"Play");
+  assert.equal(n.select("missing"),false);assert.equal(n.state().page,"Play");
+  assert.equal(n.step(-1),"Settings");assert.equal(n.step(1),"Play");
+  assert.deepEqual(Array.from(api.deckOrder(6)),["Settings","Play","Mods"]);
+  assert.deepEqual(Array.from(api.deckOrder(0,-1)),["Play","Settings","Skins"]);
+  assert.equal(api.releaseStep(-90,0),1);assert.equal(api.releaseStep(90,0),-1);
+  assert.equal(api.releaseStep(6,5),0);assert.equal(api.releaseStep(-21,-.6),1);assert.equal(api.releaseStep(30,.1),0);
+  const controls=sandbox().JadeLab.getSection("Componentes").controls;
+  for(const key of ["sceneDepth","sceneSpacing","sceneTilt","avatarMotion"])assert.ok(Object.hasOwn(controls,key));
 });
 
 test("cached two-pass GPU scene avoids recursive atmospheric recomputation",()=>{

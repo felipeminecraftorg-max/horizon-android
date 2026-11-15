@@ -1,5 +1,29 @@
 # Horizon Jade Lab — DARK (Android)
 
+### 1.5 — tactile deck and spatial module worlds
+
+The original overlapping deck and character remain the home anchor. Raised
+planes, shared pitch/yaw, material edges and GPU highlights now extend to the
+hero, controls and module screens. On-screen previous/next arrows are removed.
+Cards follow a captured pointer during drag and snap on release; touching an
+exposed card selects it without activating a module. `Ver seções` jumps to any
+of the seven sections. The selected section's action button opens its own
+animated spatial interface and Back restores the selected card.
+
+Play, Mods, Packs, Shaders, Files, Skins and Settings have different scene
+motifs and light fields under the shared wave shader. Navigation atmosphere is
+transient and does not overwrite the exported visual preset. Mods provides a
+filterable/searchable sample catalog and persistent local selection. Packs,
+Shaders, Files and Settings operate the actual laboratory presets, materials,
+imports/exports and controls. Skins changes the demonstration character's
+finish; Play previews profiles/session entry. This standalone app does not
+install mods, fetch real skins, authenticate accounts or launch Minecraft.
+
+`spatial-browser-check.cjs` exercises actual touch events, direct selection,
+finger-following movement, separate module entry/Back, module actions, exports,
+seven distinct shader atmospheres at a frozen clock and mobile layouts.
+
+
 ### 1.4.1 — original spatial deck retained
 
 The v1.4 layout, three-card perspective stack, original CSS character, hero,
