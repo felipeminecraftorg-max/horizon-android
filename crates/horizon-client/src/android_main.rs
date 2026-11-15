@@ -49,6 +49,8 @@ mod lane3;
 mod mod_convert;
 #[path = "android/native_ime.rs"]
 mod native_ime;
+#[path = "android/nexo.rs"]
+mod nexo;
 #[path = "android/performance.rs"]
 mod performance;
 #[path = "android/platform.rs"]
@@ -232,6 +234,7 @@ fn android_main(app: AndroidApp) {
     // Lane 3's API slice, which the phone loads with the Java mods (android/lane3.rs).
     let lane3_api = app.asset_manager().open(c"lane3-api.jar");
     APP.with(|slot| *slot.borrow_mut() = Some(app));
+    if !nexo::initialize() { log::warn!("Old School web view unavailable; native launcher remains available"); }
     let Some(cache) = platform::cache_dir() else {
         log::error!("Android supplied no application cache directory");
         return;

@@ -37,8 +37,40 @@ struct Out {
         let glint = hud.size.w * textureSample(glint_tex, glint_sampler, in.glint_uv);
         return vec4(glint.rgb * glint.rgb, mask);
     }
-    let c = textureSample(atlas, atlas_sampler, in.uv) * in.color;
+    var c = textureSample(atlas, atlas_sampler, in.uv) * in.color;
     if c.a < 0.004 { discard; }
+
+    // Horizon Jade pictograms are original PNG assets in the shared atlas.
+    // glint_uv.x in [-5, -3] is reserved *only* for Jade UI icon vertices;
+    // vanilla world/glint/text quads and Liquid Glass keep their previous path.
+    // Compute a true per-fragment emboss normal from the PNG's alpha field,
+    // not from manually scripted outlines or pre-baked shine in the image.
+    if in.glint_uv.x < -2.0 {
+        let texel = 1. / vec2<f32>(textureDimensions(atlas));
+        let l = textureSampleLevel(atlas, atlas_sampler,
+            in.uv - vec2(texel.x, 0.), 0.).a;
+        let r = textureSampleLevel(atlas, atlas_sampler,
+            in.uv + vec2(texel.x, 0.), 0.).a;
+        let u = textureSampleLevel(atlas, atlas_sampler,
+            in.uv - vec2(0., texel.y), 0.).a;
+        let d = textureSampleLevel(atlas, atlas_sampler,
+            in.uv + vec2(0., texel.y), 0.).a;
+        let bevel = normalize(vec3((l - r) * 1.45, (u - d) * 1.45, 0.76));
+        let cursor_light = vec2(clamp(in.glint_uv.x + 4., -1., 1.),
+                                clamp(in.glint_uv.y, -1., 1.));
+        let light_dir = normalize(vec3(
+            -0.48 + 0.65 * cursor_light.x,
+            -0.52 + 0.65 * cursor_light.y,
+            1.25
+        ));
+        let half_v = normalize(light_dir + vec3(0., 0., 1.));
+        let diffuse = 0.79 + 0.19 * max(dot(bevel, light_dir), 0.);
+        let spec = pow(max(dot(bevel, half_v), 0.), 36.) * 0.08;
+        let edge = clamp(1. - bevel.z, 0., 1.) * 0.085;
+        let jade = vec3(0.38, 0.77, 0.46);
+        c = vec4(clamp(c.rgb * diffuse + (vec3(spec) + jade * edge) * c.a,
+            vec3(0.), vec3(1.)), c.a);
+    }
     return c;
 }
 @fragment fn fs_crosshair(in: Out) -> @location(0) vec4<f32> {

@@ -134,6 +134,7 @@ pub mod title;
 pub mod toasts;
 pub mod ui_text;
 pub mod ui_theme;
+pub mod launcher_nexo;
 pub mod vanillagen;
 pub mod win_screen;
 pub mod world_spawn;

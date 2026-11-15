@@ -1,6 +1,7 @@
 /* Nexo preview controls. Game/account/filesystem operations remain host capabilities. */
 (function () {
   'use strict';
+  if(window.HorizonHost)return;
   const $ = id => document.getElementById(id), root = $('nexo-app');
   let storage; try { storage = localStorage; } catch (_) { storage = null; }
   const store = NexoState.createStore(storage), dialogs = [...document.querySelectorAll('dialog:not(#intro-dialog)')];

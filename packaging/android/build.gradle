@@ -50,9 +50,17 @@ android {
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }
 dependencies {
+    implementation 'androidx.webkit:webkit:1.14.0'
     // D8, to turn a Java mod's jar into DEX on the phone (mod converter lane 3). BSD-3-Clause.
     implementation 'com.android.tools:r8:8.11.+'
     // Gson, which Minecraft ships and many Java mods read their settings with. Apache-2.0.
     implementation 'com.google.code.gson:gson:2.11.0'
 }
 layout.buildDirectory = file('../../.local/android/gradle-build')
+def nexoAssets = layout.buildDirectory.dir('generated/nexo-assets')
+tasks.register('syncNexoAssets', Sync) {
+    from('../../experiments/nexo-preview/android/src/main/assets')
+    into(nexoAssets.map { it.dir('nexo') })
+}
+android.sourceSets.main.assets.srcDir(nexoAssets)
+tasks.named('preBuild').configure { dependsOn('syncNexoAssets') }

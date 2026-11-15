@@ -492,6 +492,7 @@ pub fn show_multiline(text: &str) {
     show_editor(text, true);
 }
 fn show_editor(text: &str, multiline: bool) {
+    if crate::nexo::active() { return; }
     MULTILINE.with(|mode| mode.set(multiline));
     if crate::native_ime::show(text) {
         EDIT.with(|e| *e.borrow_mut() = Some(text.into()));
