@@ -1,7 +1,7 @@
-/* Original player for softly mastered Kenney CC0 source clips; no synthesis or remote audio. */
+/* Offline player for edited Adobe Firefly clips; original source/edits in sounds/sources.json. */
 (function(){
   'use strict';
-  const clips={select:['soft-select.ogg',.8],open:['soft-open.ogg',1],back:['soft-back.ogg',.9],confirm:['soft-confirm.ogg',.8],error:['soft-error.ogg',.45],toggle:['soft-toggle.ogg',.75],click:['soft-click.ogg',.6]};
+  const clips={select:['firefly-select.ogg',.8],open:['firefly-open.ogg',1],back:['firefly-back.ogg',.9],confirm:['firefly-confirm.ogg',.8],error:['firefly-error.ogg',.45],toggle:['firefly-toggle.ogg',.75],click:['firefly-click.ogg',.6]};
   const players=new Map(),played={},failures={};let visible=!document.hidden,volume=.18,lastKind='',lastAt=-1000;
   const clamp=n=>Math.max(0,Math.min(1,Number(n)||0));
   for(const [kind,[file,gain]] of Object.entries(clips)){

@@ -1,4 +1,4 @@
-# Horizon Nexo — Preview Update 5 — spacious libraries and a Nexo introduction
+# Horizon Nexo — Preview Update 6 — edited Adobe Firefly interface audio
 
 The approved five-panel 3D carousel is the source of this implementation. Geometry,
 closed depth path, directional lighting and the one-shot icon presentation remain
@@ -25,7 +25,7 @@ surface. There is no separate Enter control.
 - Real JSON catalog import/export with validation and atomic failure recovery.
 - A real 3D demonstration character with independent touch rotation in Skins.
 - Persistent text size, reduced motion, frame limit, GPU render scale, warm-light
-  adjustment, seven softly mastered CC0 cues and optional native haptics.
+  adjustment, seven edited Firefly cues and optional native haptics.
 - Android Back delegation, native pause/resume, suspended-background rendering and a separate
   Android identity: `dev.horizon.nexo.preview`. Existing Horizon/Jade apps remain.
 
@@ -66,13 +66,12 @@ follow those same projected faces for keyboard/screen-reader activation and
 focus; there is no secondary row or global arrow-key menu. The integrated return
 arrow is a 48-pixel target in the panel header. Android Back is retained.
 
-The seven audio cues are edited Kenney Interface Sounds 1.0 assets (CC0),
+Update 3 used seven edited Kenney Interface Sounds 1.0 assets (CC0),
 from five upstream files. The sharp tonal cues and old error buzz are replaced by
 short, lower/filtered samples with 6 ms attacks, soft tails and matched levels.
 Decoded peaks remain below -10 dBFS. Playback has another 0.5 master factor,
 per-event gains, a single active voice and 110/180 ms repeat limits. Generic
-dialog open/close no longer plays an extra cue. Source hashes and exact rate,
-EQ, trim, fade and gain settings are bundled in `sounds/sources.json`.
+dialog open/close no longer plays an extra cue. Update 6 replaces those source files as documented below.
 
 Motion blur uses current/previous per-mesh transforms and camera projection to
 write a real per-pixel screen-velocity buffer. A 1/90-second shutter factor is
@@ -112,6 +111,28 @@ replayed, and respects reduced motion plus a saved startup switch. Native pause
 freezes both animation timing and scene rendering; resuming does not restart it.
 Replay from an open module preserves that module and fades back to its content.
 No external movie, generated raster asset or new audio is required.
+
+## Update 6 Firefly interface audio
+
+The seven current cues are edited derivatives of four one-second Adobe Firefly
+variations generated through the owner’s account on 2026-11-15. The next request
+reached the daily free quota. There are four generated sources, not seven
+independent generations. No paid plan or trial was activated.
+
+Distinct trims, rates, one reverse, explicit averaged mono conversion, gentle
+high/low-pass filters, fades and matched levels produce select/open/back/confirm/
+error/toggle/click. They replace all seven previous pack samples. The existing
+volume control, quiet default, single voice, repeat guard and native pause remain.
+The intro remains silent. The source hashes, exact prompt, edits and output hashes
+are in `sounds/sources.json`; `NOTICE-Firefly-Audio.txt` replaces the former CC0
+pack notice. No CC0 grant is asserted for Firefly output.
+
+Reproduce with `python3 experiments/nexo-preview/tools/master_firefly.py` and its
+`--source-dir`, `--output-dir` and `--wav-dir` options. Raw WAVs stay outside the
+public tree. The audio-focused CI checks actual touch-triggered playback, all
+seven distinct decoded assets, source hashes, peak levels, mute, repetition,
+single-voice interruption and pause/resume. The scene and library layout are
+unchanged from the tested Update 5; the full UI suite remains available.
 
 ## Explicit integration limits
 

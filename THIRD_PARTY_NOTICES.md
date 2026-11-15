@@ -96,15 +96,14 @@ The complete notice and license are bundled beside it in `OFL-Michroma.txt`.
 
 ## Nexo preview interface audio
 
-The seven `soft-*.ogg` cues in `experiments/nexo-preview/android/src/main/assets/sounds/`
-are modified from five Kenney Interface Sounds 1.0 source files, by Kenney
-(Kenney Vleugels), dedicated to the public domain under CC0 1.0.
-[Official pack](https://kenney.nl/assets/interface-sounds).
-The original pack notice is bundled as `LICENSE-Interface-Sounds.txt`.
+The seven `firefly-*.ogg` cues in `experiments/nexo-preview/android/src/main/assets/sounds/`
+are edited derivatives of four one-second Adobe Firefly variations generated
+on 2026-11-15 using the project owner's account through the Firefly website.
+The exact prompt, source/output hashes, variation mapping and processing are
+recorded in `sounds/sources.json`; the bundled `NOTICE-Firefly-Audio.txt`
+explains the source. No CC0 grant is asserted for these generated assets.
 
-Download mirror: [GeorgeQLe/assets-sfx-ui at 760afd03](https://github.com/GeorgeQLe/assets-sfx-ui/tree/760afd035e8fc3cd7fb5bc58d49a967649875e3e).
-`sounds/sources.json` records the exact original paths, upstream Git blobs and
-SHA-256 checksums, output checksums, rate/EQ/fade settings and mastering gain.
-Changes: resampling, high/low-pass filtering, short trims/fades, mono conversion
-and RMS/peak level matching. These are edited existing audio assets; no generated
-or synthesized replacement cues are used. All derivatives remain CC0.
+Only one batch was generated; the next request reached the free daily quota.
+The seven cues use trims, rate adjustment, one reversal, filtering, fades,
+mono conversion and level matching. Earlier Nexo previews used edited Kenney
+CC0 sounds; those files and their pack notice are replaced in this preview.
