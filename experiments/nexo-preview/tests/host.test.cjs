@@ -1,0 +1,7 @@
+'use strict';
+const{test}=require('node:test'),assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),path=require('node:path');
+const source=fs.readFileSync(path.join(__dirname,'../android/src/main/assets/host.js'),'utf8');
+function boot(){const sent=[],scope={setTimeout,clearTimeout,Promise,Map,Set,JSON,Error};scope.window=scope;scope.HorizonNative={request(json){sent.push(JSON.parse(json));return true;}};vm.runInNewContext(source,scope);return{scope,sent,host:scope.HorizonHost};}
+test('native replies settle exactly their requests and reject operation errors',async()=>{const{host,sent}=boot();const a=host.request('page',{page:'mods'}),b=host.request('press',{control:19});let updates=0;host.subscribe(()=>updates++);host.receive(JSON.stringify({schema:1,live:true,controls:[],replies:[{id:sent[0].id,error:null}]}));await a;host.receive(JSON.stringify({schema:1,live:true,controls:[],replies:[{id:sent[1].id,error:'stale control'}]}));await assert.rejects(b,/stale control/);assert.equal(updates,2);assert.equal(host.get().live,true);});
+test('malformed or non-native frames cannot replace the current state',()=>{const{host}=boot();host.receive('broken');host.receive(JSON.stringify({schema:1,live:false,controls:[]}));assert.equal(host.get(),null);});
+test('refused transport does not leave an unsettled request',async()=>{const{host,scope}=boot();scope.HorizonNative.request=()=>false;await assert.rejects(host.request('play'),/não está disponível/);});

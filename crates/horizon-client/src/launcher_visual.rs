@@ -1,7 +1,9 @@
 //! Android launcher materials and shared, captureable native page components.
 //! Wallpaper art is original and cached. Liquid Glass uses GPU backdrop lenses;
 //! Dark Aero retains its cached wallpaper material. Neither reads pixels to the CPU.
-use super::{ExperiencePreset, Face, Icon, LauncherThemeConfig, ThemePreset, Ui, active_theme, color};
+use super::{
+    ExperiencePreset, Face, Icon, LauncherThemeConfig, ThemePreset, Ui, active_theme, color,
+};
 use std::{cell::RefCell, collections::HashMap};
 #[path = "launcher_console_dashboard.rs"]
 mod console_layout;
@@ -172,7 +174,6 @@ fn texture(ui: &mut Ui<'_>, paper: Wallpaper, blur: bool) -> Option<super::Rect>
     })
 }
 
-
 // Small, original Minecraft-inspired landscapes, painted once in the native
 // atlas. No external CDN, copyrighted game screenshot, or Android asset request.
 const SCENE_W: u32 = 384;
@@ -191,11 +192,19 @@ fn scene_pixels(sunset: bool) -> Vec<u8> {
             let by = (y / 4) as f32 * 4.;
             let u = bx / SCENE_W as f32;
             let v = by / SCENE_H as f32;
-            let noise = (((x / 4).wrapping_mul(15427)
-                ^ (y / 4).wrapping_mul(64901)
-                ^ 0x4D3B19) % 31) as f32 - 15.;
-            let top = if sunset { [37., 39., 78.] } else { [30., 61., 82.] };
-            let low = if sunset { [243., 163., 123.] } else { [136., 168., 174.] };
+            let noise = (((x / 4).wrapping_mul(15427) ^ (y / 4).wrapping_mul(64901) ^ 0x4D3B19)
+                % 31) as f32
+                - 15.;
+            let top = if sunset {
+                [37., 39., 78.]
+            } else {
+                [30., 61., 82.]
+            };
+            let low = if sunset {
+                [243., 163., 123.]
+            } else {
+                [136., 168., 174.]
+            };
             let sky_t = (v * 1.4).clamp(0., 1.);
             let mut rgb = [
                 mix(top[0], low[0], sky_t),
@@ -205,7 +214,9 @@ fn scene_pixels(sunset: bool) -> Vec<u8> {
             // Striped block-clouds, intentionally subtle in the dark variant.
             let cloud = (u * 11. + v * 4.).sin() + (u * 21. - v * 5.).cos() * 0.5;
             if v > 0.12 && v < 0.47 && cloud > 1.22 {
-                for component in &mut rgb { *component = mix(*component, 210., 0.17); }
+                for component in &mut rgb {
+                    *component = mix(*component, 210., 0.17);
+                }
             }
             let sun_x = if sunset { 0.71 } else { 0.79 };
             let sun_y = if sunset { 0.53 } else { 0.47 };
@@ -214,9 +225,7 @@ fn scene_pixels(sunset: bool) -> Vec<u8> {
             for k in 0..3 {
                 rgb[k] = mix(rgb[k], [250., 216., 175.][k], warm * 0.68);
             }
-            let ridge = 0.48
-                + (u * 10.1).sin() * 0.047
-                + (u * 29.7).sin() * 0.019
+            let ridge = 0.48 + (u * 10.1).sin() * 0.047 + (u * 29.7).sin() * 0.019
                 - (u - 0.77).max(0.).powi(2) * 2.4;
             let ridge = (ridge * 40.).floor() / 40.;
             if v > ridge {
@@ -226,14 +235,21 @@ fn scene_pixels(sunset: bool) -> Vec<u8> {
                     [46. - 13. * v, 78. - 18. * v, 85. - 12. * v]
                 };
             }
-            let grass = 0.74 + (u * 11.).sin() * 0.028
-                + (u * 37.).sin() * 0.013
-                - (u - 0.3).powi(2) * 0.08;
+            let grass =
+                0.74 + (u * 11.).sin() * 0.028 + (u * 37.).sin() * 0.013 - (u - 0.3).powi(2) * 0.08;
             if v > grass {
-                rgb = if sunset { [46., 85., 47.] } else { [30., 73., 51.] };
+                rgb = if sunset {
+                    [46., 85., 47.]
+                } else {
+                    [30., 73., 51.]
+                };
                 let soil = ((v - grass) * 10.).floor() as i32 % 5;
-                if soil == 3 { rgb = [44., 53., 45.]; }
-                if (v - grass) < 0.025 { rgb = [70., 121., 54.]; }
+                if soil == 3 {
+                    rgb = [44., 53., 45.];
+                }
+                if (v - grass) < 0.025 {
+                    rgb = [70., 121., 54.];
+                }
             }
             // Layered square-canopy trees and dark thin trunks.
             for &cx in &[0.08_f32, 0.19, 0.31, 0.46, 0.60, 0.89] {
@@ -247,25 +263,31 @@ fn scene_pixels(sunset: bool) -> Vec<u8> {
                 if (du < 0.055 && v > trunk_top - 0.070 && v < trunk_top + 0.045)
                     || (du < 0.038 && v > trunk_top - 0.095 && v < trunk_top + 0.065)
                 {
-                    rgb = if sunset { [37., 68., 47.] } else { [30., 77., 56.] };
+                    rgb = if sunset {
+                        [37., 68., 47.]
+                    } else {
+                        [30., 77., 56.]
+                    };
                     rgb[1] += noise.abs() * 0.55;
                 }
             }
             // Quiet reflective inlet; the reflection stretches toward the sun.
-            let inlet = v > 0.755 && u > 0.49 && u < 0.88
-                && v < 0.94 + (u * 22.).sin() * 0.02;
+            let inlet = v > 0.755 && u > 0.49 && u < 0.88 && v < 0.94 + (u * 22.).sin() * 0.02;
             if inlet {
-                rgb = if sunset { [43., 78., 102.] } else { [26., 69., 83.] };
-                let ripple = ((v * 96. + u * 22.).sin().abs() * 0.5
-                    + (u * 44.).cos().abs() * 0.3).clamp(0., 1.);
+                rgb = if sunset {
+                    [43., 78., 102.]
+                } else {
+                    [26., 69., 83.]
+                };
+                let ripple = ((v * 96. + u * 22.).sin().abs() * 0.5 + (u * 44.).cos().abs() * 0.3)
+                    .clamp(0., 1.);
                 let glint = (1. - (u - sun_x).abs() * 5.0).clamp(0., 1.);
                 rgb[0] += ripple * glint * if sunset { 95. } else { 39. };
                 rgb[1] += ripple * glint * 70.;
                 rgb[2] += ripple * glint * 47.;
             }
             for k in 0..3 {
-                rgb[k] = (rgb[k] + noise * if v > ridge { 0.20 } else { 0.07 })
-                    .clamp(0., 255.);
+                rgb[k] = (rgb[k] + noise * if v > ridge { 0.20 } else { 0.07 }).clamp(0., 255.);
                 pixels.push(rgb[k] as u8);
             }
             pixels.push(255);
@@ -277,8 +299,11 @@ fn scene_texture(ui: &mut Ui<'_>, sunset: bool) -> Option<super::Rect> {
     SCENES.with(|scenes| {
         let mut scenes = scenes.borrow_mut();
         let pixels = scenes.entry(sunset).or_insert_with(|| scene_pixels(sunset));
-        let key = if sunset { "launcher-wallpaper:scene:console" }
-            else { "launcher-wallpaper:scene:liquid" };
+        let key = if sunset {
+            "launcher-wallpaper:scene:console"
+        } else {
+            "launcher-wallpaper:scene:liquid"
+        };
         super::with_cache(ui.atlas, |cache| {
             cache.image(ui.atlas, key, SCENE_W, SCENE_H, pixels)
         })
@@ -287,9 +312,13 @@ fn scene_texture(ui: &mut Ui<'_>, sunset: bool) -> Option<super::Rect> {
 /// Draw a cached original world-like scene inside a rounded rectangle.
 /// Rounded pixels are clipped by symmetric bands, without covering text.
 fn scene(ui: &mut Ui<'_>, r: [f32; 4], corner: f32, sunset: bool) {
-    let Some(t) = scene_texture(ui, sunset) else { return; };
+    let Some(t) = scene_texture(ui, sunset) else {
+        return;
+    };
     let [x, y, w, h] = r;
-    if w <= 0. || h <= 0. { return; }
+    if w <= 0. || h <= 0. {
+        return;
+    }
     let corner = corner.min(w * 0.5).min(h * 0.5);
     let mut band = |top: f32, height: f32, inset: f32| {
         let u0 = t.u0 + (t.u1 - t.u0) * (inset / w);
@@ -297,8 +326,15 @@ fn scene(ui: &mut Ui<'_>, r: [f32; 4], corner: f32, sunset: bool) {
         let v0 = t.v0 + (t.v1 - t.v0) * ((top - y) / h);
         let v1 = t.v0 + (t.v1 - t.v0) * ((top + height - y) / h);
         ui.emit_clipped_uv(
-            ui.px_x(x + inset), ui.px_y(top), ui.px_x(x + w - inset),
-            ui.px_y(top + height), u0, v0, u1, v1, u32::MAX,
+            ui.px_x(x + inset),
+            ui.px_y(top),
+            ui.px_x(x + w - inset),
+            ui.px_y(top + height),
+            u0,
+            v0,
+            u1,
+            v1,
+            u32::MAX,
         );
     };
     for i in 0..12 {
@@ -317,8 +353,7 @@ fn scene(ui: &mut Ui<'_>, r: [f32; 4], corner: f32, sunset: bool) {
 fn console_paper_pixel(u: f32, v: f32) -> [u8; 4] {
     let u = u.clamp(0.0, 1.0);
     let v = v.clamp(0.0, 1.0);
-    let glow = (-((u - 0.26) / 0.55).powi(2)
-        - ((v - 0.35) / 0.75).powi(2)).exp();
+    let glow = (-((u - 0.26) / 0.55).powi(2) - ((v - 0.35) / 0.75).powi(2)).exp();
     let lower = (v * v).clamp(0.0, 1.0);
     let grain = ((u * 131.2 + v * 73.4).sin() * 0.5 + 0.5) * 0.7;
     [
@@ -351,13 +386,25 @@ pub fn console_background(ui: &mut Ui<'_>, r: [f32; 4]) {
             pixels
         });
         if let Some(t) = super::with_cache(ui.atlas, |cache| {
-            cache.image(ui.atlas, "launcher-wallpaper:horizon-jade-v1",
-                TEX_W, TEX_H, pixels)
+            cache.image(
+                ui.atlas,
+                "launcher-wallpaper:horizon-jade-v1",
+                TEX_W,
+                TEX_H,
+                pixels,
+            )
         }) {
             let [x, y, w, h] = r;
             ui.emit_clipped_uv(
-                ui.px_x(x), ui.px_y(y), ui.px_x(x + w), ui.px_y(y + h),
-                t.u0, t.v0, t.u1, t.v1, u32::MAX,
+                ui.px_x(x),
+                ui.px_y(y),
+                ui.px_x(x + w),
+                ui.px_y(y + h),
+                t.u0,
+                t.v0,
+                t.u1,
+                t.v1,
+                u32::MAX,
             );
         } else {
             ui.fill(r[0], r[1], r[2], r[3], color::hex(0x141816, 255));
@@ -495,14 +542,15 @@ pub fn panel(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, emphasized: bool) {
         );
         return;
     }
-    if th.experience == ExperiencePreset::OldSchool && th.material == Material::Aero
-        && w > 285. && h > 138.
+    if th.experience == ExperiencePreset::OldSchool
+        && th.material == Material::Aero
+        && w > 285.
+        && h > 138.
     {
         // Large panels are a *content* layer, never a mirror of previously
         // rendered controls. This removes repeated ghost labels near edges.
         ui.rounded(x, y, w, h, radius, color::hex(0x142033, 112));
-        ui.stroke_rounded(x, y, w, h, radius, 0.8,
-            color::hex(0xE4E9F6, 75));
+        ui.stroke_rounded(x, y, w, h, radius, 0.8, color::hex(0xE4E9F6, 75));
         return;
     }
     if th.experience == ExperiencePreset::OldSchool && th.material == Material::Aero {
@@ -511,18 +559,26 @@ pub fn panel(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, emphasized: bool) {
         // The controls are not opaque rounded rectangles with fake highlights.
         let optics = th.glass.normalized();
         let compact = h <= 100. || w <= 190.;
-        ui.backdrop_lens(r, radius, color::hex(0xFFFFFF, 0), [
-            if compact { 0.05 } else { 0.02 },
-            if compact { optics.refraction * 0.48 } else { optics.refraction * 0.27 },
-        ]);
+        ui.backdrop_lens(
+            r,
+            radius,
+            color::hex(0xFFFFFF, 0),
+            [
+                if compact { 0.05 } else { 0.02 },
+                if compact {
+                    optics.refraction * 0.48
+                } else {
+                    optics.refraction * 0.27
+                },
+            ],
+        );
         return;
     }
     if th.material == Material::Glass && w > 300. && h > 145. {
         // A spacious photographic/content surface should not have the same
         // heavy lens extrusion as a push button or slider handle.
         ui.rounded(x, y, w, h, radius, color::hex(0x101D29, 100));
-        ui.stroke_rounded(x, y, w, h, radius, 0.9,
-            color::hex(0xDFEBF5, 92));
+        ui.stroke_rounded(x, y, w, h, radius, 0.9, color::hex(0xDFEBF5, 92));
         return;
     }
     if th.material == Material::Glass {
@@ -542,8 +598,7 @@ pub fn panel(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, emphasized: bool) {
             (tint_opacity * 255.) as u8,
         );
         let blur = optics.blur * (if compact { 0.72 } else { 0.34 });
-        let refraction = (optics.refraction * (if compact { 1.24 } else { 0.62 }))
-            .min(24.);
+        let refraction = (optics.refraction * (if compact { 1.24 } else { 0.62 })).min(24.);
         ui.backdrop_lens(r, radius, tint, [blur, refraction]);
         return;
     }
@@ -606,8 +661,20 @@ pub fn panel(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, emphasized: bool) {
     if th.experience == ExperiencePreset::OldSchool {
         // The console style has metal insets and a bottom chrome reflection.
         // These are real per-component details, not a tinted glass skin.
-        ui.fill(x + radius, y + h - 2., (w - 2. * radius).max(0.), 1., color::hex(0xCFD9E6, if emphasized { 94 } else { 42 }));
-        ui.fill(x + radius, y + 2., (w - 2. * radius).max(0.), 0.7, color::hex(0xF7FAFF, if emphasized { 125 } else { 66 }));
+        ui.fill(
+            x + radius,
+            y + h - 2.,
+            (w - 2. * radius).max(0.),
+            1.,
+            color::hex(0xCFD9E6, if emphasized { 94 } else { 42 }),
+        );
+        ui.fill(
+            x + radius,
+            y + 2.,
+            (w - 2. * radius).max(0.),
+            0.7,
+            color::hex(0xF7FAFF, if emphasized { 125 } else { 66 }),
+        );
     }
     ui.stroke_rounded(
         x,
@@ -630,7 +697,16 @@ pub fn panel(ui: &mut Ui<'_>, r: [f32; 4], radius: f32, emphasized: bool) {
 pub fn button(ui: &mut Ui<'_>, rect: [f32; 4], label: &str, icon: Option<Icon>, accent: bool) {
     // A true semicircular cap, not an old-style frosted rounded rectangle.
     let th = active_theme();
-    panel(ui, rect, if th.experience == ExperiencePreset::OldSchool { 10. } else { rect[3] * 0.5 }, accent);
+    panel(
+        ui,
+        rect,
+        if th.experience == ExperiencePreset::OldSchool {
+            10.
+        } else {
+            rect[3] * 0.5
+        },
+        accent,
+    );
     let fg = if accent && th.material == Material::Opaque {
         th.on_accent
     } else {
@@ -660,22 +736,46 @@ pub fn component_card(ui: &mut Ui<'_>, rect: [f32; 4], emphasized: bool) {
     let [x, y, w, h] = rect;
     if th.experience == ExperiencePreset::OldSchool {
         let radius = 10.;
-        ui.rounded(x, y, w, h, radius,
-            if emphasized { th.surface_selected } else { th.surface });
-        let hover = ui.cursor.0 >= x && ui.cursor.0 < x + w
-            && ui.cursor.1 >= y && ui.cursor.1 < y + h;
+        ui.rounded(
+            x,
+            y,
+            w,
+            h,
+            radius,
+            if emphasized {
+                th.surface_selected
+            } else {
+                th.surface
+            },
+        );
+        let hover =
+            ui.cursor.0 >= x && ui.cursor.0 < x + w && ui.cursor.1 >= y && ui.cursor.1 < y + h;
         // Only one hovered card gets a live material evaluation; no per-item
         // reflection pass on hundreds of catalog entries.
         if hover && th.jade_gpu_fx && !th.is_light && h >= 44. {
             ui.backdrop_lens(rect, radius, color::with_alpha(th.accent, 0.), [0., 0.]);
         }
-        ui.stroke_rounded(x, y, w, h, radius, if emphasized { 1.2 } else { 0.85 },
-            if emphasized { th.accent } else { th.border });
+        ui.stroke_rounded(
+            x,
+            y,
+            w,
+            h,
+            radius,
+            if emphasized { 1.2 } else { 0.85 },
+            if emphasized { th.accent } else { th.border },
+        );
         if emphasized {
             ui.rounded(x + 4., y + 11., 3., (h - 22.).max(0.), 1.5, th.accent);
         }
     } else if th.experience == ExperiencePreset::LiquidGlass {
-        ui.rounded(x, y, w, h, 15., color::hex(0x162A32, if emphasized { 105 } else { 77 }));
+        ui.rounded(
+            x,
+            y,
+            w,
+            h,
+            15.,
+            color::hex(0x162A32, if emphasized { 105 } else { 77 }),
+        );
         ui.stroke_rounded(x, y, w, h, 15., 0.8, color::hex(0xE2F7FF, 84));
     } else {
         ui.rounded(x, y, w, h, 14., th.surface);
@@ -688,52 +788,126 @@ pub fn component_chip(ui: &mut Ui<'_>, rect: [f32; 4], selected: bool) {
     let th = active_theme();
     let [x, y, w, h] = rect;
     if th.experience == ExperiencePreset::OldSchool {
-        ui.rounded(x, y, w, h, 7.,
-            if selected { th.surface_selected } else { th.surface });
-        ui.stroke_rounded(x, y, w, h, 7., 0.85,
-            if selected { th.accent } else { th.border });
+        ui.rounded(
+            x,
+            y,
+            w,
+            h,
+            7.,
+            if selected {
+                th.surface_selected
+            } else {
+                th.surface
+            },
+        );
+        ui.stroke_rounded(
+            x,
+            y,
+            w,
+            h,
+            7.,
+            0.85,
+            if selected { th.accent } else { th.border },
+        );
         return;
     }
     if th.experience == ExperiencePreset::Standard {
-        ui.rounded(x, y, w, h, h / 2., if selected { th.accent } else { th.surface });
+        ui.rounded(
+            x,
+            y,
+            w,
+            h,
+            h / 2.,
+            if selected { th.accent } else { th.surface },
+        );
     } else {
         panel(ui, rect, h / 2., selected);
         if selected {
-            ui.stroke_rounded(x + 1., y + 1., w - 2., h - 2.,
-                h / 2. - 1., 0.85, color::hex(0xF1F5FF, 137));
+            ui.stroke_rounded(
+                x + 1.,
+                y + 1.,
+                w - 2.,
+                h - 2.,
+                h / 2. - 1.,
+                0.85,
+                color::hex(0xF1F5FF, 137),
+            );
         }
     }
 }
 
 /// Finger-draggable Glass Lab V7 optical tuning control used in Appearance.
-pub fn optical_calibration_slider(ui: &mut Ui<'_>, rect: [f32; 4],
-    label: &str, value_label: &str, fraction: f32) -> [f32; 4] {
+pub fn optical_calibration_slider(
+    ui: &mut Ui<'_>,
+    rect: [f32; 4],
+    label: &str,
+    value_label: &str,
+    fraction: f32,
+) -> [f32; 4] {
     let theme = active_theme();
     let [x, y, w, h] = rect;
     component_card(ui, rect, false);
-    ui.text(Face::Medium, 13.5, x + 16., y + 8., theme.text_primary, label);
+    ui.text(
+        Face::Medium,
+        13.5,
+        x + 16.,
+        y + 8.,
+        theme.text_primary,
+        label,
+    );
     let value = ui.fit_text(Face::Medium, 12., value_label, (w * 0.37).max(44.));
     let text_width = ui.measure(Face::Medium, 12., &value);
-    ui.text(Face::Medium, 12., x + w - text_width - 17., y + 8.,
-        theme.text_muted, &value);
+    ui.text(
+        Face::Medium,
+        12.,
+        x + w - text_width - 17.,
+        y + 8.,
+        theme.text_muted,
+        &value,
+    );
     let track_x = x + 28.;
     let track_w = (w - 56.).max(32.);
     let track_y = y + h - 22.;
     let t = fraction.clamp(0., 1.);
     let old = theme.experience == ExperiencePreset::OldSchool;
-    ui.rounded(track_x, track_y, track_w, 5., 2.5,
-        if old { theme.surface_dim } else { color::hex(0xE7F5FF, 60) });
+    ui.rounded(
+        track_x,
+        track_y,
+        track_w,
+        5.,
+        2.5,
+        if old {
+            theme.surface_dim
+        } else {
+            color::hex(0xE7F5FF, 60)
+        },
+    );
     if t > 0.005 {
-        ui.rounded(track_x, track_y, (track_w * t).max(2.), 5., 2.5,
-            if old { theme.accent } else { color::hex(0xF2FAFF, 152) });
+        ui.rounded(
+            track_x,
+            track_y,
+            (track_w * t).max(2.),
+            5.,
+            2.5,
+            if old {
+                theme.accent
+            } else {
+                color::hex(0xF2FAFF, 152)
+            },
+        );
     }
     let size = 19.;
-    let thumb = [track_x + track_w * t - size * 0.5,
-        track_y - 7., size, size];
+    let thumb = [track_x + track_w * t - size * 0.5, track_y - 7., size, size];
     // The thumb is the actual GPU material, keeping text outside the lens.
     panel(ui, thumb, if old { 6. } else { size * 0.5 }, true);
-    ui.rounded(thumb[0] + 6., thumb[1] + 6., 7., 7., 3.5,
-        color::hex(0xFFFFFF, if old { 220 } else { 150 }));
+    ui.rounded(
+        thumb[0] + 6.,
+        thumb[1] + 6.,
+        7.,
+        7.,
+        3.5,
+        color::hex(0xFFFFFF, if old { 220 } else { 150 }),
+    );
     [track_x, track_y - 12., track_w, 28.]
 }
 
@@ -748,8 +922,13 @@ pub fn component_slider(ui: &mut Ui<'_>, rect: [f32; 4], value: f32, value_label
         ui.rounded(x, y, w, h, 9., th.surface);
         ui.stroke_rounded(x, y, w, h, 9., 0.8, th.border);
         let caption = ui.fit_text(Face::SemiBold, 12., value_label, w - 16.);
-        ui.centered_fit(Face::SemiBold, 12.,
-            [x + 6., y + 2., w - 12., 18.], th.text_primary, &caption);
+        ui.centered_fit(
+            Face::SemiBold,
+            12.,
+            [x + 6., y + 2., w - 12., 18.],
+            th.text_primary,
+            &caption,
+        );
         let bar_x = x + 10.;
         let bar_y = y + h - 12.;
         let bar_w = (w - 20.).max(24.);
@@ -764,25 +943,56 @@ pub fn component_slider(ui: &mut Ui<'_>, rect: [f32; 4], value: f32, value_label
     }
     panel(ui, rect, h * 0.5, false);
     let caption = ui.fit_text(Face::SemiBold, 12., value_label, w - 16.);
-    ui.centered_fit(Face::SemiBold, 12.,
-        [x + 6., y + 2., w - 12., 18.], color::hex(0xF0F5FC, 245), &caption);
+    ui.centered_fit(
+        Face::SemiBold,
+        12.,
+        [x + 6., y + 2., w - 12., 18.],
+        color::hex(0xF0F5FC, 245),
+        &caption,
+    );
     let bar_x = x + 10.;
     let bar_y = y + h - 12.;
     let bar_w = (w - 20.).max(24.);
     let t = value.clamp(0., 1.);
-    ui.rounded(bar_x, bar_y, bar_w, 5., 2.5,
-        color::hex(if old { 0x71849B } else { 0xDCE9F5 }, 83));
-    ui.rounded(bar_x, bar_y, (bar_w * t).max(2.), 5., 2.5,
-        color::hex(if old { 0xCAD7EA } else { 0xEDF9FF }, if old { 185 } else { 128 }));
+    ui.rounded(
+        bar_x,
+        bar_y,
+        bar_w,
+        5.,
+        2.5,
+        color::hex(if old { 0x71849B } else { 0xDCE9F5 }, 83),
+    );
+    ui.rounded(
+        bar_x,
+        bar_y,
+        (bar_w * t).max(2.),
+        5.,
+        2.5,
+        color::hex(
+            if old { 0xCAD7EA } else { 0xEDF9FF },
+            if old { 185 } else { 128 },
+        ),
+    );
     let thumb_w = if old { 9. } else { 11. };
-    let thumb_x = (bar_x + bar_w * t - thumb_w * 0.5)
-        .clamp(bar_x - 1., bar_x + bar_w - thumb_w + 1.);
-    ui.rounded(thumb_x, bar_y - 4., thumb_w, 13.,
+    let thumb_x =
+        (bar_x + bar_w * t - thumb_w * 0.5).clamp(bar_x - 1., bar_x + bar_w - thumb_w + 1.);
+    ui.rounded(
+        thumb_x,
+        bar_y - 4.,
+        thumb_w,
+        13.,
         if old { 3.5 } else { thumb_w * 0.5 },
-        color::hex(if old { 0xE1E7EF } else { 0xF7FCFF }, 229));
-    ui.stroke_rounded(thumb_x, bar_y - 4., thumb_w, 13.,
+        color::hex(if old { 0xE1E7EF } else { 0xF7FCFF }, 229),
+    );
+    ui.stroke_rounded(
+        thumb_x,
+        bar_y - 4.,
+        thumb_w,
+        13.,
         if old { 3.5 } else { thumb_w * 0.5 },
-        0.8, color::hex(0xFFFFFF, 155));
+        0.8,
+        color::hex(0xFFFFFF, 155),
+    );
 }
 
 /// Spring-state keyed by the switch's actual screen position. Controls are
@@ -799,11 +1009,13 @@ std::thread_local! {
         = std::cell::RefCell::new(std::collections::HashMap::new());
 }
 pub fn switch_motion_active() -> bool {
-    V7_SWITCH_ANIMATIONS.with(|cache| cache.borrow().values().any(|animation| {
-        animation.last_frame.elapsed().as_secs_f32() < 0.07
-            && ((animation.position - animation.target).abs() > 0.008
-                || animation.velocity.abs() > 0.02)
-    }))
+    V7_SWITCH_ANIMATIONS.with(|cache| {
+        cache.borrow().values().any(|animation| {
+            animation.last_frame.elapsed().as_secs_f32() < 0.07
+                && ((animation.position - animation.target).abs() > 0.008
+                    || animation.velocity.abs() > 0.02)
+        })
+    })
 }
 fn switch_thumb_fraction(x: f32, y: f32, enabled: bool, style: ExperiencePreset) -> f32 {
     let target = if enabled { 1. } else { 0. };
@@ -829,11 +1041,18 @@ fn switch_thumb_fraction(x: f32, y: f32, enabled: bool, style: ExperiencePreset)
             target,
             last_frame: now,
         });
-        let dt = now.duration_since(motion.last_frame).as_secs_f32().min(0.08);
+        let dt = now
+            .duration_since(motion.last_frame)
+            .as_secs_f32()
+            .min(0.08);
         motion.last_frame = now;
         motion.target = target;
         let (position, velocity) = super::launcher_preset_pack::spring_position(
-            style, motion.position, motion.velocity, target, dt,
+            style,
+            motion.position,
+            motion.velocity,
+            target,
+            dt,
         );
         motion.position = position.clamp(-0.08, 1.08);
         motion.velocity = velocity.clamp(-10., 10.);
@@ -848,30 +1067,59 @@ pub fn component_switch(ui: &mut Ui<'_>, x: f32, y: f32, on: bool) {
     let old = th.experience == ExperiencePreset::OldSchool;
     let rect = [x, y, 52., 28.];
     if old {
-        ui.rounded(x, y, 52., 28., 10.,
-            if on { th.accent } else { th.surface_dim });
-        ui.stroke_rounded(x, y, 52., 28., 10., 0.85,
-            if on { th.accent } else { th.border });
+        ui.rounded(
+            x,
+            y,
+            52.,
+            28.,
+            10.,
+            if on { th.accent } else { th.surface_dim },
+        );
+        ui.stroke_rounded(
+            x,
+            y,
+            52.,
+            28.,
+            10.,
+            0.85,
+            if on { th.accent } else { th.border },
+        );
     } else {
         panel(ui, rect, 14., on);
     }
     let position = switch_thumb_fraction(x, y, on, th.experience);
     let travel = 4. + 22. * position;
     let thumb_d = 20.;
-    ui.rounded(x + travel, y + 4., thumb_d, thumb_d,
+    ui.rounded(
+        x + travel,
+        y + 4.,
+        thumb_d,
+        thumb_d,
         if old { 6. } else { 10. },
-        if old { if on { th.on_accent } else { th.text_primary } }
-        else { color::hex(0xF7FBFF, 236) });
+        if old {
+            if on { th.on_accent } else { th.text_primary }
+        } else {
+            color::hex(0xF7FBFF, 236)
+        },
+    );
     if position > 0.70 {
-        ui.icon(Icon::Check, x + travel + 4., y + 8., 12.,
-            if old { th.accent } else { color::hex(0x3E6872, 245) });
+        ui.icon(
+            Icon::Check,
+            x + travel + 4.,
+            y + 8.,
+            12.,
+            if old {
+                th.accent
+            } else {
+                color::hex(0x3E6872, 245)
+            },
+        );
     }
 }
 
 /// Segmented controls use a flat Jade selection band with a restrained focus
 /// line. Liquid Glass keeps its own lens-based animation and geometry.
-pub fn component_tabs(ui: &mut Ui<'_>, rect: [f32; 4],
-    labels: [&str; 2], focused: f32) {
+pub fn component_tabs(ui: &mut Ui<'_>, rect: [f32; 4], labels: [&str; 2], focused: f32) {
     let th = active_theme();
     let [x, y, w, h] = rect;
     let old = th.experience == ExperiencePreset::OldSchool;
@@ -880,27 +1128,60 @@ pub fn component_tabs(ui: &mut Ui<'_>, rect: [f32; 4],
         ui.stroke_rounded(x, y, w, h, 9., 0.85, th.border);
         let part_w = w / 2.;
         let fx = x + part_w * focused.clamp(0., 1.);
-        ui.rounded(fx + 2., y + 2., (part_w - 4.).max(0.), h - 4.,
-            7., th.surface_selected);
-        ui.rounded(fx + part_w * 0.24, y + h - 3.5, part_w * 0.52,
-            2., 1., th.accent);
+        ui.rounded(
+            fx + 2.,
+            y + 2.,
+            (part_w - 4.).max(0.),
+            h - 4.,
+            7.,
+            th.surface_selected,
+        );
+        ui.rounded(
+            fx + part_w * 0.24,
+            y + h - 3.5,
+            part_w * 0.52,
+            2.,
+            1.,
+            th.accent,
+        );
         for (i, label) in labels.into_iter().enumerate() {
             let selected = (focused - i as f32).abs() < 0.5;
-            ui.centered_fit(Face::Medium, 13.,
+            ui.centered_fit(
+                Face::Medium,
+                13.,
                 [x + i as f32 * part_w + 5., y + 2., part_w - 10., h - 4.],
-                if selected { th.text_primary } else { th.text_muted }, label);
+                if selected {
+                    th.text_primary
+                } else {
+                    th.text_muted
+                },
+                label,
+            );
         }
         return;
     }
     ui.rounded(x, y, w, h, h / 2., color::hex(0xB9D5DE, 34));
     let part_w = w / 2.;
     let fx = x + part_w * focused.clamp(0., 1.);
-    panel(ui, [fx + 2., y + 2., part_w - 4., h - 4.], (h - 4.) / 2., true);
+    panel(
+        ui,
+        [fx + 2., y + 2., part_w - 4., h - 4.],
+        (h - 4.) / 2.,
+        true,
+    );
     for (i, label) in labels.into_iter().enumerate() {
         let selected = (focused - i as f32).abs() < 0.5;
-        ui.centered_fit(Face::Medium, 13.,
+        ui.centered_fit(
+            Face::Medium,
+            13.,
             [x + i as f32 * part_w + 5., y + 2., part_w - 10., h - 4.],
-            if selected { th.text_primary } else { th.text_muted }, label);
+            if selected {
+                th.text_primary
+            } else {
+                th.text_muted
+            },
+            label,
+        );
     }
 }
 
@@ -916,8 +1197,13 @@ pub fn component_circular_icon(ui: &mut Ui<'_>, rect: [f32; 4], icon: Icon) {
         panel(ui, rect, rect[3] / 2., true);
     }
     let size = (rect[3] * 0.46).clamp(16., 24.);
-    ui.icon(icon, rect[0] + (rect[2] - size) / 2.,
-        rect[1] + (rect[3] - size) / 2., size, th.text_primary);
+    ui.icon(
+        icon,
+        rect[0] + (rect[2] - size) / 2.,
+        rect[1] + (rect[3] - size) / 2.,
+        size,
+        th.text_primary,
+    );
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -991,7 +1277,6 @@ impl Layout {
     }
 }
 
-
 /// Original Horizon Jade navigation: one clean row of category tabs, not
 /// the horizontal icon-over-label XMB or a reproduction of Microsoft UI.
 #[allow(clippy::too_many_arguments)]
@@ -1013,7 +1298,14 @@ fn shell_console(
     ui.rounded(18., 10., w - 36., 54., 12., th.header_bg);
     ui.stroke_rounded(18., 10., w - 36., 54., 12., 0.8, th.border);
     ui.horizon_logo(30., 22., 25.);
-    ui.text(Face::ConsoleDisplay, 20., 64., 15., th.text_primary, "Horizon");
+    ui.text(
+        Face::ConsoleDisplay,
+        20.,
+        64.,
+        15.,
+        th.text_primary,
+        "Horizon",
+    );
     ui.text(Face::Regular, 10., 65., 40., th.text_muted, version);
 
     let aw = (w * 0.22).clamp(138., 208.);
@@ -1024,12 +1316,32 @@ fn shell_console(
         ui.rounded(account_r[0] + 29., 43., 6., 6., 3., th.success);
     }
     let name = ui.fit_text(Face::Medium, 12., account, aw - 50.);
-    ui.text(Face::Medium, 12., account_r[0] + 42., 27., th.text_primary, &name);
+    ui.text(
+        Face::Medium,
+        12.,
+        account_r[0] + 42.,
+        27.,
+        th.text_primary,
+        &name,
+    );
     target(account_r, ShellAction::Account);
 
     let settings = [w - 58., 17., 42., 42.];
-    ui.rounded(settings[0], settings[1], settings[2], settings[3], 10., th.surface_bright);
-    ui.icon(Icon::Gear, settings[0] + 11., settings[1] + 11., 20., th.text_primary);
+    ui.rounded(
+        settings[0],
+        settings[1],
+        settings[2],
+        settings[3],
+        10.,
+        th.surface_bright,
+    );
+    ui.icon(
+        Icon::Gear,
+        settings[0] + 11.,
+        settings[1] + 11.,
+        20.,
+        th.text_primary,
+    );
     target(settings, ShellAction::Appearance);
 
     // The selected tab is an inset block with a jade baseline. Only the
@@ -1039,8 +1351,14 @@ fn shell_console(
         let step = (w - 48.) / items.len() as f32;
         let fx = focus_x.clamp(24., (w - 24. - step).max(24.));
         let focus_rect = [fx + 3., 76., (step - 6.).max(20.), 38.];
-        ui.rounded(focus_rect[0], focus_rect[1], focus_rect[2], focus_rect[3],
-            8., th.surface_selected);
+        ui.rounded(
+            focus_rect[0],
+            focus_rect[1],
+            focus_rect[2],
+            focus_rect[3],
+            8.,
+            th.surface_selected,
+        );
         // The small focused console tab receives actual per-fragment GGX
         // shading from the native WGSL material, not a pre-baked highlight.
         // Liquid Glass never enters this path; graphics effects can be disabled.
@@ -1052,10 +1370,21 @@ fn shell_console(
     for (i, (label, icon)) in items.iter().enumerate() {
         let tab = layout.nav_rect(w, h, i, items.len());
         let chosen = i == selected;
-        let ink = if chosen { th.text_primary } else { th.text_muted };
+        let ink = if chosen {
+            th.text_primary
+        } else {
+            th.text_muted
+        };
         ui.icon(*icon, tab[0] + 10., tab[1] + 13., 18., ink);
         let fitted = ui.fit_text(Face::ConsoleMedium, 11.5, label, (tab[2] - 39.).max(12.));
-        ui.text(Face::ConsoleMedium, 11.5, tab[0] + 33., tab[1] + 14., ink, &fitted);
+        ui.text(
+            Face::ConsoleMedium,
+            11.5,
+            tab[0] + 33.,
+            tab[1] + 14.,
+            ink,
+            &fitted,
+        );
         target(tab, ShellAction::Page(i));
     }
     layout
@@ -1076,8 +1405,16 @@ pub fn shell(
     let layout = Layout::new(ui.w, ui.h);
     let index = selected.min(items.len().saturating_sub(1));
     let target_rect = layout.nav_rect(ui.w, ui.h, index, items.len().max(1));
-    shell_animated(ui, items, selected, account, signed_in, version,
-        [target_rect[0], target_rect[1]], target)
+    shell_animated(
+        ui,
+        items,
+        selected,
+        account,
+        signed_in,
+        version,
+        [target_rect[0], target_rect[1]],
+        target,
+    )
 }
 
 /// Modern glass and console channels each have an animated selected component.
@@ -1098,7 +1435,9 @@ pub fn shell_animated(
     let layout = Layout::new(w, h);
     let jade_portrait = layout.console && layout.portrait;
     if layout.console && !layout.portrait {
-        return shell_console(ui, items, selected, account, signed_in, version, focus[0], target);
+        return shell_console(
+            ui, items, selected, account, signed_in, version, focus[0], target,
+        );
     }
     ui.horizon_logo(18., 17., 31.);
     ui.text(Face::SemiBold, 17., 58., 13., th.text_primary, "Horizon");
@@ -1106,8 +1445,23 @@ pub fn shell_animated(
     let aw = if layout.portrait { 118. } else { 166. };
     let account_r = [w - 20. - aw, 12., aw, 44.];
     if jade_portrait {
-        ui.rounded(account_r[0], account_r[1], account_r[2], account_r[3], 10., th.surface_bright);
-        ui.stroke_rounded(account_r[0], account_r[1], account_r[2], account_r[3], 10., 0.8, th.border);
+        ui.rounded(
+            account_r[0],
+            account_r[1],
+            account_r[2],
+            account_r[3],
+            10.,
+            th.surface_bright,
+        );
+        ui.stroke_rounded(
+            account_r[0],
+            account_r[1],
+            account_r[2],
+            account_r[3],
+            10.,
+            0.8,
+            th.border,
+        );
     } else {
         panel(ui, account_r, 22., false);
     }
@@ -1140,22 +1494,41 @@ pub fn shell_animated(
         // not the Liquid Glass round dock or a compressed Xbox/PS3 interface.
         // Each immutable 44dp+ target contains a prepared PNG icon and label.
         ui.rounded(12., h - 80., (w - 24.).max(0.), 70., 11., th.header_bg);
-        ui.stroke_rounded(12., h - 80., (w - 24.).max(0.), 70.,
-            11., 0.85, th.border);
+        ui.stroke_rounded(12., h - 80., (w - 24.).max(0.), 70., 11., 0.85, th.border);
         for (i, (label, icon)) in items.iter().enumerate() {
             let r = layout.nav_rect(w, h, i, items.len());
             let active = i == selected;
             if active {
-                ui.rounded(r[0] + 3., r[1] + 2., (r[2] - 6.).max(1.),
-                    49., 8., th.surface_selected);
-                ui.rounded(r[0] + r[2] * 0.22, r[1] + 51.,
-                    r[2] * 0.56, 2.5, 1.25, th.accent);
+                ui.rounded(
+                    r[0] + 3.,
+                    r[1] + 2.,
+                    (r[2] - 6.).max(1.),
+                    49.,
+                    8.,
+                    th.surface_selected,
+                );
+                ui.rounded(
+                    r[0] + r[2] * 0.22,
+                    r[1] + 51.,
+                    r[2] * 0.56,
+                    2.5,
+                    1.25,
+                    th.accent,
+                );
             }
-            let ink = if active { th.text_primary } else { th.text_muted };
+            let ink = if active {
+                th.text_primary
+            } else {
+                th.text_muted
+            };
             ui.icon(*icon, r[0] + (r[2] - 21.) / 2., r[1] + 4., 21., ink);
-            ui.centered_fit(Face::ConsoleMedium, 9.,
+            ui.centered_fit(
+                Face::ConsoleMedium,
+                9.,
                 [r[0] + 2., r[1] + 29., (r[2] - 4.).max(10.), 17.],
-                ink, label);
+                ink,
+                label,
+            );
             target(r, ShellAction::Page(i));
         }
         return layout;
@@ -1166,12 +1539,29 @@ pub fn shell_animated(
         panel(ui, [19., 83., 81., (h - 99.).max(80.)], 31., false);
         let selected_rect = layout.nav_rect(w, h, selected, items.len().max(1));
         let selected_y = focus[1].clamp(90., (h - 61.).max(90.));
-        panel(ui, [selected_rect[0] + 3., selected_y + 1., selected_rect[2] - 6., 42.], 18., true);
+        panel(
+            ui,
+            [
+                selected_rect[0] + 3.,
+                selected_y + 1.,
+                selected_rect[2] - 6.,
+                42.,
+            ],
+            18.,
+            true,
+        );
         for (i, (_, icon)) in items.iter().enumerate() {
             let r = layout.nav_rect(w, h, i, items.len());
             ui.icon(
-                *icon, r[0] + (r[2] - 21.) / 2., r[1] + 11., 21.,
-                if i == selected { th.text_primary } else { th.text_muted },
+                *icon,
+                r[0] + (r[2] - 21.) / 2.,
+                r[1] + 11.,
+                21.,
+                if i == selected {
+                    th.text_primary
+                } else {
+                    th.text_muted
+                },
             );
             target(r, ShellAction::Page(i));
         }
@@ -1179,10 +1569,22 @@ pub fn shell_animated(
     }
     if th.material != Material::Glass {
         if layout.portrait {
-            panel(ui, [12., h - 78., w - 24., 68.], if layout.console { 12. } else { 23. }, false);
+            panel(
+                ui,
+                [12., h - 78., w - 24., 68.],
+                if layout.console { 12. } else { 23. },
+                false,
+            );
         } else if layout.console {
             panel(ui, [12., 72., 204., (h - 84.).max(10.)], 13., false);
-            ui.text(Face::SemiBold, 10., 30., 83., th.text_muted, "SYSTEM CHANNELS");
+            ui.text(
+                Face::SemiBold,
+                10.,
+                30.,
+                83.,
+                th.text_muted,
+                "SYSTEM CHANNELS",
+            );
             ui.fill(28., 101., 171., 1., color::hex(0xE1ECFA, 75));
         } else {
             panel(ui, [12., 72., 180., (h - 84.).max(10.)], 24., false);
@@ -1203,11 +1605,23 @@ pub fn shell_animated(
                 panel(
                     ui,
                     [r[0] + 2., r[1] + 2., r[2] - 4., r[3] - 4.],
-                    if layout.console { 10. } else if layout.portrait { 17. } else { 21. },
+                    if layout.console {
+                        10.
+                    } else if layout.portrait {
+                        17.
+                    } else {
+                        21.
+                    },
                     true,
                 );
                 if layout.console && !layout.portrait {
-                    ui.fill(r[0] + 4., r[1] + 7., 2., (r[3] - 14.).max(3.), color::hex(0xF7F9FF, 195));
+                    ui.fill(
+                        r[0] + 4.,
+                        r[1] + 7.,
+                        2.,
+                        (r[3] - 14.).max(3.),
+                        color::hex(0xF7F9FF, 195),
+                    );
                 }
             }
         }
@@ -1220,7 +1634,11 @@ pub fn shell_animated(
             ui.icon(
                 *icon,
                 r[0] + (r[2] - 20.) / 2.,
-                r[1] + if th.material == Material::Glass { 10. } else { 7. },
+                r[1] + if th.material == Material::Glass {
+                    10.
+                } else {
+                    7.
+                },
                 20.,
                 fg,
             );
@@ -1228,22 +1646,43 @@ pub fn shell_animated(
             ui.centered_fit(
                 Face::Medium,
                 9.,
-                [r[0] + 2., r[1] + if th.material == Material::Glass { 40. } else { 32. }, r[2] - 4., 16.],
+                [
+                    r[0] + 2.,
+                    r[1] + if th.material == Material::Glass {
+                        40.
+                    } else {
+                        32.
+                    },
+                    r[2] - 4.,
+                    16.,
+                ],
                 fg,
                 &text,
             );
         } else {
             ui.icon(
                 *icon,
-                r[0] + if th.material == Material::Glass { 16. } else { 16. },
-                r[1] + if th.material == Material::Glass { 14. } else { 13. },
+                r[0] + if th.material == Material::Glass {
+                    16.
+                } else {
+                    16.
+                },
+                r[1] + if th.material == Material::Glass {
+                    14.
+                } else {
+                    13.
+                },
                 20.,
                 fg,
             );
             ui.text(
                 Face::Medium,
                 13.,
-                r[0] + if th.material == Material::Glass { 55. } else { 47. },
+                r[0] + if th.material == Material::Glass {
+                    55.
+                } else {
+                    47.
+                },
                 r[1] + 13.,
                 fg,
                 label,
@@ -1261,12 +1700,12 @@ pub struct HomeView<'a> {
     pub renderer: &'a str,
 }
 
-
 /// Muted colored console tiles are *one* material surface: shade each
 /// accent toward deep graphite instead of stacking translucent rectangles.
 fn console_tile_tone(accent: u32) -> u32 {
     let shade = |shift: u32, base: f32| -> u32 {
-        (((accent >> shift & 0xFF) as f32 * 0.29 + base * 0.71).round()
+        (((accent >> shift & 0xFF) as f32 * 0.29 + base * 0.71)
+            .round()
             .clamp(0., 255.)) as u32
     };
     (shade(16, 21.) << 16) | (shade(8, 31.) << 8) | shade(0, 24.)
@@ -1282,7 +1721,9 @@ fn home_old_school(
     mut target: impl FnMut([f32; 4], HomeAction),
 ) {
     let [_, _, w, h] = rect;
-    if w <= 0. || h <= 0. { return; }
+    if w <= 0. || h <= 0. {
+        return;
+    }
     let th = active_theme();
     let layout = ConsoleDashboardLayout::new(rect);
     let [hx, hy, hw, hh] = layout.hero;
@@ -1295,100 +1736,271 @@ fn home_old_school(
     ui.rounded(hx, hy, hw, hh, 17., color::hex(hero_bg, 255));
     ui.stroke_rounded(hx, hy, hw, hh, 17., 1.0, th.border);
     ui.rounded(hx + 1., hy + 18., 3., (hh - 36.).max(1.), 1.5, th.accent);
-    ui.text(Face::Medium, 10.5, hx + 22., hy + 17.,
-        color::hex(soft, 255), "READY TO PLAY");
+    ui.text(
+        Face::Medium,
+        10.5,
+        hx + 22.,
+        hy + 17.,
+        color::hex(soft, 255),
+        "READY TO PLAY",
+    );
     let heading_size = if hw < 365. { 27. } else { 33. };
     let heading = ui.fit_text(Face::ConsoleDisplay, heading_size, "MINECRAFT", hw - 43.);
-    ui.text(Face::ConsoleDisplay, heading_size, hx + 22., hy + 41.,
-        th.text_primary, &heading);
-    let ready = if view.installed { "Ready to launch" } else { "Install needed" };
+    ui.text(
+        Face::ConsoleDisplay,
+        heading_size,
+        hx + 22.,
+        hy + 41.,
+        th.text_primary,
+        &heading,
+    );
+    let ready = if view.installed {
+        "Ready to launch"
+    } else {
+        "Install needed"
+    };
     if hh < 225. {
         let status = format!("JAVA 26.3  /  {ready}");
         let status = ui.fit_text(Face::Medium, 11.5, &status, hw - 47.);
-        ui.text(Face::Medium, 11.5, hx + 23., hy + 88., th.text_muted, &status);
+        ui.text(
+            Face::Medium,
+            11.5,
+            hx + 23.,
+            hy + 88.,
+            th.text_muted,
+            &status,
+        );
     } else {
-        ui.text(Face::Medium, 14., hx + 23., hy + 95.,
-            th.text_primary, "JAVA EDITION 26.3");
-        ui.rounded(hx + 23., hy + 124., 6., 6., 3.,
-            if view.installed { th.success } else { color::hex(0xD7A65E, 255) });
-        ui.text(Face::Regular, 12., hx + 37., hy + 119.,
-            th.text_muted, ready);
+        ui.text(
+            Face::Medium,
+            14.,
+            hx + 23.,
+            hy + 95.,
+            th.text_primary,
+            "JAVA EDITION 26.3",
+        );
+        ui.rounded(
+            hx + 23.,
+            hy + 124.,
+            6.,
+            6.,
+            3.,
+            if view.installed {
+                th.success
+            } else {
+                color::hex(0xD7A65E, 255)
+            },
+        );
+        ui.text(
+            Face::Regular,
+            12.,
+            hx + 37.,
+            hy + 119.,
+            th.text_muted,
+            ready,
+        );
         if hh > 262. {
             let renderer = ui.fit_text(Face::Regular, 11., view.renderer, hw - 50.);
-            ui.text(Face::Regular, 11., hx + 23., hy + 151., th.text_muted, &renderer);
+            ui.text(
+                Face::Regular,
+                11.,
+                hx + 23.,
+                hy + 151.,
+                th.text_muted,
+                &renderer,
+            );
         }
     }
 
     // Main action and profile chooser use separate large touch regions.
     let play = [hx + 14., hy + hh - 62., hw - 157., 48.];
     let profile = [hx + hw - 125., hy + hh - 62., 111., 48.];
-    ui.rounded(play[0], play[1], play[2], play[3], 10.,
-        color::hex(0x176B35, 255));
-    ui.icon(Icon::Play, play[0] + 11., play[1] + 12., 24.,
-        color::hex(0xFFFFFF, 255));
-    let play_label = if view.launching { "Starting..." } else if view.installed {
+    ui.rounded(
+        play[0],
+        play[1],
+        play[2],
+        play[3],
+        10.,
+        color::hex(0x176B35, 255),
+    );
+    ui.icon(
+        Icon::Play,
+        play[0] + 11.,
+        play[1] + 12.,
+        24.,
+        color::hex(0xFFFFFF, 255),
+    );
+    let play_label = if view.launching {
+        "Starting..."
+    } else if view.installed {
         "Play Minecraft"
     } else {
         "Install Minecraft"
     };
     let size = if hw < 365. { 13.5 } else { 16. };
     let label = ui.fit_text(Face::Medium, size, play_label, (play[2] - 46.).max(12.));
-    ui.text(Face::Medium, size, play[0] + 42., play[1] + 15.,
-        color::hex(0xFFFFFF, 255), &label);
-    if !view.launching { target(play, HomeAction::Play); }
+    ui.text(
+        Face::Medium,
+        size,
+        play[0] + 42.,
+        play[1] + 15.,
+        color::hex(0xFFFFFF, 255),
+        &label,
+    );
+    if !view.launching {
+        target(play, HomeAction::Play);
+    }
 
-    ui.rounded(profile[0], profile[1], profile[2], profile[3], 10.,
-        color::hex(control_bg, 255));
-    ui.stroke_rounded(profile[0], profile[1], profile[2], profile[3], 10., 0.7, th.border);
-    let profile_name = ui.fit_text(Face::Medium, 11.,
-        &format!("Profile {}", view.profile + 1), profile[2] - 27.);
-    ui.text(Face::Medium, 11., profile[0] + 10., profile[1] + 16.,
-        th.text_primary, &profile_name);
-    ui.icon(Icon::ChevronDown, profile[0] + profile[2] - 19.,
-        profile[1] + 17., 12., th.text_muted);
+    ui.rounded(
+        profile[0],
+        profile[1],
+        profile[2],
+        profile[3],
+        10.,
+        color::hex(control_bg, 255),
+    );
+    ui.stroke_rounded(
+        profile[0], profile[1], profile[2], profile[3], 10., 0.7, th.border,
+    );
+    let profile_name = ui.fit_text(
+        Face::Medium,
+        11.,
+        &format!("Profile {}", view.profile + 1),
+        profile[2] - 27.,
+    );
+    ui.text(
+        Face::Medium,
+        11.,
+        profile[0] + 10.,
+        profile[1] + 16.,
+        th.text_primary,
+        &profile_name,
+    );
+    ui.icon(
+        Icon::ChevronDown,
+        profile[0] + profile[2] - 19.,
+        profile[1] + 17.,
+        12.,
+        th.text_muted,
+    );
     target(profile, HomeAction::Profile);
 
     // Muted category tints (not an all-green dashboard). Every card routes
     // to its existing page; icon/label never create their own competing hits.
     let shortcuts = [
-        ("Mods", Icon::Mods, HomeAction::Mods, 0x4E886B_u32, "EXTENSIONS"),
-        ("Packs", Icon::Packs, HomeAction::Packs, 0x537383_u32, "ASSETS"),
-        ("Shaders", Icon::Shaders, HomeAction::Shaders, 0x8D7656_u32, "VISUALS"),
-        ("My files", Icon::Folder, HomeAction::Files, 0x4A807B_u32, "STORAGE"),
-        ("Skins", Icon::Person, HomeAction::Skins, 0x5A8273_u32, "IDENTITY"),
-        ("Settings", Icon::Gear, HomeAction::Settings, 0x757A73_u32, "SYSTEM"),
+        (
+            "Mods",
+            Icon::Mods,
+            HomeAction::Mods,
+            0x4E886B_u32,
+            "EXTENSIONS",
+        ),
+        (
+            "Packs",
+            Icon::Packs,
+            HomeAction::Packs,
+            0x537383_u32,
+            "ASSETS",
+        ),
+        (
+            "Shaders",
+            Icon::Shaders,
+            HomeAction::Shaders,
+            0x8D7656_u32,
+            "VISUALS",
+        ),
+        (
+            "My files",
+            Icon::Folder,
+            HomeAction::Files,
+            0x4A807B_u32,
+            "STORAGE",
+        ),
+        (
+            "Skins",
+            Icon::Person,
+            HomeAction::Skins,
+            0x5A8273_u32,
+            "IDENTITY",
+        ),
+        (
+            "Settings",
+            Icon::Gear,
+            HomeAction::Settings,
+            0x757A73_u32,
+            "SYSTEM",
+        ),
     ];
     for (i, (name, icon, action, tint, descriptor)) in shortcuts.into_iter().enumerate() {
         let card = layout.shortcuts[i];
         let [cx, cy, cw, ch] = card;
-        if cw <= 1. || ch <= 1. { continue; }
-        let tile_bg = if th.is_light { 0xE8ECE7 } else { console_tile_tone(tint) };
-        let tile_text = if th.is_light { th.text_primary } else { color::hex(0xF4F7F3, 255) };
-        let tile_muted = if th.is_light { th.text_muted } else { color::hex(0xC1CEC4, 255) };
+        if cw <= 1. || ch <= 1. {
+            continue;
+        }
+        let tile_bg = if th.is_light {
+            0xE8ECE7
+        } else {
+            console_tile_tone(tint)
+        };
+        let tile_text = if th.is_light {
+            th.text_primary
+        } else {
+            color::hex(0xF4F7F3, 255)
+        };
+        let tile_muted = if th.is_light {
+            th.text_muted
+        } else {
+            color::hex(0xC1CEC4, 255)
+        };
         ui.rounded(cx, cy, cw, ch, 10., color::hex(tile_bg, 255));
         // Hovered tiles use the live GPU material. This is an ordered,
         // clipped backdrop pass; PNG pictograms and labels draw afterwards.
-        let hovered = ui.cursor.0 >= cx && ui.cursor.0 < cx + cw
-            && ui.cursor.1 >= cy && ui.cursor.1 < cy + ch;
+        let hovered = ui.cursor.0 >= cx
+            && ui.cursor.0 < cx + cw
+            && ui.cursor.1 >= cy
+            && ui.cursor.1 < cy + ch;
         if hovered && th.jade_gpu_fx && !th.is_light {
             ui.backdrop_lens(card, 10., color::with_alpha(th.accent, 0.), [0.0, 0.0]);
         }
         ui.stroke_rounded(cx, cy, cw, ch, 10., 0.8, th.border);
-        ui.rounded(cx + 5., cy + 10., 3., (ch - 20.).max(1.), 1.5,
-            color::hex(tint, 255));
+        ui.rounded(
+            cx + 5.,
+            cy + 10.,
+            3.,
+            (ch - 20.).max(1.),
+            1.5,
+            color::hex(tint, 255),
+        );
         let wide = cw > ch * 1.70;
         if wide {
             let caption = ui.fit_text(Face::Medium, 9.5, descriptor, (cw - 69.).max(18.));
             ui.text(Face::Medium, 9.5, cx + 17., cy + 9., tile_muted, &caption);
             let fitted = ui.fit_text(Face::SemiBold, 16., name, (cw - 72.).max(18.));
-            ui.text(Face::SemiBold, 16., cx + 17., cy + ch - 31., tile_text, &fitted);
+            ui.text(
+                Face::SemiBold,
+                16.,
+                cx + 17.,
+                cy + ch - 31.,
+                tile_text,
+                &fitted,
+            );
             ui.icon(icon, cx + cw - 46., cy + (ch - 28.) * 0.5, 28., tile_text);
         } else {
             let icon_size = (ch * 0.35).clamp(18., 26.);
-            ui.icon(icon, cx + (cw - icon_size) * 0.5, cy + 8., icon_size, tile_text);
-            ui.centered_fit(Face::Medium, if cw < 95. { 10.5 } else { 12.5 },
+            ui.icon(
+                icon,
+                cx + (cw - icon_size) * 0.5,
+                cy + 8.,
+                icon_size,
+                tile_text,
+            );
+            ui.centered_fit(
+                Face::Medium,
+                if cw < 95. { 10.5 } else { 12.5 },
                 [cx + 5., cy + ch - 24., cw - 10., 19.],
-                tile_text, name);
+                tile_text,
+                name,
+            );
         }
         target(card, action);
     }
@@ -1416,24 +2028,76 @@ fn home_liquid(
     // Soft left-side scrim (not another frosted panel) preserves contrast.
     for i in 0..8 {
         let fraction = i as f32 / 8.;
-        ui.fill(x + 6. + fraction * w * 0.51, y + 18.,
-            w * 0.068, hero_h - 36.,
-            color::hex(0x071321, ((1. - fraction) * 27.) as u8));
+        ui.fill(
+            x + 6. + fraction * w * 0.51,
+            y + 18.,
+            w * 0.068,
+            hero_h - 36.,
+            color::hex(0x071321, ((1. - fraction) * 27.) as u8),
+        );
     }
 
     // Icon tile plus title and clear status.
     let icon_r = [x + 25., y + 44., 75., 75.];
-    ui.rounded(icon_r[0], icon_r[1], 75., 75., 18., color::hex(0x121D22, 165));
-    ui.border(icon_r[0], icon_r[1], 75., 75., 18., color::hex(0xE3F7FF, 67));
-    ui.icon(Icon::Gamepad, icon_r[0] + 21., icon_r[1] + 21., 33.,
-        color::hex(0xE9F5F7, 250));
-    ui.text(Face::SemiBold, 30., x + 117., y + 48., color::hex(0xFFFFFF, 255),
-        "Minecraft 26.3");
-    let ready = if view.installed { "Ready to play" } else { "Installation required" };
-    ui.icon(if view.installed { Icon::Check } else { Icon::Installed },
-        x + 120., y + 94., 18., if view.installed { th.success } else { th.text_muted });
-    ui.text(Face::Medium, 13., x + 147., y + 97.,
-        color::hex(0xEDF6FA, 243), ready);
+    ui.rounded(
+        icon_r[0],
+        icon_r[1],
+        75.,
+        75.,
+        18.,
+        color::hex(0x121D22, 165),
+    );
+    ui.border(
+        icon_r[0],
+        icon_r[1],
+        75.,
+        75.,
+        18.,
+        color::hex(0xE3F7FF, 67),
+    );
+    ui.icon(
+        Icon::Gamepad,
+        icon_r[0] + 21.,
+        icon_r[1] + 21.,
+        33.,
+        color::hex(0xE9F5F7, 250),
+    );
+    ui.text(
+        Face::SemiBold,
+        30.,
+        x + 117.,
+        y + 48.,
+        color::hex(0xFFFFFF, 255),
+        "Minecraft 26.3",
+    );
+    let ready = if view.installed {
+        "Ready to play"
+    } else {
+        "Installation required"
+    };
+    ui.icon(
+        if view.installed {
+            Icon::Check
+        } else {
+            Icon::Installed
+        },
+        x + 120.,
+        y + 94.,
+        18.,
+        if view.installed {
+            th.success
+        } else {
+            th.text_muted
+        },
+    );
+    ui.text(
+        Face::Medium,
+        13.,
+        x + 147.,
+        y + 97.,
+        color::hex(0xEDF6FA, 243),
+        ready,
+    );
 
     // The main action and profile picker live inside the hero, as in the
     // submitted mockup, with a real gap and disjoint touch areas.
@@ -1443,27 +2107,68 @@ fn home_liquid(
     let play = [x + 25., buttons_y, play_width, 49.];
     let profile = [play[0] + play_width + 14., buttons_y, profile_width, 49.];
     panel(ui, play, 24.5, true);
-    ui.icon(Icon::Play, play[0] + 17., play[1] + 14., 21., color::hex(0xFFFFFF, 255));
-    let title = if view.launching { "Getting ready..." } else if view.installed {
+    ui.icon(
+        Icon::Play,
+        play[0] + 17.,
+        play[1] + 14.,
+        21.,
+        color::hex(0xFFFFFF, 255),
+    );
+    let title = if view.launching {
+        "Getting ready..."
+    } else if view.installed {
         "Play Minecraft"
-    } else { "Install Minecraft" };
+    } else {
+        "Install Minecraft"
+    };
     let title = ui.fit_text(Face::Medium, 14., title, play_width - 55.);
-    ui.text(Face::Medium, 14., play[0] + 48., play[1] + 15.,
-        color::hex(0xFFFFFF, 255), &title);
-    if !view.launching { target(play, HomeAction::Play); }
+    ui.text(
+        Face::Medium,
+        14.,
+        play[0] + 48.,
+        play[1] + 15.,
+        color::hex(0xFFFFFF, 255),
+        &title,
+    );
+    if !view.launching {
+        target(play, HomeAction::Play);
+    }
     panel(ui, profile, 24.5, false);
-    ui.icon(Icon::ChevronDown, profile[0] + profile_width - 27.,
-        profile[1] + 16., 15., th.text_primary);
-    let label = ui.fit_text(Face::Medium, 12.,
-        &format!("Profile {}", view.profile + 1), profile_width - 48.);
-    ui.text(Face::Medium, 12., profile[0] + 17., profile[1] + 17., th.text_primary, &label);
+    ui.icon(
+        Icon::ChevronDown,
+        profile[0] + profile_width - 27.,
+        profile[1] + 16.,
+        15.,
+        th.text_primary,
+    );
+    let label = ui.fit_text(
+        Face::Medium,
+        12.,
+        &format!("Profile {}", view.profile + 1),
+        profile_width - 48.,
+    );
+    ui.text(
+        Face::Medium,
+        12.,
+        profile[0] + 17.,
+        profile[1] + 17.,
+        th.text_primary,
+        &label,
+    );
     target(profile, HomeAction::Profile);
 
     let renderer = ui.fit_text(Face::Regular, 10., view.renderer, 152.);
     let rw = (ui.measure(Face::Regular, 10., &renderer) + 22.).min(w * 0.22);
     let render_x = x + w - rw - 19.;
     // This label never overlaps the Minecraft title or the launch buttons.
-    ui.text(Face::Regular, 10., render_x, y + 15., color::hex(0xEBF7FB, 194), &renderer);
+    ui.text(
+        Face::Regular,
+        10.,
+        render_x,
+        y + 15.,
+        color::hex(0xEBF7FB, 194),
+        &renderer,
+    );
 
     let tiles_y = y + hero_h + 14.;
     let tile_w = (w - gap * 5.) / 6.;
@@ -1474,16 +2179,28 @@ fn home_liquid(
         ("My files", Icon::Folder, HomeAction::Files),
         ("Settings", Icon::Gear, HomeAction::Settings),
         ("Skins", Icon::Person, HomeAction::Skins),
-    ].into_iter().enumerate() {
+    ]
+    .into_iter()
+    .enumerate()
+    {
         let r = [x + i as f32 * (tile_w + gap), tiles_y, tile_w, tiles_h];
         // Independent, restrained physical controls; no stacked nested glass.
         panel(ui, r, 20., false);
         let size = (tiles_h * 0.38).min(31.);
-        ui.icon(icon, r[0] + (tile_w - size) * 0.5,
-            r[1] + tiles_h * 0.22, size, th.text_primary);
-        ui.centered_fit(Face::Medium, 13.0,
+        ui.icon(
+            icon,
+            r[0] + (tile_w - size) * 0.5,
+            r[1] + tiles_h * 0.22,
+            size,
+            th.text_primary,
+        );
+        ui.centered_fit(
+            Face::Medium,
+            13.0,
             [r[0] + 4., r[1] + tiles_h - 27., tile_w - 8., 22.],
-            th.text_primary, label);
+            th.text_primary,
+            label,
+        );
         target(r, action);
     }
 }
@@ -1515,8 +2232,8 @@ pub fn home(
     if th.material != Material::Glass {
         panel(ui, [x, y, w, hero_h], 24., false);
     } else {
-        let status_width = (ui.measure(Face::Regular, 12., view.renderer) + 49.)
-            .clamp(82., (w - 34.).max(82.));
+        let status_width =
+            (ui.measure(Face::Regular, 12., view.renderer) + 49.).clamp(82., (w - 34.).max(82.));
         let status_x = if portrait || w < 520. {
             x + 17.
         } else {
@@ -1524,7 +2241,12 @@ pub fn home(
             // the previous x+17 placement overlapped "Minecraft 26.3 / Profile".
             x + w - status_width - 16.
         };
-        panel(ui, [status_x, y + hero_h - 47., status_width, 37.], 18.5, false);
+        panel(
+            ui,
+            [status_x, y + hero_h - 47., status_width, 37.],
+            18.5,
+            false,
+        );
     }
     ui.text(
         Face::Medium,
@@ -1740,9 +2462,13 @@ pub fn appearance(
         th.text_muted,
         "A little more you. Only your launcher.",
     );
-    for (i, preset) in [ThemePreset::ObsidianViolet, ThemePreset::OldSchool, ThemePreset::LiquidGlass]
-        .into_iter()
-        .enumerate()
+    for (i, preset) in [
+        ThemePreset::ObsidianViolet,
+        ThemePreset::OldSchool,
+        ThemePreset::LiquidGlass,
+    ]
+    .into_iter()
+    .enumerate()
     {
         let r = [x + i as f32 * (card_w + 12.), y + 30., card_w, 116.];
         let paper = if preset == ThemePreset::LiquidGlass {
@@ -1759,7 +2485,14 @@ pub fn appearance(
             // Console selection preview uses stacked bars and chrome channels.
             for band in 0..3 {
                 let yy = r[1] + 14. + band as f32 * 13.;
-                ui.rounded(r[0] + 14., yy, card_w - 28., 9., 3., color::hex(0xC6D7E8, if band == 1 { 95 } else { 30 }));
+                ui.rounded(
+                    r[0] + 14.,
+                    yy,
+                    card_w - 28.,
+                    9.,
+                    3.,
+                    color::hex(0xC6D7E8, if band == 1 { 95 } else { 30 }),
+                );
             }
         }
         ui.stroke_rounded(
@@ -1781,7 +2514,11 @@ pub fn appearance(
             r[0] + 14.,
             r[1] + 60.,
             th.text_primary,
-            if preset == ThemePreset::ObsidianViolet { "Horizon original" } else { preset.label() },
+            if preset == ThemePreset::ObsidianViolet {
+                "Horizon original"
+            } else {
+                preset.label()
+            },
         );
         ui.text(
             Face::Regular,
@@ -1885,21 +2622,35 @@ pub fn appearance(
     }
     // Native calibration: separate saved optical properties per experience.
     let tuning_height = if cfg.glass_effects
-        && matches!(cfg.preset, ThemePreset::LiquidGlass | ThemePreset::OldSchool)
-    {
+        && matches!(
+            cfg.preset,
+            ThemePreset::LiquidGlass | ThemePreset::OldSchool
+        ) {
         let optics = cfg.current_optics();
         let tuning_y = row_y + 232.;
         for (i, (label, value, fraction, action)) in [
-            ("Opacidade", format!("{}%", (optics.opacity * 100.).round() as u32),
+            (
+                "Opacidade",
+                format!("{}%", (optics.opacity * 100.).round() as u32),
                 ((optics.opacity - 0.06) / 0.44).clamp(0., 1.),
-                AppearanceAction::Transparency),
-            ("Desfoque", format!("{:.1}", optics.blur),
+                AppearanceAction::Transparency,
+            ),
+            (
+                "Desfoque",
+                format!("{:.1}", optics.blur),
                 (optics.blur / 10.).clamp(0., 1.),
-                AppearanceAction::Blur),
-            ("Refração", format!("{:.0}", optics.refraction),
+                AppearanceAction::Blur,
+            ),
+            (
+                "Refração",
+                format!("{:.0}", optics.refraction),
                 (optics.refraction / 24.).clamp(0., 1.),
-                AppearanceAction::Refraction),
-        ].into_iter().enumerate() {
+                AppearanceAction::Refraction,
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
             let control = [x, tuning_y + i as f32 * 82., w, 74.];
             let hitbox = optical_calibration_slider(ui, control, label, &value, fraction);
             if let Some(hitbox) = ui.clip_rect(hitbox) {
@@ -1930,7 +2681,14 @@ pub fn appearance(
             target(r, AppearanceAction::Preset(preset));
         }
     }
-    let end = cy + 26. + ThemePreset::ALL.into_iter().filter(|p| !matches!(p, ThemePreset::LiquidGlass | ThemePreset::OldSchool)).count().div_ceil(cols) as f32 * 54.;
+    let end = cy
+        + 26.
+        + ThemePreset::ALL
+            .into_iter()
+            .filter(|p| !matches!(p, ThemePreset::LiquidGlass | ThemePreset::OldSchool))
+            .count()
+            .div_ceil(cols) as f32
+            * 54.;
     let advanced = [x, end + 8., w, 48.];
     button(ui, advanced, "Advanced colors", Some(Icon::Gear), false);
     if let Some(r) = ui.clip_rect(advanced) {
@@ -1954,17 +2712,28 @@ mod tests {
         let mut batch = HudBatch::new([360, 800]);
         let mut ui = Ui::new(&atlas, &mut batch, (0., 0.));
         let channels = [
-            ("Play", Icon::Play), ("Mods", Icon::Mods),
-            ("Packs", Icon::Packs), ("Shaders", Icon::Shaders),
-            ("Files", Icon::Folder), ("Settings", Icon::Gear),
+            ("Play", Icon::Play),
+            ("Mods", Icon::Mods),
+            ("Packs", Icon::Packs),
+            ("Shaders", Icon::Shaders),
+            ("Files", Icon::Folder),
+            ("Settings", Icon::Gear),
             ("Skins", Icon::Person),
         ];
         let mut hits = Vec::new();
-        let layout = shell(&mut ui, &channels, 2, "Player", false, "Android", |r, action| {
-            if let ShellAction::Page(index) = action {
-                hits.push((index, r));
-            }
-        });
+        let layout = shell(
+            &mut ui,
+            &channels,
+            2,
+            "Player",
+            false,
+            "Android",
+            |r, action| {
+                if let ShellAction::Page(index) = action {
+                    hits.push((index, r));
+                }
+            },
+        );
         assert!(layout.console && layout.portrait);
         assert_eq!(hits.len(), channels.len());
         for (n, (index, r)) in hits.iter().enumerate() {
@@ -1972,8 +2741,10 @@ mod tests {
             assert!(r[2] >= 44.0 && r[3] >= 44.0, "touch target: {r:?}");
             assert!(r[1] >= 720. && r[1] + r[3] <= 800.);
             for (_, previous) in hits.iter().take(n) {
-                assert!(r[0] >= previous[0] + previous[2]
-                    || previous[0] >= r[0] + r[2], "overlap");
+                assert!(
+                    r[0] >= previous[0] + previous[2] || previous[0] >= r[0] + r[2],
+                    "overlap"
+                );
             }
         }
         theme.apply_preset(ThemePreset::LiquidGlass);
@@ -2107,8 +2878,10 @@ mod tests {
         for y in 0..48 {
             for x in 0..64 {
                 let px = console_paper_pixel(x as f32 / 63., y as f32 / 47.);
-                assert!(px[0] < 70 && px[1] < 70 && px[2] < 90,
-                    "console wallpaper unexpectedly bright: {px:?}");
+                assert!(
+                    px[0] < 70 && px[1] < 70 && px[2] < 90,
+                    "console wallpaper unexpectedly bright: {px:?}"
+                );
                 assert_eq!(px[3], 255);
             }
         }
@@ -2118,8 +2891,10 @@ mod tests {
     fn old_school_console_mosaic_uses_asymmetric_tiles_without_overlaps() {
         // Test the actual Play area after header/footer reservations.
         for bounds in [
-            [24., 130., 712., 202.], [24., 130., 852., 272.],
-            [16., 76., 308., 440.], [16., 76., 378., 580.],
+            [24., 130., 712., 202.],
+            [24., 130., 852., 272.],
+            [16., 76., 308., 440.],
+            [16., 76., 378., 580.],
         ] {
             let layout = ConsoleDashboardLayout::new(bounds);
             let mut all = vec![layout.hero];
@@ -2127,16 +2902,21 @@ mod tests {
             let [x, y, w, h] = bounds;
             for (i, r) in all.iter().enumerate() {
                 assert!(r[2] > 0. && r[3] >= 44., "{bounds:?} undersized: {r:?}");
-                assert!(r[0] >= x - 0.01 && r[1] >= y - 0.01
-                    && r[0] + r[2] <= x + w + 0.01
-                    && r[1] + r[3] <= y + h + 0.01,
-                    "{bounds:?} out of range: {r:?}");
+                assert!(
+                    r[0] >= x - 0.01
+                        && r[1] >= y - 0.01
+                        && r[0] + r[2] <= x + w + 0.01
+                        && r[1] + r[3] <= y + h + 0.01,
+                    "{bounds:?} out of range: {r:?}"
+                );
                 for other in all.iter().take(i) {
-                    assert!(r[0] >= other[0] + other[2]
-                        || other[0] >= r[0] + r[2]
-                        || r[1] >= other[1] + other[3]
-                        || other[1] >= r[1] + r[3],
-                        "{bounds:?} overlaps: {r:?} and {other:?}");
+                    assert!(
+                        r[0] >= other[0] + other[2]
+                            || other[0] >= r[0] + r[2]
+                            || r[1] >= other[1] + other[3]
+                            || other[1] >= r[1] + r[3],
+                        "{bounds:?} overlaps: {r:?} and {other:?}"
+                    );
                 }
             }
             assert!(layout.shortcuts[0][2] > layout.shortcuts[1][2]);
@@ -2162,29 +2942,42 @@ mod tests {
                 home(
                     &mut ui,
                     bounds,
-                    &HomeView { installed: true, launching: false, profile: 0,
-                        renderer: "Vulkan / compatibility" },
+                    &HomeView {
+                        installed: true,
+                        launching: false,
+                        profile: 0,
+                        renderer: "Vulkan / compatibility",
+                    },
                     |r, action| actions.push((r, action)),
                 );
                 assert!(actions.len() >= 8, "{preset:?} {width}x{height}");
                 for wanted in [
-                    HomeAction::Play, HomeAction::Profile, HomeAction::Mods,
-                    HomeAction::Packs, HomeAction::Shaders, HomeAction::Files,
-                    HomeAction::Settings, HomeAction::Skins,
+                    HomeAction::Play,
+                    HomeAction::Profile,
+                    HomeAction::Mods,
+                    HomeAction::Packs,
+                    HomeAction::Shaders,
+                    HomeAction::Files,
+                    HomeAction::Settings,
+                    HomeAction::Skins,
                 ] {
-                    assert!(actions.iter().any(|(_, action)| *action == wanted),
-                        "{preset:?} {width}x{height} {wanted:?}");
+                    assert!(
+                        actions.iter().any(|(_, action)| *action == wanted),
+                        "{preset:?} {width}x{height} {wanted:?}"
+                    );
                 }
                 for (i, (r, _)) in actions.iter().enumerate() {
                     assert!(r[0] >= bounds[0] && r[1] >= bounds[1]);
                     assert!(r[0] + r[2] <= bounds[0] + bounds[2] + 0.1);
                     assert!(r[1] + r[3] <= bounds[1] + bounds[3] + 0.1);
                     for (other, _) in actions.iter().take(i) {
-                        assert!(r[0] >= other[0] + other[2]
-                            || other[0] >= r[0] + r[2]
-                            || r[1] >= other[1] + other[3]
-                            || other[1] >= r[1] + r[3],
-                            "overlap {preset:?} {width}x{height}: {r:?} and {other:?}");
+                        assert!(
+                            r[0] >= other[0] + other[2]
+                                || other[0] >= r[0] + r[2]
+                                || r[1] >= other[1] + other[3]
+                                || other[1] >= r[1] + r[3],
+                            "overlap {preset:?} {width}x{height}: {r:?} and {other:?}"
+                        );
                     }
                 }
             }
@@ -2249,15 +3042,20 @@ mod tests {
                 HomeAction::Shaders,
                 HomeAction::Files,
             ] {
-                assert!(actions.iter().any(|(_, actual)| *actual == required), "{w}x{h}: {required:?}");
+                assert!(
+                    actions.iter().any(|(_, actual)| *actual == required),
+                    "{w}x{h}: {required:?}"
+                );
             }
             for (i, (r, _)) in actions.iter().enumerate() {
                 assert!(r[0] >= layout.x && r[0] + r[2] <= ui.w);
                 assert!(r[1] >= 76. && r[1] + r[3] <= layout.bottom);
                 for (o, _) in actions.iter().take(i) {
                     assert!(
-                        r[0] >= o[0] + o[2] || o[0] >= r[0] + r[2] ||
-                        r[1] >= o[1] + o[3] || o[1] >= r[1] + r[3],
+                        r[0] >= o[0] + o[2]
+                            || o[0] >= r[0] + r[2]
+                            || r[1] >= o[1] + o[3]
+                            || o[1] >= r[1] + r[3],
                         "{w}x{h}: action overlap {r:?} / {o:?}"
                     );
                 }

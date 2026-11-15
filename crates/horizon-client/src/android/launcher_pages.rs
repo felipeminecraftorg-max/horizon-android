@@ -18,7 +18,9 @@ thread_local! {
     static ACTIVE_SLIDER_DRAG: std::cell::Cell<Option<(Action, f32, f32)>> = const { std::cell::Cell::new(None) };
     static SLIDER_TRACK_TARGETS: std::cell::RefCell<Vec<([f32; 4], Action, f32, f32)>> = const { std::cell::RefCell::new(Vec::new()) };
 }
-pub(super) fn nexo_slider_actions() -> Vec<([f32;4],Action,f32,f32)> { SLIDER_TRACK_TARGETS.with(|t|t.borrow().clone()) }
+pub(super) fn nexo_slider_actions() -> Vec<([f32; 4], Action, f32, f32)> {
+    SLIDER_TRACK_TARGETS.with(|t| t.borrow().clone())
+}
 
 /// Centralized dynamic theme accessors backed by `horizon_client::ui_theme::active_theme()`.
 #[inline]
@@ -226,16 +228,27 @@ impl AnimState {
         let experience = horizon_client::ui_theme::active_theme().experience;
         (self.nav_pill_y, self.nav_velocity) =
             horizon_client::ui_theme::launcher_preset_pack::spring_position(
-                experience, self.nav_pill_y, self.nav_velocity, target_nav_y, dt,
+                experience,
+                self.nav_pill_y,
+                self.nav_velocity,
+                target_nav_y,
+                dt,
             );
         (self.nav_pill_x, self.nav_velocity_x) =
             horizon_client::ui_theme::launcher_preset_pack::spring_position(
-                experience, self.nav_pill_x, self.nav_velocity_x, target_nav_x, dt,
+                experience,
+                self.nav_pill_x,
+                self.nav_velocity_x,
+                target_nav_x,
+                dt,
             );
         (self.installed_tab_position, self.installed_tab_velocity) =
             horizon_client::ui_theme::launcher_preset_pack::spring_position(
-                experience, self.installed_tab_position, self.installed_tab_velocity,
-                self.installed_tab_target, dt,
+                experience,
+                self.installed_tab_position,
+                self.installed_tab_velocity,
+                self.installed_tab_target,
+                dt,
             );
         self.page_fade = (self.page_fade + dt * 7.5).min(1.0);
         self.page_slide *= (1.0 - speed).max(0.0);
@@ -271,7 +284,10 @@ impl AnimState {
         for i in 0..4 {
             (rect[i], self.focus_velocity[i]) =
                 horizon_client::ui_theme::launcher_preset_pack::spring_position(
-                    experience, rect[i], self.focus_velocity[i], target[i],
+                    experience,
+                    rect[i],
+                    self.focus_velocity[i],
+                    target[i],
                     self.frame_dt.min(0.035),
                 );
         }
@@ -288,8 +304,9 @@ impl AnimState {
             self.scroll_thumb_view = Some(view);
             return target;
         }
-        let changed_view = self.scroll_thumb_view.is_none_or(|previous|
-            (previous[0] - view[0]).abs() > 2. || (previous[1] - view[1]).abs() > 2.);
+        let changed_view = self.scroll_thumb_view.is_none_or(|previous| {
+            (previous[0] - view[0]).abs() > 2. || (previous[1] - view[1]).abs() > 2.
+        });
         if changed_view {
             self.scroll_thumb_y = Some(target);
             self.scroll_thumb_velocity = 0.;
@@ -338,12 +355,14 @@ impl AnimState {
             || (self.nav_pill_x - self.target_nav_x).abs() > 0.5
             || self.nav_velocity_x.abs() > 0.2
             || self.scroll_thumb_velocity.abs() > 0.2
-            || self.focus_rect.is_some_and(|rect|
-                self.focus_target.is_some_and(|target|
-                    rect.iter().zip(target.iter()).any(|(a, b)| (a - b).abs() > 0.45)
-                    || self.focus_velocity.iter().any(|v| v.abs() > 0.4)
-                )
-            )
+            || self.focus_rect.is_some_and(|rect| {
+                self.focus_target.is_some_and(|target| {
+                    rect.iter()
+                        .zip(target.iter())
+                        .any(|(a, b)| (a - b).abs() > 0.45)
+                        || self.focus_velocity.iter().any(|v| v.abs() > 0.4)
+                })
+            })
             || (self.installed_tab_position - self.installed_tab_target).abs() > 0.003
             || self.installed_tab_velocity.abs() > 0.01
             || visual::switch_motion_active()
@@ -555,7 +574,7 @@ pub(super) fn button(
     accent: bool,
 ) {
     let [x, y, w, h] = rect;
-    horizon_client::launcher_nexo::button(rect,label,accent);
+    horizon_client::launcher_nexo::button(rect, label, accent);
     let experience = horizon_client::ui_theme::active_theme().experience;
     let radius = if experience == horizon_client::ui_theme::ExperiencePreset::OldSchool {
         (h * 0.27).clamp(8., 14.)
@@ -694,8 +713,16 @@ fn draw_setting_card(
         visual::component_card(ui, [x, y, w, h], is_active_card);
     } else {
         ui.rounded(
-            x, y, w, h, 18.0,
-            if is_active_card { my3_surface_high() } else { my3_card_bg() },
+            x,
+            y,
+            w,
+            h,
+            18.0,
+            if is_active_card {
+                my3_surface_high()
+            } else {
+                my3_card_bg()
+            },
         );
     }
     if is_active_card {
@@ -810,9 +837,8 @@ fn draw_setting_card(
             let minus_rect = [track_x - 34.0 - 6.0, y + (h - 34.0) * 0.5, 34.0, 34.0];
 
             let pill_y = y + (h - 36.0) * 0.5;
-            visual::component_slider(ui, [track_x, pill_y, track_w, 36.],
-                fraction, value_label);
-            horizon_client::launcher_nexo::range([track_x,pill_y,track_w,36.],fraction);
+            visual::component_slider(ui, [track_x, pill_y, track_w, 36.], fraction, value_label);
+            horizon_client::launcher_nexo::range([track_x, pill_y, track_w, 36.], fraction);
             let bar_x = track_x + 10.;
             let bar_w = (track_w - 20.).max(24.);
 
@@ -865,9 +891,15 @@ fn page_icon(page: Page) -> Icon {
         Page::Shaders => Icon::Shaders,
         Page::Installed => Icon::Installed,
         Page::Settings => Icon::Settings,
-        Page::Skins => if horizon_client::ui_theme::active_theme().experience
-            == horizon_client::ui_theme::ExperiencePreset::OldSchool
-        { Icon::Person } else { Icon::Installed },
+        Page::Skins => {
+            if horizon_client::ui_theme::active_theme().experience
+                == horizon_client::ui_theme::ExperiencePreset::OldSchool
+            {
+                Icon::Person
+            } else {
+                Icon::Installed
+            }
+        }
     }
 }
 
@@ -988,7 +1020,11 @@ fn draw_my3_progress_view(
                 4.0,
                 if horizon_client::ui_theme::active_theme().experience
                     == horizon_client::ui_theme::ExperiencePreset::OldSchool
-                { my3_accent() } else { color::hex(0xC9B8FF, 165) },
+                {
+                    my3_accent()
+                } else {
+                    color::hex(0xC9B8FF, 165)
+                },
             );
         }
     }
@@ -1123,9 +1159,12 @@ impl Launcher {
         if !self.jade_nav_ready() || direction == 0 {
             return false;
         }
-        let index = Page::ALL.iter().position(|p| *p == self.catalog.page).unwrap_or(0);
-        let next = (index as isize + direction as isize)
-            .rem_euclid(Page::ALL.len() as isize) as usize;
+        let index = Page::ALL
+            .iter()
+            .position(|p| *p == self.catalog.page)
+            .unwrap_or(0);
+        let next =
+            (index as isize + direction as isize).rem_euclid(Page::ALL.len() as isize) as usize;
         let page = Page::ALL[next];
         self.select_launcher_page(page);
         self.jade_navigation_cue("tabs");
@@ -1137,15 +1176,25 @@ impl Launcher {
     /// Fully native Jade quick access sheet, activated by holding a channel
     /// or pressing controller Start. No PS3/Xbox proprietary branding.
     fn draw_jade_quick_panel(&mut self, ui: &mut Ui<'_>, w: f32, h: f32) {
-        if !self.quick_panel_open { return; }
+        if !self.quick_panel_open {
+            return;
+        }
         let th = horizon_client::ui_theme::active_theme();
         self.targets.clear();
         self.list_targets.clear();
         self.list_view = None;
-        let columns = if h < 510. && w >= 630. { 2usize } else { 1usize };
+        let columns = if h < 510. && w >= 630. {
+            2usize
+        } else {
+            1usize
+        };
         let count = Page::ALL.len() + 1;
         let rows = count.div_ceil(columns);
-        let row_h = if columns == 2 { 47. } else { ((h - 102.) / rows as f32).clamp(33., 48.) };
+        let row_h = if columns == 2 {
+            47.
+        } else {
+            ((h - 102.) / rows as f32).clamp(33., 48.)
+        };
         let panel_w = (w - 32.).min(if columns == 2 { 495. } else { 348. });
         let panel_h = 75. + rows as f32 * row_h;
         let x = (w - panel_w - 16.).max(8.);
@@ -1154,13 +1203,38 @@ impl Launcher {
         ui.rounded(x, y, panel_w, panel_h, 12., th.bg_solid);
         ui.stroke_rounded(x, y, panel_w, panel_h, 12., 1., th.border_strong);
         ui.rounded(x + 15., y + 14., 3., 36., 1.5, th.accent);
-        ui.text(Face::ConsoleDisplay, 19., x + 28., y + 14.,
-            th.text_primary, "Quick access");
-        ui.text(Face::ConsoleMedium, 10.5, x + 29., y + 40.,
-            th.text_muted, "Navigate between Horizon channels");
+        ui.text(
+            Face::ConsoleDisplay,
+            19.,
+            x + 28.,
+            y + 14.,
+            th.text_primary,
+            "Quick access",
+        );
+        ui.text(
+            Face::ConsoleMedium,
+            10.5,
+            x + 29.,
+            y + 40.,
+            th.text_muted,
+            "Navigate between Horizon channels",
+        );
         let close = [x + panel_w - 47., y + 12., 35., 35.];
-        ui.rounded(close[0], close[1], close[2], close[3], 8., th.surface_bright);
-        ui.icon(Icon::Close, close[0] + 10., close[1] + 10., 16., th.text_primary);
+        ui.rounded(
+            close[0],
+            close[1],
+            close[2],
+            close[3],
+            8.,
+            th.surface_bright,
+        );
+        ui.icon(
+            Icon::Close,
+            close[0] + 10.,
+            close[1] + 10.,
+            16.,
+            th.text_primary,
+        );
         self.targets.push((close, Action::CloseQuickPanel));
 
         let gap = 7.;
@@ -1168,27 +1242,60 @@ impl Launcher {
         for i in 0..count {
             let (label, icon, action, selected) = if i < Page::ALL.len() {
                 let page = Page::ALL[i];
-                (page.name(), page_icon(page), Action::Page(page),
-                    self.catalog.page == page)
+                (
+                    page.name(),
+                    page_icon(page),
+                    Action::Page(page),
+                    self.catalog.page == page,
+                )
             } else {
                 ("Account", Icon::Person, Action::Account, false)
             };
             let column = i % columns;
             let row = i / columns;
-            let rect = [x + 14. + column as f32 * (item_w + gap),
-                y + 60. + row as f32 * row_h, item_w, row_h - 5.];
-            ui.rounded(rect[0], rect[1], rect[2], rect[3], 8.,
-                if selected { th.surface_selected } else { th.surface });
-            ui.stroke_rounded(rect[0], rect[1], rect[2], rect[3], 8.,
+            let rect = [
+                x + 14. + column as f32 * (item_w + gap),
+                y + 60. + row as f32 * row_h,
+                item_w,
+                row_h - 5.,
+            ];
+            ui.rounded(
+                rect[0],
+                rect[1],
+                rect[2],
+                rect[3],
+                8.,
+                if selected {
+                    th.surface_selected
+                } else {
+                    th.surface
+                },
+            );
+            ui.stroke_rounded(
+                rect[0],
+                rect[1],
+                rect[2],
+                rect[3],
+                8.,
                 if selected { 1.1 } else { 0.7 },
-                if selected { th.accent } else { th.border });
-            ui.icon(icon, rect[0] + 12., rect[1] + (rect[3] - 22.) / 2.,
-                22., if selected { th.accent } else { th.text_primary });
-            let text = ui.fit_text(Face::ConsoleMedium, 12.5,
-                label, (rect[2] - 51.).max(18.));
-            ui.text(Face::ConsoleMedium, 12.5,
-                rect[0] + 42., rect[1] + (rect[3] - 17.) / 2.,
-                th.text_primary, &text);
+                if selected { th.accent } else { th.border },
+            );
+            ui.icon(
+                icon,
+                rect[0] + 12.,
+                rect[1] + (rect[3] - 22.) / 2.,
+                22.,
+                if selected { th.accent } else { th.text_primary },
+            );
+            let text = ui.fit_text(Face::ConsoleMedium, 12.5, label, (rect[2] - 51.).max(18.));
+            ui.text(
+                Face::ConsoleMedium,
+                12.5,
+                rect[0] + 42.,
+                rect[1] + (rect[3] - 17.) / 2.,
+                th.text_primary,
+                &text,
+            );
             self.targets.push((rect, action));
         }
     }
@@ -1231,10 +1338,13 @@ impl Launcher {
                 let initial = if horizon_client::ui_theme::active_theme().experience
                     == horizon_client::ui_theme::ExperiencePreset::OldSchool
                 {
-                    self.targets.iter().position(|(_, a)| {
-                        *a == Action::Page(self.catalog.page)
-                    }).unwrap_or(0)
-                } else { 0 };
+                    self.targets
+                        .iter()
+                        .position(|(_, a)| *a == Action::Page(self.catalog.page))
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
                 self.focus = Some(self.focus.map_or(initial, |i| (i + 1) % self.targets.len()));
                 return true;
             }
@@ -1272,16 +1382,22 @@ impl Launcher {
             } else if horizon_client::ui_theme::active_theme().experience
                 == horizon_client::ui_theme::ExperiencePreset::OldSchool
             {
-                self.targets.iter().position(|(_, a)| {
-                    *a == Action::Page(self.catalog.page)
-                }).unwrap_or(0)
-            } else { 0 },
+                self.targets
+                    .iter()
+                    .position(|(_, a)| *a == Action::Page(self.catalog.page))
+                    .unwrap_or(0)
+            } else {
+                0
+            },
         );
         true
     }
 
     pub(super) fn draw_pages(&mut self) -> Result<()> {
-        if self.nexo.presented && !self.nexo.dirty && self.nexo.captured.elapsed().as_millis()<100 { return Ok(()); }
+        if self.nexo.presented && !self.nexo.dirty && self.nexo.captured.elapsed().as_millis() < 100
+        {
+            return Ok(());
+        }
         // Page drawing borrows `self` mutably (settings and the project modal do), so lend the
         // renderer and its resources out as plain locals while the frame is built, and put them
         // back whatever the result is.
@@ -1337,7 +1453,9 @@ impl Launcher {
             horizon_client::launcher_nexo::begin();
             // The DOM owns scrolling/reflow. Capture all native rows, not just
             // the few that fit behind the visible WebView at the native DPI.
-            ui.w=960.; ui.h=4096.; self.anim.intro_done=true;
+            ui.w = 960.;
+            ui.h = 4096.;
+            self.anim.intro_done = true;
         }
         // Keep ui.w and ui.h synchronized with Launcher::ui_density(). When the soft keyboard is
         // active, compute ime_top_dp and bias scroll offsets / modal Y positions instead of shrinking ui.h.
@@ -1555,8 +1673,12 @@ impl Launcher {
                 let home_reserved_bottom = if layout.portrait { 60.0 } else { 78.0 };
                 visual::home(
                     &mut ui,
-                    [content_x, home_top + slide_y, content_w,
-                        (h - home_top - home_reserved_bottom).max(0.0)],
+                    [
+                        content_x,
+                        home_top + slide_y,
+                        content_w,
+                        (h - home_top - home_reserved_bottom).max(0.0),
+                    ],
                     &view,
                     |rect, action| {
                         let action = match action {
@@ -1587,12 +1709,21 @@ impl Launcher {
                 self.catalog.scroll,
                 content_x,
                 content_w,
-                if layout.console && !layout.portrait { 130.0 + slide_y } else { 62.0 + slide_y },
+                if layout.console && !layout.portrait {
+                    130.0 + slide_y
+                } else {
+                    62.0 + slide_y
+                },
             );
             self.list_view = Some(self.wardrobe.view);
             self.catalog.scroll = self.catalog.scroll.min(self.wardrobe.view[2]);
         } else if page.is_catalog() {
-            let slide_y = slide_y + if layout.console && !layout.portrait { 68.0 } else { 0.0 };
+            let slide_y = slide_y
+                + if layout.console && !layout.portrait {
+                    68.0
+                } else {
+                    0.0
+                };
             let header_y = 62.0 + slide_y;
             ui.text(
                 Face::SemiBold,
@@ -2002,12 +2133,26 @@ impl Launcher {
                 false,
             );
         } else if page == Page::Installed {
-            let offset = if layout.console && !layout.portrait { 67.0 } else { 0.0 };
+            let offset = if layout.console && !layout.portrait {
+                67.0
+            } else {
+                0.0
+            };
             self.draw_installed(&mut ui, content_x, content_w, h, compact, slide_y + offset);
         } else {
-            let offset = if layout.console && !layout.portrait { 67.0 } else { 0.0 };
+            let offset = if layout.console && !layout.portrait {
+                67.0
+            } else {
+                0.0
+            };
             self.draw_settings_page(
-                &mut ui, content_x, content_w, h, compact, slide_y + offset, ime_top_dp,
+                &mut ui,
+                content_x,
+                content_w,
+                h,
+                compact,
+                slide_y + offset,
+                ime_top_dp,
             );
         }
 
@@ -2023,28 +2168,44 @@ impl Launcher {
                 // The console Home has a quiet, continuous system footer.
                 // Keep full touch rectangles but avoid detached floating
                 // chrome buttons competing with the hero and quick access.
-                ui.fill(content_x, h - 52., content_w, 1.,
-                    color::hex(0xC3D2E4, 46));
+                ui.fill(content_x, h - 52., content_w, 1., color::hex(0xC3D2E4, 46));
                 if !status.is_empty() {
-                    let report = [content_x, h - 49., (content_w - 150.).clamp(140., 290.), 42.];
+                    let report = [
+                        content_x,
+                        h - 49.,
+                        (content_w - 150.).clamp(140., 290.),
+                        42.,
+                    ];
                     let name = if self.error.is_some() {
                         "VIEW ERROR REPORT"
                     } else {
                         "STATUS & SESSION REPORT"
                     };
-                    ui.text(Face::Medium, 11., report[0] + 8., report[1] + 14.,
+                    ui.text(
+                        Face::Medium,
+                        11.,
+                        report[0] + 8.,
+                        report[1] + 14.,
                         if self.error.is_some() {
                             color::hex(0xE8A8A4, 237)
                         } else {
                             color::hex(0xB9C7DA, 216)
-                        }, name);
+                        },
+                        name,
+                    );
                     if let Some(hit) = ui.clip_rect(report) {
                         self.targets.push((hit, Action::StatusDetails(true)));
                     }
                 }
                 let repository = [w - 141., h - 49., 117., 42.];
-                ui.text(Face::Medium, 11., repository[0] + 32., repository[1] + 14.,
-                    color::hex(0xB9C7DA, 216), "GITHUB");
+                ui.text(
+                    Face::Medium,
+                    11.,
+                    repository[0] + 32.,
+                    repository[1] + 14.,
+                    color::hex(0xB9C7DA, 216),
+                    "GITHUB",
+                );
                 if let Some(hit) = ui.clip_rect(repository) {
                     self.targets.push((hit, Action::Repository));
                 }
@@ -2055,7 +2216,12 @@ impl Launcher {
                     button(
                         &mut ui,
                         &mut self.targets,
-                        [content_x, h - 40., (content_w - 116.).clamp(100., 260.), 32.],
+                        [
+                            content_x,
+                            h - 40.,
+                            (content_w - 116.).clamp(100., 260.),
+                            32.,
+                        ],
                         if self.error.is_some() {
                             "View error report"
                         } else {
@@ -2080,12 +2246,16 @@ impl Launcher {
 
         // Material You 3 Project Detail Modal (Versions, Modrinth Description, Gallery Screenshots)
         if self.catalog.project_modal.is_some() {
-            if nexo { horizon_client::launcher_nexo::modal(); }
+            if nexo {
+                horizon_client::launcher_nexo::modal();
+            }
             self.draw_project_modal(&mut ui, w, h);
         }
 
         if self.login.visible {
-            if nexo { horizon_client::launcher_nexo::modal(); }
+            if nexo {
+                horizon_client::launcher_nexo::modal();
+            }
             self.list_targets.clear();
             self.list_view = None;
             self.login.draw(
@@ -2097,7 +2267,9 @@ impl Launcher {
             );
         }
         if let Some(chooser) = &mut self.chooser {
-            if nexo { horizon_client::launcher_nexo::modal(); }
+            if nexo {
+                horizon_client::launcher_nexo::modal();
+            }
             chooser.draw(&mut ui, &mut self.targets, self.anim.modal_anim);
             self.list_targets = chooser.navigation(ui.w);
             self.list_view = Some(chooser.viewport(ui.h));
@@ -2114,7 +2286,9 @@ impl Launcher {
             let height = bottom - top;
             let thumb = (height * height / (height + maximum)).max(20.0).min(height);
             let desired = top + (height - thumb) * (scroll / maximum).clamp(0.0, 1.0);
-            let y = self.anim.soft_scroll_thumb(desired, [top, top + height - thumb]);
+            let y = self
+                .anim
+                .soft_scroll_thumb(desired, [top, top + height - thumb]);
             let style = horizon_client::ui_theme::active_theme().experience;
             let track = if style == horizon_client::ui_theme::ExperiencePreset::OldSchool {
                 my3_surface()
@@ -2127,27 +2301,49 @@ impl Launcher {
                 ui.rounded(w - 12.5, y, 8., thumb, 3.5, my3_accent());
             } else {
                 // Liquid Glass stays translucent with a quiet white edge.
-                ui.rounded(w - 12., y, 7., thumb, 3.5,
-                    horizon_client::ui_theme::color::hex(0xE6F5FF, 117));
-                ui.stroke_rounded(w - 12., y, 7., thumb, 3.5, 0.8,
-                    horizon_client::ui_theme::color::hex(0xFFFFFF, 112));
+                ui.rounded(
+                    w - 12.,
+                    y,
+                    7.,
+                    thumb,
+                    3.5,
+                    horizon_client::ui_theme::color::hex(0xE6F5FF, 117),
+                );
+                ui.stroke_rounded(
+                    w - 12.,
+                    y,
+                    7.,
+                    thumb,
+                    3.5,
+                    0.8,
+                    horizon_client::ui_theme::color::hex(0xFFFFFF, 112),
+                );
             }
         }
-        if self.list_view.is_none_or(|[top, bottom, maximum]| maximum <= 0. || bottom <= top) {
+        if self
+            .list_view
+            .is_none_or(|[top, bottom, maximum]| maximum <= 0. || bottom <= top)
+        {
             self.anim.scroll_thumb_y = None;
             self.anim.scroll_thumb_view = None;
             self.anim.scroll_thumb_velocity = 0.;
         }
         if self.catalog.fm_modal.is_some() {
-            if nexo { horizon_client::launcher_nexo::modal(); }
+            if nexo {
+                horizon_client::launcher_nexo::modal();
+            }
             self.draw_fm_modal(&mut ui, w, h, ime_top_dp);
         }
         if self.diagnostics_modal_open {
-            if nexo { horizon_client::launcher_nexo::modal(); }
+            if nexo {
+                horizon_client::launcher_nexo::modal();
+            }
             self.draw_diagnostics_summary_modal(&mut ui, w, h);
         }
         if self.status_details {
-            if nexo { horizon_client::launcher_nexo::modal(); }
+            if nexo {
+                horizon_client::launcher_nexo::modal();
+            }
             self.targets.clear();
             self.list_targets.clear();
             self.list_view = None;
@@ -2189,7 +2385,9 @@ impl Launcher {
             );
         }
         if self.exit_confirmation {
-            if nexo { horizon_client::launcher_nexo::modal(); }
+            if nexo {
+                horizon_client::launcher_nexo::modal();
+            }
             self.targets.clear();
             self.list_targets.clear();
             self.list_view = None;
@@ -2240,16 +2438,33 @@ impl Launcher {
         if let Some(action) = self.pending_focus.take() {
             self.focus = self.targets.iter().position(|(_, a)| *a == action);
         }
-        let focused = self.focus.and_then(|index| self.targets.get(index)).copied();
+        let focused = self
+            .focus
+            .and_then(|index| self.targets.get(index))
+            .copied();
         if active_th.experience == horizon_client::ui_theme::ExperiencePreset::OldSchool {
             if let Some([x, y, w, h]) = self.anim.focus_outline(focused.map(|(r, _)| r)) {
                 // Console focus lives above the card and has its own animated
                 // geometry, while every controller activation uses the original
                 // unanimated action rectangle below.
-                ui.stroke_rounded(x - 2., y - 2., w + 4., h + 4.,
-                    9., 1.8, active_th.border_strong);
-                ui.stroke_rounded(x - 4., y - 4., w + 8., h + 8.,
-                    11., 0.7, color::with_alpha(active_th.accent, 0.38));
+                ui.stroke_rounded(
+                    x - 2.,
+                    y - 2.,
+                    w + 4.,
+                    h + 4.,
+                    9.,
+                    1.8,
+                    active_th.border_strong,
+                );
+                ui.stroke_rounded(
+                    x - 4.,
+                    y - 4.,
+                    w + 8.,
+                    h + 8.,
+                    11.,
+                    0.7,
+                    color::with_alpha(active_th.accent, 0.38),
+                );
             }
         } else {
             self.anim.focus_outline(None);
@@ -2333,7 +2548,7 @@ impl Launcher {
             }
         }
         if nexo {
-            let frame=horizon_client::launcher_nexo::finish();
+            let frame = horizon_client::launcher_nexo::finish();
             self.publish_nexo(frame);
             return Ok(());
         }
@@ -2389,16 +2604,26 @@ impl Launcher {
         // Real Glass Lab V7 segmented tabs: one shared track and one
         // spring-driven active capsule. No double-stacked button lenses.
         self.anim.installed_tab_target =
-            if self.catalog.installed_sub_tab == InstalledSubTab::Library { 0. } else { 1. };
-        visual::component_tabs(ui,
+            if self.catalog.installed_sub_tab == InstalledSubTab::Library {
+                0.
+            } else {
+                1.
+            };
+        visual::component_tabs(
+            ui,
             [lib_rect[0], lib_rect[1], tab_w * 2. + 6., 32.],
             ["Library", "File Manager"],
-            self.anim.installed_tab_position);
+            self.anim.installed_tab_position,
+        );
         if let Some(rect) = ui.clip_rect(lib_rect) {
-            self.targets.push((rect, Action::SetInstalledSubTab(InstalledSubTab::Library)));
+            self.targets
+                .push((rect, Action::SetInstalledSubTab(InstalledSubTab::Library)));
         }
         if let Some(rect) = ui.clip_rect(fm_rect) {
-            self.targets.push((rect, Action::SetInstalledSubTab(InstalledSubTab::FileManager)));
+            self.targets.push((
+                rect,
+                Action::SetInstalledSubTab(InstalledSubTab::FileManager),
+            ));
         }
 
         if self.catalog.installed_sub_tab == InstalledSubTab::Library {
@@ -2605,8 +2830,16 @@ impl Launcher {
                 } else {
                     ui.rounded(content_x, y, content_w, card_h, 14.0, my3_card_bg());
                     ui.border(
-                        content_x, y, content_w, card_h, 14.0,
-                        if item.enabled { my3_accent() } else { my3_card_border() },
+                        content_x,
+                        y,
+                        content_w,
+                        card_h,
+                        14.0,
+                        if item.enabled {
+                            my3_accent()
+                        } else {
+                            my3_card_border()
+                        },
                     );
                 }
 
@@ -2777,9 +3010,15 @@ impl Launcher {
         );
 
         // Clickable Breadcrumb Bar between Up button and Right CTAs
-        let bc_x = if narrow_fm { content_x } else { content_x + 110.0 };
+        let bc_x = if narrow_fm {
+            content_x
+        } else {
+            content_x + 110.0
+        };
         let bc_y = if narrow_fm { nav_y + 36.0 } else { nav_y };
-        let bc_w = if narrow_fm { content_w } else {
+        let bc_w = if narrow_fm {
+            content_w
+        } else {
             (content_x + content_w - right_cta_w - 8.0 - bc_x).max(60.0)
         };
         ui.rounded(bc_x, bc_y, bc_w, 30.0, 10.0, my3_surface());
@@ -2847,13 +3086,16 @@ impl Launcher {
         }
 
         // Row 2: Quick Root Folder Pills (Root, Worlds, Mods, Packs, Shaders, Controls, Shots, Reports)
-        let root_y = if narrow_fm { nav_y + 70.0 } else { nav_y + 34.0 };
+        let root_y = if narrow_fm {
+            nav_y + 70.0
+        } else {
+            nav_y + 34.0
+        };
         let root_dirs = crate::document_store::FM_ROOT_DIRS;
         let r_gap = 4.0;
         let root_cols = if narrow_fm { 4 } else { root_dirs.len() };
         let root_rows = root_dirs.len().div_ceil(root_cols);
-        let r_w = ((content_w - r_gap * (root_cols as f32 - 1.0))
-            / root_cols as f32).max(36.0);
+        let r_w = ((content_w - r_gap * (root_cols as f32 - 1.0)) / root_cols as f32).max(36.0);
         for (i, (rel, label)) in root_dirs.iter().enumerate() {
             let rx = content_x + (i % root_cols) as f32 * (r_w + r_gap);
             let ry = root_y + (i / root_cols) as f32 * 30.0;
@@ -2905,8 +3147,7 @@ impl Launcher {
         let t_gap = 4.0;
         let tool_cols = if narrow_fm { 4 } else { tools.len() };
         let tool_rows = tools.len().div_ceil(tool_cols);
-        let t_w = ((content_w - t_gap * (tool_cols as f32 - 1.0))
-            / tool_cols as f32).max(36.0);
+        let t_w = ((content_w - t_gap * (tool_cols as f32 - 1.0)) / tool_cols as f32).max(36.0);
         for (i, (lbl, act, hi)) in tools.into_iter().enumerate() {
             let tx = content_x + (i % tool_cols) as f32 * (t_w + t_gap);
             let ty = tool_y + (i / tool_cols) as f32 * 30.0;
@@ -2998,10 +3239,30 @@ impl Launcher {
             {
                 visual::component_card(ui, [content_x, y, content_w, card_h], selected);
             } else {
-                ui.rounded(content_x, y, content_w, card_h, 12.0,
-                    if selected { my3_nav_active() } else { my3_card_bg() });
-                ui.border(content_x, y, content_w, card_h, 12.0,
-                    if selected { my3_accent() } else { my3_card_border() });
+                ui.rounded(
+                    content_x,
+                    y,
+                    content_w,
+                    card_h,
+                    12.0,
+                    if selected {
+                        my3_nav_active()
+                    } else {
+                        my3_card_bg()
+                    },
+                );
+                ui.border(
+                    content_x,
+                    y,
+                    content_w,
+                    card_h,
+                    12.0,
+                    if selected {
+                        my3_accent()
+                    } else {
+                        my3_card_border()
+                    },
+                );
             }
 
             ui.m3_checkbox(content_x + 11.0, y + 13.0, 20.0, selected, "");
@@ -4081,10 +4342,12 @@ impl Launcher {
                     }
                     // The optical calibration controls are real drag tracks,
                     // not decorative sliders or single-tap cycling buttons.
-                    if matches!(a, visual::AppearanceAction::Transparency
-                        | visual::AppearanceAction::Blur
-                        | visual::AppearanceAction::Refraction)
-                    {
+                    if matches!(
+                        a,
+                        visual::AppearanceAction::Transparency
+                            | visual::AppearanceAction::Blur
+                            | visual::AppearanceAction::Refraction
+                    ) {
                         SLIDER_TRACK_TARGETS.with(|tracks| {
                             tracks.borrow_mut().push((r, action, r[0], r[2]));
                         });
@@ -5365,8 +5628,7 @@ impl Launcher {
                         }
                         let chip_w = 78.0;
                         let chip_x = rx + half_w - chip_w - 10.0;
-                        visual::component_chip(ui,
-                            [chip_x, picker_y + 10., chip_w, 20.], selected);
+                        visual::component_chip(ui, [chip_x, picker_y + 10., chip_w, 20.], selected);
                         ui.centered_fit(
                             Face::SemiBold,
                             8.5,
@@ -5630,11 +5892,17 @@ impl Launcher {
                 (*x..*x + *w).contains(&p[0]) && (*y..*y + *h).contains(&p[1])
             })
             .map(|(_, a)| *a);
-        self.dispatch_action(events,action)
+        self.dispatch_action(events, action)
     }
 
-    pub(super) fn dispatch_action(&mut self, events:&ActiveEventLoop, action:Option<Action>) -> Result<()> {
-        if self.session_worker.is_some() && self.chooser.is_none() && !self.exit_confirmation { return Ok(()); }
+    pub(super) fn dispatch_action(
+        &mut self,
+        events: &ActiveEventLoop,
+        action: Option<Action>,
+    ) -> Result<()> {
+        if self.session_worker.is_some() && self.chooser.is_none() && !self.exit_confirmation {
+            return Ok(());
+        }
         if crate::documents::busy() {
             return Ok(());
         }
@@ -5671,7 +5939,11 @@ impl Launcher {
                         &self.home.join(".local/horizon-client/26.3"),
                     );
                     let settings = horizon_client::settings::Settings::load(
-                        &self.catalog.config.game_home(&self.home).join("options.txt"),
+                        &self
+                            .catalog
+                            .config
+                            .game_home(&self.home)
+                            .join("options.txt"),
                     );
                     audio.master = settings.volumes[0];
                     let mut volumes = settings.volumes;
@@ -6789,7 +7061,9 @@ impl Launcher {
             Some(Action::SelectAccentSwatch(rgb)) => {
                 self.catalog.config.theme.custom_accent_hex =
                     horizon_client::ui_theme::format_hex_color(rgb);
-                self.catalog.config.theme.preset = horizon_client::ui_theme::ThemePreset::Custom;
+                if self.catalog.config.theme.resolve().experience == horizon_client::ui_theme::ExperiencePreset::Standard {
+                    self.catalog.config.theme.preset = horizon_client::ui_theme::ThemePreset::Custom;
+                }
                 horizon_client::ui_theme::set_active_theme(self.catalog.config.theme.resolve());
                 self.anim.trigger_theme_pulse();
                 self.catalog.config.save(&self.home)?;
@@ -6797,7 +7071,9 @@ impl Launcher {
             Some(Action::SelectBgSwatch(rgb)) => {
                 self.catalog.config.theme.custom_bg_hex =
                     horizon_client::ui_theme::format_hex_color(rgb);
-                self.catalog.config.theme.preset = horizon_client::ui_theme::ThemePreset::Custom;
+                if self.catalog.config.theme.resolve().experience == horizon_client::ui_theme::ExperiencePreset::Standard {
+                    self.catalog.config.theme.preset = horizon_client::ui_theme::ThemePreset::Custom;
+                }
                 self.catalog.config.theme.background_mode =
                     horizon_client::ui_theme::BackgroundMode::Solid;
                 horizon_client::ui_theme::set_active_theme(self.catalog.config.theme.resolve());
@@ -6807,7 +7083,9 @@ impl Launcher {
             Some(Action::SelectGradStartSwatch(rgb)) => {
                 self.catalog.config.theme.gradient_start_hex =
                     horizon_client::ui_theme::format_hex_color(rgb);
-                self.catalog.config.theme.preset = horizon_client::ui_theme::ThemePreset::Custom;
+                if self.catalog.config.theme.resolve().experience == horizon_client::ui_theme::ExperiencePreset::Standard {
+                    self.catalog.config.theme.preset = horizon_client::ui_theme::ThemePreset::Custom;
+                }
                 self.catalog.config.theme.background_mode =
                     horizon_client::ui_theme::BackgroundMode::Gradient;
                 horizon_client::ui_theme::set_active_theme(self.catalog.config.theme.resolve());
@@ -6817,7 +7095,9 @@ impl Launcher {
             Some(Action::SelectGradEndSwatch(rgb)) => {
                 self.catalog.config.theme.gradient_end_hex =
                     horizon_client::ui_theme::format_hex_color(rgb);
-                self.catalog.config.theme.preset = horizon_client::ui_theme::ThemePreset::Custom;
+                if self.catalog.config.theme.resolve().experience == horizon_client::ui_theme::ExperiencePreset::Standard {
+                    self.catalog.config.theme.preset = horizon_client::ui_theme::ThemePreset::Custom;
+                }
                 self.catalog.config.theme.background_mode =
                     horizon_client::ui_theme::BackgroundMode::Gradient;
                 horizon_client::ui_theme::set_active_theme(self.catalog.config.theme.resolve());
@@ -7158,9 +7438,11 @@ impl Launcher {
     pub(super) fn apply_slider_fraction(&mut self, action: Action, frac: f32) {
         let t = frac.clamp(0.0, 1.0);
         match action {
-            Action::Appearance(appearance @ (visual::AppearanceAction::Transparency
-            | visual::AppearanceAction::Blur
-            | visual::AppearanceAction::Refraction)) => {
+            Action::Appearance(
+                appearance @ (visual::AppearanceAction::Transparency
+                | visual::AppearanceAction::Blur
+                | visual::AppearanceAction::Refraction),
+            ) => {
                 let mut optics = self.catalog.config.theme.current_optics();
                 match appearance {
                     visual::AppearanceAction::Transparency => optics.opacity = 0.06 + t * 0.44,
@@ -7316,10 +7598,12 @@ impl Launcher {
         let density = self.ui_density();
         let px = t.location.x as f32 / density;
         let py = t.location.y as f32 / density;
-        let viewport = self.renderer.as_ref().map_or([360., 800.], |r| [
-            r.config.width as f32 / density.max(0.01),
-            r.config.height as f32 / density.max(0.01),
-        ]);
+        let viewport = self.renderer.as_ref().map_or([360., 800.], |r| {
+            [
+                r.config.width as f32 / density.max(0.01),
+                r.config.height as f32 / density.max(0.01),
+            ]
+        });
         let console_nav = self.jade_nav_ready();
         match t.phase {
             TouchPhase::Started => {
@@ -7374,12 +7658,23 @@ impl Launcher {
                     self.taps.cancel();
                 } else {
                     let drag = self.drag.take();
-                    let gesture = drag.as_ref().and_then(|drag| {
-                        console_nav.then(|| drag.release_console_swipe(
-                            t.location.x, t.location.y, density as f64, viewport))
-                    }).flatten();
-                    let long_press = console_nav && drag.as_ref().is_some_and(|drag|
-                        drag.console_long_press(density as f64, viewport));
+                    let gesture = drag
+                        .as_ref()
+                        .and_then(|drag| {
+                            console_nav.then(|| {
+                                drag.release_console_swipe(
+                                    t.location.x,
+                                    t.location.y,
+                                    density as f64,
+                                    viewport,
+                                )
+                            })
+                        })
+                        .flatten();
+                    let long_press = console_nav
+                        && drag
+                            .as_ref()
+                            .is_some_and(|drag| drag.console_long_press(density as f64, viewport));
                     if let Some(swipe) = gesture {
                         // A nav swipe always consumes its owned tap. It never
                         // activates a tile under the release position.

@@ -2123,7 +2123,10 @@ impl Catalog {
                     | "theme_grad_end"
             )
         );
-        if is_theme_field && self.config.theme.resolve().experience == horizon_client::ui_theme::ExperiencePreset::Standard {
+        if is_theme_field
+            && self.config.theme.resolve().experience
+                == horizon_client::ui_theme::ExperiencePreset::Standard
+        {
             self.config.theme.preset = horizon_client::ui_theme::ThemePreset::Custom;
         }
         let field = match self.editing {

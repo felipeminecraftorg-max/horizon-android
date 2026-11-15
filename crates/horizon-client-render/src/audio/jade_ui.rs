@@ -45,18 +45,21 @@ mod tests {
 
     #[test]
     fn jade_cues_are_short_mono_original_waveforms_without_clipping() {
-        for kind in ["tabs", "panel", "back", "confirm", "focus",
-                     "card", "switch", "slider", "chip"] {
+        for kind in [
+            "tabs", "panel", "back", "confirm", "focus", "card", "switch", "slider", "chip",
+        ] {
             let (samples, rate, channels) = synthesize(kind).unwrap();
             assert_eq!(rate, 24_000);
             assert_eq!(channels, 1);
             assert!((500..=2900).contains(&samples.len()), "{kind}");
             assert!(samples.iter().all(|v| v.is_finite() && v.abs() <= 0.44));
             assert!(samples[0].abs() < 0.001, "{kind} must start quietly");
-            assert!(samples.last().unwrap().abs() < 0.001, "{kind} must fade out");
+            assert!(
+                samples.last().unwrap().abs() < 0.001,
+                "{kind} must fade out"
+            );
         }
-        assert_ne!(synthesize("tabs").unwrap().0,
-                   synthesize("back").unwrap().0);
+        assert_ne!(synthesize("tabs").unwrap().0, synthesize("back").unwrap().0);
         assert!(synthesize("unknown").is_none());
     }
 }

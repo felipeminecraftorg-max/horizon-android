@@ -5,7 +5,7 @@
  let storage;try{storage={getItem:()=>localStorage.getItem('horizon.nexo.live.v1'),setItem:(_,value)=>localStorage.setItem('horizon.nexo.live.v1',value)};}catch(_){storage=null;}
  const store=NexoState.createStore(storage);store.get().catalog=[];store.get().profiles=[];
  let state=null,utility=null,opened=false,requested=null,renderKey='',labelKey='',noticeTimer=0,launchBusy=false;
- const controls=new Map(),timers=new Map();
+ const controls=new Map(),timers=new Map(),fieldNodes=new Map();
  const pageMap={Mods:'mods',Pacotes:'packs',Shaders:'shaders',Skins:'skins'},titles={Play:'Jogar',Mods:'Mods','Resource Pack':'Pacotes',Shaders:'Shaders',Skins:'Skins',Installed:'Arquivos',Settings:'Ajustes'};
  const dialogs=[...document.querySelectorAll('dialog:not(#intro-dialog)')];
  function el(tag,attrs={},...children){const n=document.createElement(tag);for(const[k,v]of Object.entries(attrs)){if(k==='className')n.className=v;else if(k.startsWith('on'))n.addEventListener(k.slice(2),v);else n.setAttribute(k,String(v));}for(const c of children)if(c!==null&&c!==undefined)n.append(c instanceof Node?c:document.createTextNode(String(c)));return n;}
@@ -24,16 +24,17 @@
  function back(fromAndroid=false){if(window.NexoIntro?.isActive()){NexoIntro.skip();return true;}const dialog=dialogs.slice().reverse().find(d=>d.open);if(dialog){dialog.close();return true;}const active=document.activeElement;if(active&&['INPUT','TEXTAREA','SELECT'].includes(active.tagName)){active.blur();if(!fromAndroid)return true;}if(NexoScene.getState().open){NexoScene.close();return true;}if(fromAndroid)run('back');return false;}
  function translated(s){return({Search:'Buscar',Import:'Importar','Open folder':'Abrir pasta','Load more':'Carregar mais',Install:'Instalar',Remove:'Remover',Delete:'Excluir',Enabled:'Ativado',Disabled:'Desativado',Close:'Fechar',Cancel:'Cancelar',Back:'Voltar',Apply:'Aplicar',Save:'Salvar',Settings:'Ajustes',Account:'Conta','Resource Pack':'Pacotes',Overview:'Visão geral'})[s]||s;}
  function press(c){sound(c.kind==='toggle'?'toggle':'confirm');run('press',{control:c.id});}
- function field(c){const label=translated(c.label||c.hint||'Texto'),input=el('input',{type:c.kind==='password'?'password':/search/.test(c.field)?'search':'text','aria-label':label,placeholder:c.hint||label,autocomplete:c.kind==='password'?'current-password':'off',maxlength:c.field?.startsWith('ely_')?1024:4096,'data-control':c.id});input.value=c.value||'';
+ function field(c){const prior=fieldNodes.get(c.id);if(prior){const input=prior.querySelector('input');if(document.activeElement!==input&&c.kind!=='password'&&c.field!=='ely_otp')input.value=c.value||'';return prior;}const label=translated(c.label||c.hint||'Texto'),input=el('input',{type:c.kind==='password'?'password':/search/.test(c.field)?'search':'text','aria-label':label,placeholder:c.hint||label,autocomplete:c.kind==='password'?'current-password':'off',maxlength:c.field?.startsWith('ely_')?1024:4096,'data-control':c.id});input.value=c.value||'';
   const flush=finish=>{clearTimeout(timers.get(c.id));if(controls.has(c.id))run('edit',{control:c.id,text:input.value,finish});};
   input.addEventListener('input',()=>{clearTimeout(timers.get(c.id));timers.set(c.id,setTimeout(()=>flush(false),180));});input.addEventListener('blur',()=>flush(true));input.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();flush(false);const search=[...controls.values()].find(v=>/^Search$|^Convert$|^Import \.hmod$/.test(v.label));if(search)press(search);else input.blur();}});
-  return el('label',{className:'live-field'},el('span',{},label),input);
+  const node=el('label',{className:'live-field'},el('span',{},label),input);fieldNodes.set(c.id,node);return node;
  }
  function control(c){
   if(c.kind==='field'||c.kind==='password')return field(c);
   if(c.kind==='range'){const input=el('input',{type:'range',min:0,max:1,step:.01,value:c.fraction??.5,'aria-label':translated(c.label),'data-control':c.id});input.addEventListener('input',()=>{clearTimeout(timers.get(c.id));timers.set(c.id,setTimeout(()=>run('range',{control:c.id,value:Number(input.value)}),70));});input.addEventListener('change',()=>{clearTimeout(timers.get(c.id));run('range',{control:c.id,value:Number(input.value)});});return el('label',{className:'live-range'},el('span',{},translated(c.label)),input);}
   const b=el('button',{type:'button',className:'live-control live-'+c.kind,'data-control':c.id,onclick:()=>press(c)});
   if(c.image)b.append(el('img',{src:c.image,alt:'',loading:'lazy'}));
+  if(c.color){b.classList.add('live-swatch');b.style.setProperty('--swatch',c.color);b.setAttribute('aria-label','Cor '+c.color);}
   b.append(el('span',{className:'live-control-copy'},el('strong',{},translated(c.label)),...c.lines.filter(v=>v!==c.label).slice(0,3).map(v=>el('small',{},translated(v)))));
   if(c.kind==='toggle'){b.setAttribute('role','switch');b.setAttribute('aria-checked',String(!!c.checked));b.append(el('span',{className:'switch-track','aria-hidden':'true'}));}
   else if(c.selected)b.setAttribute('aria-pressed','true');return b;
@@ -47,6 +48,7 @@
   renderKey=key;const content=$('module-content'),oldScroll=content.querySelector('.live-scroll')?.scrollTop||0;content.replaceChildren();controls.clear();
   const title=state.modal?translated(state.title):utility==='account'?'Conta':utility==='profile'?'Perfil':titles[state.page]||translated(state.title);
   $('module-title').textContent=title;$('module-eyebrow').textContent=state.modal?'HORIZON · '+(titles[state.page]||'CONTA'):'HORIZON · '+(state.busy?'EM ANDAMENTO':'SUA BIBLIOTECA');$('module-options').hidden=false;
+  const currentIds=new Set(state.controls.map(c=>c.id));for(const id of fieldNodes.keys())if(!currentIds.has(id))fieldNodes.delete(id);
   const all=state.controls.filter(c=>c.id>0),toolbar=el('div',{className:'live-toolbar'}),scroll=el('div',{className:'live-scroll'}),grid=el('div',{className:'live-grid'}),groups=new Map();
   for(const c of all){controls.set(c.id,c);if(c.group){if(!groups.has(c.group))groups.set(c.group,[]);groups.get(c.group).push(c);}}
   const handled=new Set();
@@ -85,5 +87,5 @@
  selectionChanged(index,isOpen){const previous=opened,changed=store.get().selected!==index;store.select(index);opened=isOpen;root.classList.toggle('has-module',isOpen);if(isOpen){$('module').hidden=false;if(!previous&&!utility)requestPage(pageMap[NexoState.PAGES[index]]||'play');render();}else if(previous)closeView();if(changed)sound();},
  onFrame({opening,rect}){root.style.setProperty('--module-open',opening.toFixed(4));document.querySelector('.app-header').inert=opening>.01;document.querySelector('.app-footer').setAttribute('aria-hidden',String(opening>.01));if(opening<.001&&!opened){$('module').hidden=true;return;}Object.assign($('module').style,{left:rect.left+'px',top:rect.top+'px',width:rect.width+'px',height:rect.height+'px',opacity:Math.max(0,Math.min(1,(opening-.76)/.24))});$('module').inert=opening<.97||!opened;}
  };
- window.Nexo={back,setVisible,state:()=>({live:true,page:state?.page,native:state,launchBusy})};window.JadeLab={back};root.dataset.host='native';host.subscribe(receive);
+ window.Nexo={back,setVisible,state:()=>({live:true,page:state?.page,native:state,launchBusy})};window.JadeLab={back};root.dataset.host='native';host.subscribe(receive);setTimeout(()=>{if(!window.NexoScene||document.querySelector('.nexo-error:not([hidden])'))run('fallback');},5000);
 })();

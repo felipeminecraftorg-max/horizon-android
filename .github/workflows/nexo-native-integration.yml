@@ -17,6 +17,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  interface-and-protocol:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify local state and native transport
+        run: |
+          for file in experiments/nexo-preview/android/src/main/assets/*.js; do node --check "$file"; done
+          node --test experiments/nexo-preview/tests/host.test.cjs experiments/nexo-preview/tests/state.test.cjs
+          python3 -m unittest tests.test_nexo_public_tree tests.test_android_source_export tests.test_android_release_audit
+      - name: Run the actual Rust bridge tests without Android or the game engine
+        run: |
+          mkdir -p .local/nexo-bridge-check/src
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path.cwd()
+          Path('.local/nexo-bridge-check/Cargo.toml').write_text('[package]\nname="nexo-bridge-check"\nversion="0.0.0"\nedition="2024"\n[workspace]\n[dependencies]\nserde={version="1",features=["derive"]}\nserde_json="1"\npng="0.18"\n')
+          Path('.local/nexo-bridge-check/src/lib.rs').write_text(f'#[path="{root}/crates/horizon-client/src/launcher_nexo.rs"]\npub mod nexo;\n')
+          PY
+          cargo test --manifest-path .local/nexo-bridge-check/Cargo.toml
+      - name: Check responsive real-host views and console gestures
+        run: |
+          npm install --prefix /tmp/nexo-browser --no-audit --no-fund playwright@1.56.1
+          NEXO_PLAYWRIGHT_MODULE=/tmp/nexo-browser/node_modules/playwright node experiments/nexo-preview/tests/live-browser-check.cjs
+      - name: Upload actual interface captures and test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: nexo-native-interface-qa
+          path: dist/nexo-native-qa/
+          retention-days: 14
+          if-no-files-found: warn
   compile-and-package:
     runs-on: ubuntu-24.04
     timeout-minutes: 180

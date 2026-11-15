@@ -7,10 +7,10 @@ mod chooser;
 mod gesture;
 #[path = "login.rs"]
 mod login;
-#[path = "launcher_pages.rs"]
-mod pages;
 #[path = "launcher_nexo.rs"]
 mod nexo_ui;
+#[path = "launcher_pages.rs"]
+mod pages;
 #[path = "wardrobe.rs"]
 mod wardrobe;
 use horizon_client::{
@@ -658,7 +658,10 @@ impl Launcher {
                 gpu_batching: self.catalog.config.renderer == crate::catalog::RendererMode::Vulkan,
             };
             crate::document_store::set_game_active(true);
-            if self.nexo.presented { self.nexo.presented=false;crate::nexo::show(false); }
+            if self.nexo.presented {
+                self.nexo.presented = false;
+                crate::nexo::show(false);
+            }
             let game = match crate::game_launch::start(request) {
                 Ok(game) => game,
                 Err(error) => {
@@ -913,7 +916,9 @@ impl ApplicationHandler for Launcher {
             };
         }
         crate::platform::poll_gamepad_connections();
-        if !self.nexo.presented && let Err(error) = self.controller_frame(events) {
+        if !self.nexo.presented
+            && let Err(error) = self.controller_frame(events)
+        {
             self.fail(error);
         }
         if let (Some(window), Some(renderer)) = (&self.window, &mut self.renderer)
@@ -1076,15 +1081,19 @@ impl ApplicationHandler for Launcher {
         // The console UI schedules animation frames at the requested panel
         // refresh rate (60/90/120Hz), while idling at a low polling rate.
         // Liquid Glass and the other presets keep their own existing cadence.
-        let jade = self.catalog.config.theme.preset
-            == horizon_client::ui_theme::ThemePreset::OldSchool;
+        let jade =
+            self.catalog.config.theme.preset == horizon_client::ui_theme::ThemePreset::OldSchool;
         let jade_refresh_hz = if self.catalog.config.device.display_hz == 0 {
             60_u64
         } else {
             u64::from(self.catalog.config.device.display_hz).clamp(60, 120)
         };
         let frame_ms = if animating || self.nexo.presented {
-            if jade { (1000 / jade_refresh_hz).max(8) } else { 16 }
+            if jade {
+                (1000 / jade_refresh_hz).max(8)
+            } else {
+                16
+            }
         } else if working {
             100
         } else {
@@ -1127,17 +1136,19 @@ impl Launcher {
     /// quick access opening. Tap actions keep the user's bundled SFX pack.
     pub(super) fn jade_navigation_cue(&mut self, cue: &'static str) {
         if !self.catalog.config.theme.interface_sounds
-            || self.catalog.config.theme.preset
-                != horizon_client::ui_theme::ThemePreset::OldSchool
+            || self.catalog.config.theme.preset != horizon_client::ui_theme::ThemePreset::OldSchool
         {
             return;
         }
         let audio = self.audio.get_or_insert_with(|| {
-            let mut audio = horizon_client::audio::Audio::new(
-                &self.home.join(".local/horizon-client/26.3"),
-            );
+            let mut audio =
+                horizon_client::audio::Audio::new(&self.home.join(".local/horizon-client/26.3"));
             let settings = horizon_client::settings::Settings::load(
-                &self.catalog.config.game_home(&self.home).join("options.txt"),
+                &self
+                    .catalog
+                    .config
+                    .game_home(&self.home)
+                    .join("options.txt"),
             );
             audio.master = settings.volumes[0];
             let mut volumes = settings.volumes;

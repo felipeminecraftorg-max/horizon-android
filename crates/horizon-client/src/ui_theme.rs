@@ -107,7 +107,9 @@ pub enum Face {
 /// Convert before measuring, ellipsis and glyph-cache access, so different
 /// presets never share a cached glyph under an incorrect Face key.
 fn launcher_face(face: Face, experience: ExperiencePreset) -> Face {
-    if experience != ExperiencePreset::OldSchool { return face; }
+    if experience != ExperiencePreset::OldSchool {
+        return face;
+    }
     match face {
         Face::Regular => Face::ConsoleRegular,
         Face::Medium => Face::ConsoleMedium,
@@ -121,7 +123,9 @@ fn launcher_face(face: Face, experience: ExperiencePreset) -> Face {
 /// Resolve before atlas lookup, never by globally replacing the original
 /// icons, which remain unchanged for Liquid Glass and Standard.
 fn launcher_icon(icon: Icon, experience: ExperiencePreset) -> Icon {
-    if experience != ExperiencePreset::OldSchool { return icon; }
+    if experience != ExperiencePreset::OldSchool {
+        return icon;
+    }
     match icon {
         Icon::Mods => Icon::ConsoleMods,
         Icon::Packs => Icon::ConsolePacks,
@@ -308,36 +312,36 @@ fn icon_hit(icon: Icon, u: f32, v: f32) -> bool {
         // or copied PlayStation/Xbox icon paths. Already supersampled by Cache.
         Icon::ConsoleMods => {
             [(0.23, 0.23), (0.61, 0.23), (0.23, 0.61), (0.61, 0.61)]
-                .iter().any(|&(x, y)| {
-                    let inside = (x..=x + 0.17).contains(&u)
-                        && (y..=y + 0.17).contains(&v);
+                .iter()
+                .any(|&(x, y)| {
+                    let inside = (x..=x + 0.17).contains(&u) && (y..=y + 0.17).contains(&v);
                     let inner = (x + 0.042..=x + 0.128).contains(&u)
                         && (y + 0.042..=y + 0.128).contains(&v);
                     inside && !inner
                 })
                 || seg_dist(u, v, 0.50, 0.40, 0.50, 0.60) < 0.024
         }
-        Icon::ConsolePacks => {
-            [0.29_f32, 0.47, 0.65].iter().any(|&y| {
-                seg_dist(u, v, 0.19, y, 0.50, y - 0.15) < 0.039
-                    || seg_dist(u, v, 0.50, y - 0.15, 0.81, y) < 0.039
-                    || seg_dist(u, v, 0.19, y, 0.50, y + 0.15) < 0.039
-                    || seg_dist(u, v, 0.50, y + 0.15, 0.81, y) < 0.039
-            })
-        }
+        Icon::ConsolePacks => [0.29_f32, 0.47, 0.65].iter().any(|&y| {
+            seg_dist(u, v, 0.19, y, 0.50, y - 0.15) < 0.039
+                || seg_dist(u, v, 0.50, y - 0.15, 0.81, y) < 0.039
+                || seg_dist(u, v, 0.19, y, 0.50, y + 0.15) < 0.039
+                || seg_dist(u, v, 0.50, y + 0.15, 0.81, y) < 0.039
+        }),
         Icon::ConsoleShaders => {
             let d = ((u - 0.50).powi(2) + (v - 0.50).powi(2)).sqrt();
             (0.16..=0.22).contains(&d)
-                || [(0.50, 0.10, 0.50, 0.23),
+                || [
+                    (0.50, 0.10, 0.50, 0.23),
                     (0.50, 0.77, 0.50, 0.90),
                     (0.10, 0.50, 0.23, 0.50),
                     (0.77, 0.50, 0.90, 0.50),
                     (0.20, 0.20, 0.29, 0.29),
                     (0.71, 0.71, 0.80, 0.80),
                     (0.20, 0.80, 0.29, 0.71),
-                    (0.71, 0.29, 0.80, 0.20)]
-                    .iter().any(|&(ax, ay, bx, by)|
-                        seg_dist(u, v, ax, ay, bx, by) <= 0.036)
+                    (0.71, 0.29, 0.80, 0.20),
+                ]
+                .iter()
+                .any(|&(ax, ay, bx, by)| seg_dist(u, v, ax, ay, bx, by) <= 0.036)
         }
         Icon::ConsoleFiles => {
             let tab = seg_dist(u, v, 0.15, 0.29, 0.39, 0.29) <= 0.039
@@ -351,10 +355,8 @@ fn icon_hit(icon: Icon, u: f32, v: f32) -> bool {
         Icon::ConsoleSkins => {
             let d = ((u - 0.50).powi(2) + (v - 0.31).powi(2)).sqrt();
             let head = (0.13..=0.195).contains(&d);
-            let shoulders = ((u - 0.50) / 0.34).powi(2)
-                + ((v - 0.90) / 0.30).powi(2);
-            head || ((0.73..=1.20).contains(&shoulders)
-                && (0.64..=0.84).contains(&v))
+            let shoulders = ((u - 0.50) / 0.34).powi(2) + ((v - 0.90) / 0.30).powi(2);
+            head || ((0.73..=1.20).contains(&shoulders) && (0.64..=0.84).contains(&v))
         }
         Icon::ConsoleSettings => {
             let tracks = [0.28, 0.50, 0.72];
@@ -1053,7 +1055,9 @@ impl<'a> Ui<'a> {
     }
 
     pub fn clip_rect(&self, rect: [f32; 4]) -> Option<[f32; 4]> {
-        if crate::launcher_nexo::active() { return Some(rect); }
+        if crate::launcher_nexo::active() {
+            return Some(rect);
+        }
         let [x, y, w, h] = rect;
         if let Some([cx0, cy0, cx1, cy1]) = self.clip {
             let d = self.density.max(0.001);
@@ -1113,12 +1117,16 @@ impl<'a> Ui<'a> {
                 let theme = active_theme();
                 let tuning = theme.glass.normalized();
                 let mut profile = launcher_preset_pack::uniform_profile(theme.experience);
-                if matches!(theme.experience, ExperiencePreset::LiquidGlass | ExperiencePreset::OldSchool) {
+                if matches!(
+                    theme.experience,
+                    ExperiencePreset::LiquidGlass | ExperiencePreset::OldSchool
+                ) {
                     profile[2][0] *= (tuning.refraction / 20.).clamp(0., 1.5);
                     profile[5][0] = (profile[5][0] + (tuning.blur - 1.) * 0.14).clamp(0., 2.2);
                     if theme.experience == ExperiencePreset::OldSchool {
                         // Jade stays satin rather than reverting to glossy XMB pearl.
-                        profile[5][1] = 0.20 + ((tuning.opacity - 0.06) / 0.44).clamp(0., 1.) * 0.26;
+                        profile[5][1] =
+                            0.20 + ((tuning.opacity - 0.06) / 0.44).clamp(0., 1.) * 0.26;
                     }
                 }
                 profile
@@ -1289,13 +1297,22 @@ impl<'a> Ui<'a> {
             // actual per-pixel directional light on the uploaded icon texture.
             // No geometry, silhouette or icon pixels are regenerated per frame.
             let start = self.batch.vertices.len();
-            self.emit_clipped_uv(x0, y0, x0 + pxf, y0 + pxf,
-                rect.u0, rect.v0, rect.u1, rect.v1, color);
+            self.emit_clipped_uv(
+                x0,
+                y0,
+                x0 + pxf,
+                y0 + pxf,
+                rect.u0,
+                rect.v0,
+                rect.u1,
+                rect.v1,
+                color,
+            );
             if active_theme().jade_gpu_fx {
-                let light_x = ((self.cursor.0 - x - size * 0.5)
-                    / (size * 1.5).max(1.)).clamp(-1., 1.);
-                let light_y = ((self.cursor.1 - y - size * 0.5)
-                    / (size * 1.5).max(1.)).clamp(-1., 1.);
+                let light_x =
+                    ((self.cursor.0 - x - size * 0.5) / (size * 1.5).max(1.)).clamp(-1., 1.);
+                let light_y =
+                    ((self.cursor.1 - y - size * 0.5) / (size * 1.5).max(1.)).clamp(-1., 1.);
                 for vertex in &mut self.batch.vertices[start..] {
                     vertex.glint_uv = [-4.0 + light_x, light_y];
                 }
@@ -1397,7 +1414,10 @@ impl<'a> Ui<'a> {
 
     /// Draw an authentic Material You 3 Switch (`52x28dp` pill track with sliding thumb and checkmark).
     pub fn m3_switch(&mut self, x: f32, y: f32, on: bool) {
-        if crate::launcher_nexo::active() { crate::launcher_nexo::switch([x,y,52.,28.],on); return; }
+        if crate::launcher_nexo::active() {
+            crate::launcher_nexo::switch([x, y, 52., 28.], on);
+            return;
+        }
         let theme = active_theme();
         if theme.experience != ExperiencePreset::Standard {
             launcher_visual::component_switch(self, x, y, on);
@@ -1424,7 +1444,18 @@ impl<'a> Ui<'a> {
 
     /// Draw an authentic Material You 3 Checkbox with label (`[✓] Label`) and return total width.
     pub fn m3_checkbox(&mut self, x: f32, y: f32, size: f32, checked: bool, label: &str) -> f32 {
-        if crate::launcher_nexo::active() { crate::launcher_nexo::switch([x,y,size,size],checked); self.text(Face::Medium,12.5,x+size+8.,y,active_theme().text_primary,label); return size+8.+self.measure(Face::Medium,12.5,label); }
+        if crate::launcher_nexo::active() {
+            crate::launcher_nexo::switch([x, y, size, size], checked);
+            self.text(
+                Face::Medium,
+                12.5,
+                x + size + 8.,
+                y,
+                active_theme().text_primary,
+                label,
+            );
+            return size + 8. + self.measure(Face::Medium, 12.5, label);
+        }
         let theme = active_theme();
         let r = (size * 0.28).clamp(4.0, 7.0);
         if checked {
@@ -1473,7 +1504,10 @@ impl<'a> Ui<'a> {
         dw: f32,
         dh: f32,
     ) -> bool {
-        if crate::launcher_nexo::active() { crate::launcher_nexo::picture([x,y,dw,dh],w,h,rgba); return true; }
+        if crate::launcher_nexo::active() {
+            crate::launcher_nexo::picture([x, y, dw, dh], w, h, rgba);
+            return true;
+        }
         let atlas = self.atlas;
         let Some(rect) = with_cache(atlas, |c| c.image(atlas, key, w, h, rgba)) else {
             return false;
@@ -1548,7 +1582,10 @@ impl<'a> Ui<'a> {
         hint: &str,
         active: bool,
     ) -> [f32; 4] {
-        if crate::launcher_nexo::active() { crate::launcher_nexo::field([x,y,w,h],label,value,hint); return [x,y,w,h]; }
+        if crate::launcher_nexo::active() {
+            crate::launcher_nexo::field([x, y, w, h], label, value, hint);
+            return [x, y, w, h];
+        }
         let theme = active_theme();
         let accent = theme.accent;
         let radius = (h * 0.24).clamp(8.0, 14.0);
@@ -1695,7 +1732,12 @@ impl<'a> Ui<'a> {
         color: u32,
         text: &str,
     ) -> f32 {
-        if crate::launcher_nexo::active() { if color >> 24 != 0 { crate::launcher_nexo::text(x,y,size,text); } return self.measure(face,size,text); }
+        if crate::launcher_nexo::active() {
+            if color >> 24 != 0 {
+                crate::launcher_nexo::text(x, y, size, text);
+            }
+            return self.measure(face, size, text);
+        }
         let face = launcher_face(face, active_theme().experience);
         let px = (size * self.density * 4.0).round() / 4.0;
         let real = color >> 24 != 0;
@@ -2816,7 +2858,8 @@ impl LauncherThemeConfig {
             ThemePreset::LiquidGlass => self.glass_liquid.unwrap_or(self.glass),
             ThemePreset::OldSchool => self.glass_old_school.unwrap_or(self.glass),
             _ => self.glass,
-        }.normalized()
+        }
+        .normalized()
     }
 
     pub fn set_current_optics(&mut self, tuning: launcher_visual::GlassTuning) {
@@ -3003,7 +3046,9 @@ impl LauncherThemeConfig {
             material: if self.glass_effects {
                 match self.preset {
                     ThemePreset::LiquidGlass => launcher_visual::Material::Glass,
-                    ThemePreset::DarkAero | ThemePreset::OldSchool => launcher_visual::Material::Aero,
+                    ThemePreset::DarkAero | ThemePreset::OldSchool => {
+                        launcher_visual::Material::Aero
+                    }
                     _ => launcher_visual::Material::Opaque,
                 }
             } else {
@@ -3073,8 +3118,7 @@ impl LauncherThemeConfig {
             // Preserve the user's existing Accent Swatch setting instead of
             // silently ignoring it under the Jade preset. Exact default dark
             // and light values remain unchanged for untouched installations.
-            let user_accent = parse_hex_color(&self.custom_accent_hex)
-                .unwrap_or(def_acc);
+            let user_accent = parse_hex_color(&self.custom_accent_hex).unwrap_or(def_acc);
             let is_custom = user_accent != def_acc;
             let mut jade_accent = if is_custom { user_accent } else { jade.accent };
             if is_custom {
@@ -3084,9 +3128,14 @@ impl LauncherThemeConfig {
                     let a = rgb_luminance(jade_accent);
                     let b = rgb_luminance(jade.background);
                     let contrast = (a.max(b) + 0.05) / (a.min(b) + 0.05);
-                    if contrast >= 3.0 { break; }
-                    jade_accent = blend_rgb(jade_accent,
-                        if is_light { 0x000000 } else { 0xFFFFFF }, 0.22);
+                    if contrast >= 3.0 {
+                        break;
+                    }
+                    jade_accent = blend_rgb(
+                        jade_accent,
+                        if is_light { 0x000000 } else { 0xFFFFFF },
+                        0.22,
+                    );
                 }
             }
             let on_jade = if !is_custom {
@@ -3222,13 +3271,22 @@ mod tests {
 
     #[test]
     fn console_typography_is_preset_scoped_and_preserves_monospace() {
-        assert_eq!(launcher_face(Face::Regular, ExperiencePreset::OldSchool),
-            Face::ConsoleRegular);
-        assert_eq!(launcher_face(Face::Medium, ExperiencePreset::OldSchool),
-            Face::ConsoleMedium);
-        assert_eq!(launcher_face(Face::SemiBold, ExperiencePreset::OldSchool),
-            Face::ConsoleSemiBold);
-        assert_eq!(launcher_face(Face::Mono, ExperiencePreset::OldSchool), Face::Mono);
+        assert_eq!(
+            launcher_face(Face::Regular, ExperiencePreset::OldSchool),
+            Face::ConsoleRegular
+        );
+        assert_eq!(
+            launcher_face(Face::Medium, ExperiencePreset::OldSchool),
+            Face::ConsoleMedium
+        );
+        assert_eq!(
+            launcher_face(Face::SemiBold, ExperiencePreset::OldSchool),
+            Face::ConsoleSemiBold
+        );
+        assert_eq!(
+            launcher_face(Face::Mono, ExperiencePreset::OldSchool),
+            Face::Mono
+        );
         for experience in [ExperiencePreset::LiquidGlass, ExperiencePreset::Standard] {
             assert_eq!(launcher_face(Face::Regular, experience), Face::Regular);
             assert_eq!(launcher_face(Face::SemiBold, experience), Face::SemiBold);
@@ -3239,22 +3297,38 @@ mod tests {
     fn bundled_console_font_and_icon_families_are_distinct() {
         // Separate face variants must resolve through the same glyph atlas.
         let fonts = Fonts::load();
-        for face in [Face::ConsoleRegular, Face::ConsoleMedium,
-            Face::ConsoleSemiBold, Face::ConsoleDisplay]
-        {
+        for face in [
+            Face::ConsoleRegular,
+            Face::ConsoleMedium,
+            Face::ConsoleSemiBold,
+            Face::ConsoleDisplay,
+        ] {
             assert_ne!(fonts.face(face).glyph_id('A').0, 0);
         }
-        let icons = [Icon::ConsoleMods, Icon::ConsolePacks, Icon::ConsoleShaders,
-            Icon::ConsoleFiles, Icon::ConsoleSkins, Icon::ConsoleSettings,
-            Icon::ConsolePlay];
+        let icons = [
+            Icon::ConsoleMods,
+            Icon::ConsolePacks,
+            Icon::ConsoleShaders,
+            Icon::ConsoleFiles,
+            Icon::ConsoleSkins,
+            Icon::ConsoleSettings,
+            Icon::ConsolePlay,
+        ];
         let mut signatures = std::collections::HashSet::new();
         for icon in icons {
-            let sample: Vec<_> = (0..24).flat_map(|y| (0..24).map(move |x|
-                icon_hit(icon, (x as f32 + 0.5) / 24.0,
-                    (y as f32 + 0.5) / 24.0))).collect();
+            let sample: Vec<_> = (0..24)
+                .flat_map(|y| {
+                    (0..24).map(move |x| {
+                        icon_hit(icon, (x as f32 + 0.5) / 24.0, (y as f32 + 0.5) / 24.0)
+                    })
+                })
+                .collect();
             assert!(sample.iter().any(|&pixel| pixel), "{icon:?} is blank");
             assert!(sample.iter().any(|&pixel| !pixel), "{icon:?} is filled");
-            assert!(signatures.insert(sample), "{icon:?} duplicates another icon");
+            assert!(
+                signatures.insert(sample),
+                "{icon:?} duplicates another icon"
+            );
         }
     }
 
@@ -3406,7 +3480,7 @@ mod tests {
 
 #[path = "launcher_jade.rs"]
 pub mod launcher_jade;
-#[path = "launcher_visual.rs"]
-pub mod launcher_visual;
 #[path = "launcher_preset_pack.rs"]
 pub mod launcher_preset_pack;
+#[path = "launcher_visual.rs"]
+pub mod launcher_visual;

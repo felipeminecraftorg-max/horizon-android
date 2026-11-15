@@ -524,15 +524,18 @@ impl Wardrobe {
                 .is_some_and(|t| now.duration_since(t).as_secs_f32() < 0.22)
     }
     pub fn nexo_image(&self) -> Option<String> {
-        if self.bitmap.is_empty(){return None;}
-        let mut pixels=vec![0u8;160*200*4];
-        for (rect,color) in &self.bitmap {
-            let y=(rect[1] as usize).min(199);
-            for x in (rect[0] as usize).min(160)..((rect[0]+rect[2]) as usize).min(160) {
-                pixels[(y*160+x)*4..(y*160+x)*4+4].copy_from_slice(&color.to_le_bytes());
+        if self.bitmap.is_empty() {
+            return None;
+        }
+        let mut pixels = vec![0u8; 160 * 200 * 4];
+        for (rect, color) in &self.bitmap {
+            let y = (rect[1] as usize).min(199);
+            for x in (rect[0] as usize).min(160)..((rect[0] + rect[2]) as usize).min(160) {
+                pixels[(y * 160 + x) * 4..(y * 160 + x) * 4 + 4]
+                    .copy_from_slice(&color.to_le_bytes());
             }
         }
-        horizon_client::launcher_nexo::data_url(160,200,&pixels)
+        horizon_client::launcher_nexo::data_url(160, 200, &pixels)
     }
 
     pub fn set_tab(&mut self, capes: bool) {
@@ -601,7 +604,9 @@ impl Wardrobe {
         w: f32,
         top: f32,
     ) {
-        use horizon_client::ui_theme::{Icon, ExperiencePreset, active_theme, launcher_visual as visual, motion};
+        use horizon_client::ui_theme::{
+            ExperiencePreset, Icon, active_theme, launcher_visual as visual, motion,
+        };
         let theme = active_theme();
         let jade = theme.experience == ExperiencePreset::OldSchool;
         let now = std::time::Instant::now();
@@ -659,8 +664,22 @@ impl Wardrobe {
             };
 
         let tabs_y = top + 46.0;
-        ui.rounded(x, tabs_y, w, 38.0, if jade { 9.0 } else { 12.0 }, theme.surface_dim);
-        ui.border(x, tabs_y, w, 38.0, if jade { 9.0 } else { 12.0 }, theme.border);
+        ui.rounded(
+            x,
+            tabs_y,
+            w,
+            38.0,
+            if jade { 9.0 } else { 12.0 },
+            theme.surface_dim,
+        );
+        ui.border(
+            x,
+            tabs_y,
+            w,
+            38.0,
+            if jade { 9.0 } else { 12.0 },
+            theme.border,
+        );
         let tw = (w - 8.0) * 0.5;
         for (i, (lbl, is_cape, active)) in [
             (format!("Skins ({skin_count})"), false, !self.capes),
@@ -672,14 +691,39 @@ impl Wardrobe {
             let tx = x + 3.0 + i as f32 * (tw + 2.0);
             let tr = [tx, tabs_y + 3.0, tw, 32.0];
             if active {
-                ui.rounded(tr[0], tr[1], tr[2], tr[3], 8.0,
-                    if jade { theme.surface_selected } else { theme.accent });
+                ui.rounded(
+                    tr[0],
+                    tr[1],
+                    tr[2],
+                    tr[3],
+                    8.0,
+                    if jade {
+                        theme.surface_selected
+                    } else {
+                        theme.accent
+                    },
+                );
                 if jade {
-                    ui.rounded(tr[0] + tr[2] * 0.26, tr[1] + tr[3] - 3.,
-                        tr[2] * 0.48, 2., 1., theme.accent);
+                    ui.rounded(
+                        tr[0] + tr[2] * 0.26,
+                        tr[1] + tr[3] - 3.,
+                        tr[2] * 0.48,
+                        2.,
+                        1.,
+                        theme.accent,
+                    );
                 }
-                ui.centered_fit(Face::SemiBold, 12.0, tr,
-                    if jade { theme.text_primary } else { theme.on_accent }, &lbl);
+                ui.centered_fit(
+                    Face::SemiBold,
+                    12.0,
+                    tr,
+                    if jade {
+                        theme.text_primary
+                    } else {
+                        theme.on_accent
+                    },
+                    &lbl,
+                );
             } else {
                 ui.centered_fit(Face::Medium, 12.0, tr, theme.text_muted, &lbl);
             }
@@ -713,12 +757,24 @@ impl Wardrobe {
         // Studio stage background with subtle inner rim and pedestal
         if jade {
             visual::component_card(ui, [px, preview_y, preview_w, preview_h], false);
-            ui.rounded(px + 5.0, preview_y + 5.0,
-                preview_w - 10.0, preview_h - 10.0, 8.0, theme.surface_dim);
+            ui.rounded(
+                px + 5.0,
+                preview_y + 5.0,
+                preview_w - 10.0,
+                preview_h - 10.0,
+                8.0,
+                theme.surface_dim,
+            );
         } else {
             ui.rounded(px, preview_y, preview_w, preview_h, 16.0, theme.surface);
-            ui.rounded(px + 4.0, preview_y + 4.0,
-                preview_w - 8.0, preview_h - 8.0, 13.0, theme.surface_dim);
+            ui.rounded(
+                px + 4.0,
+                preview_y + 4.0,
+                preview_w - 8.0,
+                preview_h - 8.0,
+                13.0,
+                theme.surface_dim,
+            );
             ui.stroke_rounded(px, preview_y, preview_w, preview_h, 16.0, 1.2, theme.border);
         }
 
@@ -981,11 +1037,31 @@ impl Wardrobe {
             if jade {
                 visual::component_card(ui, r, is_selected);
             } else {
-                ui.rounded(r[0], r[1], r[2], r[3], 11.,
-                    if is_selected { theme.surface_selected } else { theme.surface });
-                ui.stroke_rounded(r[0], r[1], r[2], r[3], 11.,
+                ui.rounded(
+                    r[0],
+                    r[1],
+                    r[2],
+                    r[3],
+                    11.,
+                    if is_selected {
+                        theme.surface_selected
+                    } else {
+                        theme.surface
+                    },
+                );
+                ui.stroke_rounded(
+                    r[0],
+                    r[1],
+                    r[2],
+                    r[3],
+                    11.,
                     if is_selected { 1.6 } else { 1.0 },
-                    if is_selected { theme.accent } else { theme.border });
+                    if is_selected {
+                        theme.accent
+                    } else {
+                        theme.border
+                    },
+                );
             }
             // Leading icon badge
             let ib = [r[0] + 10.0, r[1] + 8.0, 26.0, 26.0];

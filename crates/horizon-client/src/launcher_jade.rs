@@ -78,7 +78,11 @@ mod tests {
     fn luminance(rgb: u32) -> f32 {
         let c = |shift| {
             let x = ((rgb >> shift) & 255_u32) as f32 / 255.;
-            if x <= 0.04045 { x / 12.92 } else { ((x + 0.055) / 1.055).powf(2.4) }
+            if x <= 0.04045 {
+                x / 12.92
+            } else {
+                ((x + 0.055) / 1.055).powf(2.4)
+            }
         };
         0.2126 * c(16) + 0.7152 * c(8) + 0.0722 * c(0)
     }
@@ -93,7 +97,10 @@ mod tests {
             let p = Palette::for_appearance(light);
             for ground in [p.background, p.surface, p.surface_high, p.header] {
                 assert!(contrast(p.text, ground) >= 4.5, "text against {ground:06X}");
-                assert!(contrast(p.muted, ground) >= 4.5, "secondary against {ground:06X}");
+                assert!(
+                    contrast(p.muted, ground) >= 4.5,
+                    "secondary against {ground:06X}"
+                );
             }
             assert!(contrast(p.accent, p.on_accent) >= 4.5, "primary action");
             assert!(contrast(p.focus, p.background) >= 3.0, "focus ring");

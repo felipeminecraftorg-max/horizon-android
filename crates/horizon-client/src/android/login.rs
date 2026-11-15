@@ -1,7 +1,9 @@
 //! Native account panel; authentication is shared with the desktop launcher.
 use super::pages::{Action, button};
 use crate::account::{self, Account, Accounts, Secrets, SignIn, SignInState};
-use horizon_client::ui_theme::{ExperiencePreset, Face, Icon, Ui, color, launcher_visual as visual};
+use horizon_client::ui_theme::{
+    ExperiencePreset, Face, Icon, Ui, color, launcher_visual as visual,
+};
 
 fn login_surface() -> u32 {
     horizon_client::ui_theme::active_theme().surface
@@ -272,8 +274,18 @@ impl Login {
             visual::component_card(ui, rect, current);
         } else {
             ui.rounded(x, y, w, h, 14.0, login_surface());
-            ui.border(x, y, w, h, 14.0,
-                if current { login_accent() } else { login_border() });
+            ui.border(
+                x,
+                y,
+                w,
+                h,
+                14.0,
+                if current {
+                    login_accent()
+                } else {
+                    login_border()
+                },
+            );
         }
         let avatar = (h - 12.0).clamp(30.0, 40.0);
         ui.avatar_head_2d(x + 10.0, y + (h - avatar) * 0.5, avatar, name);

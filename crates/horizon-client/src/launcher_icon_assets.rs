@@ -19,7 +19,10 @@ const SOURCES: [(&str, &[u8]); 7] = [
     ("shaders", include_bytes!("launcher_icons/jade/shaders.png")),
     ("files", include_bytes!("launcher_icons/jade/files.png")),
     ("skins", include_bytes!("launcher_icons/jade/skins.png")),
-    ("settings", include_bytes!("launcher_icons/jade/settings.png")),
+    (
+        "settings",
+        include_bytes!("launcher_icons/jade/settings.png"),
+    ),
     ("play", include_bytes!("launcher_icons/jade/play.png")),
 ];
 static DECODED: OnceLock<[Option<Sprite>; 7]> = OnceLock::new();
@@ -29,17 +32,24 @@ fn decode(bytes: &[u8]) -> Option<Sprite> {
     let mut reader = decoder.read_info().ok()?;
     let size = reader.output_buffer_size()?;
     // Asset dimensions are fixed; reject malformed or unexpectedly large files.
-    if size > 128 * 128 * 4 { return None; }
+    if size > 128 * 128 * 4 {
+        return None;
+    }
     let mut pixels = vec![0; size];
     let info = reader.next_frame(&mut pixels).ok()?;
     if info.color_type != png::ColorType::Rgba
         || info.bit_depth != png::BitDepth::Eight
-        || info.width != 96 || info.height != 96
+        || info.width != 96
+        || info.height != 96
     {
         return None;
     }
     pixels.truncate(info.buffer_size());
-    Some(Sprite { width: info.width, height: info.height, pixels })
+    Some(Sprite {
+        width: info.width,
+        height: info.height,
+        pixels,
+    })
 }
 
 /// The key is prefixed with launcher-material so the atlas does not add a

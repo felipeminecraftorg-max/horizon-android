@@ -306,18 +306,20 @@ pub struct Audio {
 fn decode(path: &Path) -> Option<(Vec<f32>, u32, u16)> {
     let file = fs::File::open(path).ok()?;
     decode_stream(symphonia::core::io::MediaSourceStream::new(
-        Box::new(file), Default::default(),
+        Box::new(file),
+        Default::default(),
     ))
 }
 fn decode_bytes(bytes: Vec<u8>) -> Option<(Vec<f32>, u32, u16)> {
     decode_stream(symphonia::core::io::MediaSourceStream::new(
-        Box::new(std::io::Cursor::new(bytes)), Default::default(),
+        Box::new(std::io::Cursor::new(bytes)),
+        Default::default(),
     ))
 }
 fn decode_stream(stream: symphonia::core::io::MediaSourceStream) -> Option<(Vec<f32>, u32, u16)> {
     use symphonia::core::{
-        audio::SampleBuffer, codecs::DecoderOptions, formats::FormatOptions,
-        meta::MetadataOptions, probe::Hint,
+        audio::SampleBuffer, codecs::DecoderOptions, formats::FormatOptions, meta::MetadataOptions,
+        probe::Hint,
     };
     let mut hint = Hint::new();
     hint.with_extension("ogg");
@@ -1832,10 +1834,12 @@ impl Audio {
         if let Some(old) = self.ui_pack_channel.take() {
             self.backend.destroy(old);
         }
-        let Some(channel) = self.backend.create(false) else { return; };
+        let Some(channel) = self.backend.create(false) else {
+            return;
+        };
         self.backend.set_relative(channel, true);
-        self.backend.set_volume(channel,
-            volume.clamp(0., 1.) * self.master.clamp(0., 1.));
+        self.backend
+            .set_volume(channel, volume.clamp(0., 1.) * self.master.clamp(0., 1.));
         self.ui_pack_channel = Some(channel);
         attach(&self.backend.mixer, channel, samples, false);
     }
@@ -1849,10 +1853,14 @@ impl Audio {
         if !self.backend.live || volume <= 0. {
             return;
         }
-        let Some(file) = sample.strip_prefix("sfx/") else { return; };
-        if !file.ends_with(".ogg") || !file.bytes().all(|b| {
-            b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b'.')
-        }) {
+        let Some(file) = sample.strip_prefix("sfx/") else {
+            return;
+        };
+        if !file.ends_with(".ogg")
+            || !file
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'-' | b'.'))
+        {
             return;
         }
         // Destroy the previous UI channel even if its decode has not completed.
@@ -1860,9 +1868,12 @@ impl Audio {
         if let Some(old) = self.ui_pack_channel.take() {
             self.backend.destroy(old);
         }
-        let Some(channel) = self.backend.create(false) else { return; };
+        let Some(channel) = self.backend.create(false) else {
+            return;
+        };
         self.backend.set_relative(channel, true);
-        self.backend.set_volume(channel, volume.clamp(0., 1.) * self.master.clamp(0., 1.));
+        self.backend
+            .set_volume(channel, volume.clamp(0., 1.) * self.master.clamp(0., 1.));
         self.ui_pack_channel = Some(channel);
         let mixer = self.backend.mixer.clone();
         std::thread::Builder::new()
@@ -1871,7 +1882,10 @@ impl Audio {
                 static UI_CACHE: std::sync::OnceLock<Mutex<HashMap<&'static str, Samples>>> =
                     std::sync::OnceLock::new();
                 let cache = UI_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-                let existing = cache.lock().ok().and_then(|values| values.get(sample).cloned());
+                let existing = cache
+                    .lock()
+                    .ok()
+                    .and_then(|values| values.get(sample).cloned());
                 let samples = if let Some(cached) = existing {
                     cached
                 } else {
@@ -1882,8 +1896,11 @@ impl Audio {
                         let mut archive =
                             zip::ZipArchive::new(std::io::Cursor::new(zip_bytes)).ok()?;
                         let mut bytes = Vec::new();
-                        archive.by_name(&format!("audio/files/{file}"))
-                            .ok()?.read_to_end(&mut bytes).ok()?;
+                        archive
+                            .by_name(&format!("audio/files/{file}"))
+                            .ok()?
+                            .read_to_end(&mut bytes)
+                            .ok()?;
                         decode_bytes(bytes).map(|(s, r, w)| (Arc::new(s), r, w))
                     })();
                     if let Ok(mut values) = cache.lock() {
