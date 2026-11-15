@@ -3,79 +3,162 @@
   "mirror": "https://github.com/GeorgeQLe/assets-sfx-ui",
   "sourceCommit": "760afd035e8fc3cd7fb5bc58d49a967649875e3e",
   "packs": [
-    "https://kenney.nl/assets/interface-sounds",
-    "https://kenney.nl/assets/ui-audio"
+    "https://kenney.nl/assets/interface-sounds"
   ],
   "samples": [
     {
       "event": "select",
-      "file": "sounds/select_001.ogg",
+      "file": "sounds/soft-select.ogg",
       "author": "Kenney",
       "pack": "interface-sounds",
-      "sourcePath": "assets/kenney/interface-sounds/Audio/select_001.ogg",
-      "gitBlob": "0f81a639ca63328d5c065b27d4000cbabc22065d",
-      "sha256": "aec0c31ea934a35936ae0d2ab8fac8123c93aa5647f935853a58dbaf90278b7a",
-      "modified": false
+      "sourcePath": "assets/kenney/interface-sounds/Audio/back_001.ogg",
+      "upstreamGitBlob": "06c5e72c4fd2773438de35ce26bd90caad730031",
+      "upstreamSha256": "07db973f79f6ae0f2edc34561e7592e24d0577455919fb602cb8ecc0da991dcf",
+      "sha256": "089e367ae0982285d28dbdec618b63d45f912338bab80c769032970fd836fc67",
+      "modified": true,
+      "processing": {
+        "rate": 0.82,
+        "highpassHz": 75,
+        "lowpassHz": 2200,
+        "durationSeconds": 0.09,
+        "fadeInMs": 6,
+        "fadeOutMs": 25,
+        "targetRmsDbFS": -25,
+        "peakCeilingDbFS": -12,
+        "gainDb": -8.937
+      }
     },
     {
       "event": "open",
-      "file": "sounds/maximize_007.ogg",
+      "file": "sounds/soft-open.ogg",
       "author": "Kenney",
       "pack": "interface-sounds",
-      "sourcePath": "assets/kenney/interface-sounds/Audio/maximize_007.ogg",
-      "gitBlob": "123a76c34835bd67551e9c02dbe7b122846d0368",
-      "sha256": "3400931f3f3a1e9cf253efef9069bcdf053edd2234e4ee9bf88977c389943484",
-      "modified": false
+      "sourcePath": "assets/kenney/interface-sounds/Audio/open_001.ogg",
+      "upstreamGitBlob": "699b498488d18c97987680c723a7c289a2c9624a",
+      "upstreamSha256": "a27c6bb0df7da1e6af5dd5937593c98bc58b6e513f42fe6a3254cd6a6949c648",
+      "sha256": "77e13143bed908f362f2e4a8cb10bf4908c298020b7903b60bd83c48b389f00f",
+      "modified": true,
+      "processing": {
+        "rate": 0.9,
+        "highpassHz": 75,
+        "lowpassHz": 1800,
+        "durationSeconds": 0.19,
+        "fadeInMs": 6,
+        "fadeOutMs": 25,
+        "targetRmsDbFS": -25,
+        "peakCeilingDbFS": -12,
+        "gainDb": 7.37
+      }
     },
     {
       "event": "back",
-      "file": "sounds/minimize_007.ogg",
+      "file": "sounds/soft-back.ogg",
       "author": "Kenney",
       "pack": "interface-sounds",
-      "sourcePath": "assets/kenney/interface-sounds/Audio/minimize_007.ogg",
-      "gitBlob": "d45a554fcfb8a1fdae26ba61a1d1bce53f84a759",
-      "sha256": "e951505044de0d5d87b72ce7f312ac3fbbdde025ec8c10db70f9d2651a2c8947",
-      "modified": false
+      "sourcePath": "assets/kenney/interface-sounds/Audio/close_001.ogg",
+      "upstreamGitBlob": "b2545e717336d5fdb7a6f87d048eb950b7fca212",
+      "upstreamSha256": "44af8249b933e0fd35ec957a638bb1a0b01f85b53fbe9674bf77bd3ca3168ef4",
+      "sha256": "e5e4950da08a5743b37dae1ff9a105488d2d832f7f66c2d7ea86bc737daff170",
+      "modified": true,
+      "processing": {
+        "rate": 0.9,
+        "highpassHz": 75,
+        "lowpassHz": 1800,
+        "durationSeconds": 0.19,
+        "fadeInMs": 6,
+        "fadeOutMs": 25,
+        "targetRmsDbFS": -25,
+        "peakCeilingDbFS": -12,
+        "gainDb": 7.637
+      }
     },
     {
       "event": "confirm",
-      "file": "sounds/confirmation_001.ogg",
+      "file": "sounds/soft-confirm.ogg",
       "author": "Kenney",
       "pack": "interface-sounds",
-      "sourcePath": "assets/kenney/interface-sounds/Audio/confirmation_001.ogg",
-      "gitBlob": "78f119c626bd8e9c18a19c0c9175d3e37d3a7a22",
-      "sha256": "063564703b6094d70718a3e787a55cc9141611e4ecd6b6637f8828f79b4a8c3a",
-      "modified": false
+      "sourcePath": "assets/kenney/interface-sounds/Audio/switch_005.ogg",
+      "upstreamGitBlob": "799e3277c0c8826589216ec5518801293e13d5d7",
+      "upstreamSha256": "e94dfab6fd6558068ab3ea97e22e4b4f16b83ee440e6abf33ec4c4e9fbe8a70e",
+      "sha256": "e3aa18305216e43c95e3ac57bed92e043c325d44575bde2138d8fa79162da712",
+      "modified": true,
+      "processing": {
+        "rate": 1.0,
+        "highpassHz": 75,
+        "lowpassHz": 1000,
+        "durationSeconds": 0.2,
+        "fadeInMs": 6,
+        "fadeOutMs": 25,
+        "targetRmsDbFS": -25,
+        "peakCeilingDbFS": -12,
+        "gainDb": -8.048
+      }
     },
     {
       "event": "error",
-      "file": "sounds/error_003.ogg",
+      "file": "sounds/soft-error.ogg",
       "author": "Kenney",
       "pack": "interface-sounds",
-      "sourcePath": "assets/kenney/interface-sounds/Audio/error_003.ogg",
-      "gitBlob": "f7e413727d47a67a9b025e7ba828319140bc593b",
-      "sha256": "885b28175c7b511118bcffab95675b48bbac9005cf6514656ebdad979276b3ab",
-      "modified": false
+      "sourcePath": "assets/kenney/interface-sounds/Audio/back_001.ogg",
+      "upstreamGitBlob": "06c5e72c4fd2773438de35ce26bd90caad730031",
+      "upstreamSha256": "07db973f79f6ae0f2edc34561e7592e24d0577455919fb602cb8ecc0da991dcf",
+      "sha256": "a7aae1ced31b0fdbd2cc3e114e5fa93e9451bdca5d500e1851690fa85077d7be",
+      "modified": true,
+      "processing": {
+        "rate": 0.68,
+        "highpassHz": 75,
+        "lowpassHz": 1500,
+        "durationSeconds": 0.11,
+        "fadeInMs": 6,
+        "fadeOutMs": 25,
+        "targetRmsDbFS": -25,
+        "peakCeilingDbFS": -12,
+        "gainDb": -8.113
+      }
     },
     {
       "event": "toggle",
-      "file": "sounds/toggle_001.ogg",
+      "file": "sounds/soft-toggle.ogg",
       "author": "Kenney",
       "pack": "interface-sounds",
-      "sourcePath": "assets/kenney/interface-sounds/Audio/toggle_001.ogg",
-      "gitBlob": "3848ea8734b7b84a80ea72a5a3522706db3314a2",
-      "sha256": "ca1d2dde5f0b286abac4f070e23edab8f30927c8a533665cdf2ac6492a415e49",
-      "modified": false
+      "sourcePath": "assets/kenney/interface-sounds/Audio/click_002.ogg",
+      "upstreamGitBlob": "4564b888c25143eaed79c384a5ce02054813a41c",
+      "upstreamSha256": "adcd1f4adc35f1b41bc1b5bbefeff7aa44f2f3f0d96d3199b544140c7c1e761c",
+      "sha256": "e80b8573cedc7ac7054d54e020f50e8c63bad58780bf8c619a1aa0189e635ca7",
+      "modified": true,
+      "processing": {
+        "rate": 0.9,
+        "highpassHz": 75,
+        "lowpassHz": 2400,
+        "durationSeconds": 0.045,
+        "fadeInMs": 6,
+        "fadeOutMs": 25,
+        "targetRmsDbFS": -25,
+        "peakCeilingDbFS": -12,
+        "gainDb": 8.429
+      }
     },
     {
       "event": "click",
-      "file": "sounds/rollover2.ogg",
+      "file": "sounds/soft-click.ogg",
       "author": "Kenney",
-      "pack": "ui-audio",
-      "sourcePath": "assets/kenney/ui-audio/Audio/rollover2.ogg",
-      "gitBlob": "d1964d061d1e0bf9a2396158b703e4508e718cd0",
-      "sha256": "d0bc0fcba496d73df1da8c145e5330df75f87ab5a4f33a9b71461b006b5c338e",
-      "modified": false
+      "pack": "interface-sounds",
+      "sourcePath": "assets/kenney/interface-sounds/Audio/click_002.ogg",
+      "upstreamGitBlob": "4564b888c25143eaed79c384a5ce02054813a41c",
+      "upstreamSha256": "adcd1f4adc35f1b41bc1b5bbefeff7aa44f2f3f0d96d3199b544140c7c1e761c",
+      "sha256": "decdca9b05e58a2d07dd063343e6de22702d92fe293489eaa13ebb066e6d6490",
+      "modified": true,
+      "processing": {
+        "rate": 0.85,
+        "highpassHz": 75,
+        "lowpassHz": 1800,
+        "durationSeconds": 0.045,
+        "fadeInMs": 6,
+        "fadeOutMs": 25,
+        "targetRmsDbFS": -25,
+        "peakCeilingDbFS": -12,
+        "gainDb": 7.995
+      }
     }
   ]
 }

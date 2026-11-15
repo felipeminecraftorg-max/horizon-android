@@ -2,12 +2,12 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#090f19"><title>Horizon Nexo — Prévia 3</title>
+<meta name="theme-color" content="#090f19"><title>Horizon Nexo — Prévia 4</title>
 <link rel="stylesheet" href="nexo.css">
 </head>
 <body>
 <main id="nexo-app" class="nexo-study">
-  <header class="app-header"><div><span class="wordmark">NEXO</span><small>HORIZON · PRÉVIA 03</small></div><div class="header-actions"><button id="profile-button" type="button" aria-label="Trocar perfil">Meu perfil</button><button id="settings-button" type="button">Ajustes</button></div></header>
+  <header class="app-header"><div><span class="wordmark">NEXO</span><small>HORIZON · PRÉVIA 04</small></div><div class="header-actions"><button id="profile-button" type="button" aria-label="Trocar perfil">Meu perfil</button><button id="settings-button" type="button">Ajustes</button></div></header>
   <div id="scene-wrap"><canvas id="scene" aria-label="Carrossel 3D. Arraste para selecionar e toque na aba em destaque para abrir.">Nexo: Jogar, Mods, Pacotes, Shaders e Skins.</canvas>
     <div id="front-label" aria-hidden="true"><span class="front-prefix"></span><span class="front-title"></span><span class="front-caption"></span></div>
     <div id="tab-targets" aria-label="Abas do Nexo"><button type="button" data-card="0">Jogar</button><button type="button" data-card="1">Mods</button><button type="button" data-card="2">Pacotes</button><button type="button" data-card="3">Shaders</button><button type="button" data-card="4">Skins</button></div>
@@ -18,6 +18,7 @@
 </main>
 <dialog id="settings-dialog" aria-labelledby="settings-title"><header><h2 id="settings-title">Ajustes do Nexo</h2><button type="button" data-close>Fechar</button></header><div class="dialog-body">
 <label>Tamanho do texto<select data-pref="textScale"><option value="1">Padrão</option><option value="1.15">Ampliado</option><option value="1.3">Grande</option></select></label>
+<label>Desfoque de movimento<input type="checkbox" data-pref="motionBlur"></label>
 <label>Movimento reduzido<input type="checkbox" data-pref="reducedMotion"></label>
 <label>Fundo vivo<input type="checkbox" data-pref="ambientMotion"></label>
 <label>Sombras e reflexos<input type="checkbox" data-pref="sceneLighting"></label>
@@ -34,5 +35,5 @@
 <dialog id="catalog-options-dialog" aria-labelledby="catalog-options-title"><header><h2 id="catalog-options-title">Opções da biblioteca</h2><button type="button" data-close>Fechar</button></header><div class="dialog-body"><button type="button" id="import-catalog">Importar lista Nexo</button><button type="button" id="export-catalog">Exportar lista Nexo</button><button type="button" id="reset-filters">Limpar busca e filtros</button><p class="note">Este update importa e exporta manifestos Nexo em JSON.</p></div></dialog>
 <input type="file" id="catalog-file" accept="application/json,.json" hidden>
 <div id="notice" role="status" hidden><span></span><button type="button" id="notice-undo" hidden>Desfazer</button><button type="button" id="notice-close" aria-label="Dispensar aviso">Fechar</button></div>
-<script src="state.js"></script><script src="audio.js"></script><script src="app.js"></script><script src="scene.js"></script>
+<script src="state.js"></script><script src="audio.js"></script><script src="app.js"></script><script src="motion.js"></script><script src="scene.js"></script>
 </body></html>

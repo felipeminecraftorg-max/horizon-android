@@ -96,13 +96,15 @@ The complete notice and license are bundled beside it in `OFL-Michroma.txt`.
 
 ## Nexo preview interface audio
 
-Seven unmodified Ogg samples in `experiments/nexo-preview/android/src/main/assets/sounds/`
-are by Kenney (Kenney Vleugels), dedicated to the public domain under CC0 1.0:
-six from [Interface Sounds 1.0](https://kenney.nl/assets/interface-sounds) and one
-from [UI Audio](https://kenney.nl/assets/ui-audio). Original pack notices are
-bundled as `LICENSE-Interface-Sounds.txt` and `LICENSE-UI-Audio.txt`.
+The seven `soft-*.ogg` cues in `experiments/nexo-preview/android/src/main/assets/sounds/`
+are modified from five Kenney Interface Sounds 1.0 source files, by Kenney
+(Kenney Vleugels), dedicated to the public domain under CC0 1.0.
+[Official pack](https://kenney.nl/assets/interface-sounds).
+The original pack notice is bundled as `LICENSE-Interface-Sounds.txt`.
 
 Download mirror: [GeorgeQLe/assets-sfx-ui at 760afd03](https://github.com/GeorgeQLe/assets-sfx-ui/tree/760afd035e8fc3cd7fb5bc58d49a967649875e3e).
-`sounds/sources.json` records the exact original paths, Git blobs and SHA-256
-checksums. Official pack pages and the included notices both confirm CC0.
-Playback volume is adjusted at runtime; the recording files are unchanged.
+`sounds/sources.json` records the exact original paths, upstream Git blobs and
+SHA-256 checksums, output checksums, rate/EQ/fade settings and mastering gain.
+Changes: resampling, high/low-pass filtering, short trims/fades, mono conversion
+and RMS/peak level matching. These are edited existing audio assets; no generated
+or synthesized replacement cues are used. All derivatives remain CC0.

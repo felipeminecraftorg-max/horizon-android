@@ -50,5 +50,3 @@ html,body{height:100%;overflow:hidden}body{padding:0}
 #tab-targets button{position:absolute;left:0;top:0;width:1024px;height:668px;min-height:0;padding:0;transform-origin:0 0;pointer-events:none;color:transparent;background:transparent;border:0;border-radius:60px;box-shadow:none;opacity:0;touch-action:none}
 #tab-targets button:active{filter:none}#tab-targets button:focus-visible{opacity:1;outline:7px solid #d1ac7c;outline-offset:-14px}
 @media(max-height:500px) and (orientation:landscape){.app-header{min-height:calc(58px + env(safe-area-inset-top));padding-top:calc(6px + env(safe-area-inset-top))}.app-footer{min-height:calc(34px + env(safe-area-inset-bottom));padding-bottom:calc(6px + env(safe-area-inset-bottom))}.module-header{padding-left:60px}}
-
-#scene{filter:blur(var(--transition-blur,0px))}#module{filter:blur(var(--transition-blur,0px))}
