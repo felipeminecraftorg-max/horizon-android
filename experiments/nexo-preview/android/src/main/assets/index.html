@@ -2,12 +2,12 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#090f19"><title>Horizon Nexo — Prévia 4</title>
+<meta name="theme-color" content="#090f19"><title>Horizon Nexo — Prévia 5</title>
 <link rel="stylesheet" href="nexo.css">
 </head>
-<body>
+<body class="intro-active">
 <main id="nexo-app" class="nexo-study">
-  <header class="app-header"><div><span class="wordmark">NEXO</span><small>HORIZON · PRÉVIA 04</small></div><div class="header-actions"><button id="profile-button" type="button" aria-label="Trocar perfil">Meu perfil</button><button id="settings-button" type="button">Ajustes</button></div></header>
+  <header class="app-header"><div class="brand-lockup"><span class="wordmark">NEXO</span><small>HORIZON · PRÉVIA 05</small></div><div class="header-actions system-dock" role="group" aria-label="Sistema"><button id="profile-button" class="system-profile" type="button" aria-label="Trocar perfil"><span class="profile-lens" aria-hidden="true"><svg width="25" height="25" viewBox="0 0 28 28"><defs><linearGradient id="profile-chrome" x2=".8" y2="1"><stop stop-color="#e1f0ef"/><stop offset=".45" stop-color="#819da4"/><stop offset="1" stop-color="#395361"/></linearGradient></defs><rect x="9" y="4" width="10" height="11" rx="3" fill="url(#profile-chrome)"/><path d="M5 24v-3c0-3 4-5 9-5s9 2 9 5v3Z" fill="url(#profile-chrome)"/></svg></span><span id="profile-current">Meu perfil</span></button><span class="system-divider" aria-hidden="true"></span><button id="settings-button" class="system-settings" type="button" aria-label="Ajustes" title="Ajustes"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="6.6" stroke="currentColor" stroke-width="1.4"/><circle cx="12" cy="12" r="2.8" stroke="currentColor" stroke-width="1.4"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button></div></header>
   <div id="scene-wrap"><canvas id="scene" aria-label="Carrossel 3D. Arraste para selecionar e toque na aba em destaque para abrir.">Nexo: Jogar, Mods, Pacotes, Shaders e Skins.</canvas>
     <div id="front-label" aria-hidden="true"><span class="front-prefix"></span><span class="front-title"></span><span class="front-caption"></span></div>
     <div id="tab-targets" aria-label="Abas do Nexo"><button type="button" data-card="0">Jogar</button><button type="button" data-card="1">Mods</button><button type="button" data-card="2">Pacotes</button><button type="button" data-card="3">Shaders</button><button type="button" data-card="4">Skins</button></div>
@@ -17,6 +17,8 @@
   <p class="nexo-error" role="alert" hidden></p>
 </main>
 <dialog id="settings-dialog" aria-labelledby="settings-title"><header><h2 id="settings-title">Ajustes do Nexo</h2><button type="button" data-close>Fechar</button></header><div class="dialog-body">
+<label>Animação de abertura<input type="checkbox" data-pref="introEnabled"></label>
+<button type="button" id="replay-intro">Rever abertura</button>
 <label>Tamanho do texto<select data-pref="textScale"><option value="1">Padrão</option><option value="1.15">Ampliado</option><option value="1.3">Grande</option></select></label>
 <label>Desfoque de movimento<input type="checkbox" data-pref="motionBlur"></label>
 <label>Movimento reduzido<input type="checkbox" data-pref="reducedMotion"></label>
@@ -32,8 +34,10 @@
 </div></dialog>
 <dialog id="profiles-dialog" aria-labelledby="profiles-title"><header><h2 id="profiles-title">Perfis de prévia</h2><button type="button" data-close>Fechar</button></header><div class="dialog-body"><div id="profile-list"></div><form id="profile-form"><label for="profile-name">Novo perfil</label><input id="profile-name" name="name" maxlength="50" autocomplete="off" placeholder="Nome do perfil"><button type="submit">Adicionar</button><p id="profile-error" role="alert"></p></form></div></dialog>
 <dialog id="details-dialog" aria-labelledby="details-title"><header><h2 id="details-title">Detalhes</h2><button type="button" data-close>Fechar</button></header><div id="details-content" class="dialog-body"></div></dialog>
-<dialog id="catalog-options-dialog" aria-labelledby="catalog-options-title"><header><h2 id="catalog-options-title">Opções da biblioteca</h2><button type="button" data-close>Fechar</button></header><div class="dialog-body"><button type="button" id="import-catalog">Importar lista Nexo</button><button type="button" id="export-catalog">Exportar lista Nexo</button><button type="button" id="reset-filters">Limpar busca e filtros</button><p class="note">Este update importa e exporta manifestos Nexo em JSON.</p></div></dialog>
+<dialog id="catalog-options-dialog" aria-labelledby="catalog-options-title"><header><h2 id="catalog-options-title">Opções da biblioteca</h2><button type="button" data-close>Fechar</button></header><div class="dialog-body"><button type="button" id="module-profile">Trocar perfil</button><button type="button" id="module-settings">Ajustes do Nexo</button><button type="button" id="import-catalog">Importar lista Nexo</button><button type="button" id="export-catalog">Exportar lista Nexo</button><button type="button" id="reset-filters">Limpar busca e filtros</button><p class="note">Este update importa e exporta manifestos Nexo em JSON.</p></div></dialog>
+<dialog id="catalog-filters-dialog" aria-labelledby="catalog-filters-title"><header><h2 id="catalog-filters-title">Filtrar e ordenar</h2><button type="button" data-close>Concluído</button></header><div id="catalog-filters-body" class="dialog-body"></div></dialog>
+<dialog id="intro-dialog" aria-label="Abertura do Nexo" aria-modal="true"><div class="intro-field" aria-hidden="true"><i class="intro-ray ray-cold"></i><i class="intro-ray ray-warm"></i></div><div class="intro-lockup" aria-hidden="true"><svg id="intro-mark" viewBox="0 0 100 100" fill="none"><defs><linearGradient id="intro-metal" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#e0efee"/><stop offset=".35" stop-color="#75b4c1"/><stop offset=".7" stop-color="#d5b991"/><stop offset="1" stop-color="#324f65"/></linearGradient></defs><path class="intro-stroke" pathLength="1" d="M20 78V22l60 56V22" stroke="url(#intro-metal)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path class="intro-orbit" pathLength="1" d="M9 64C-1 32 25 8 52 8S99 31 91 58 60 99 35 89" stroke="url(#intro-metal)" stroke-width="1"/></svg><span id="intro-word">NEXO</span></div><button type="button" id="intro-skip">Toque para pular</button></dialog>
 <input type="file" id="catalog-file" accept="application/json,.json" hidden>
 <div id="notice" role="status" hidden><span></span><button type="button" id="notice-undo" hidden>Desfazer</button><button type="button" id="notice-close" aria-label="Dispensar aviso">Fechar</button></div>
-<script src="state.js"></script><script src="audio.js"></script><script src="app.js"></script><script src="motion.js"></script><script src="scene.js"></script>
+<script src="state.js"></script><script src="audio.js"></script><script src="app.js"></script><script src="intro.js"></script><script src="motion.js"></script><script src="scene.js"></script>
 </body></html>

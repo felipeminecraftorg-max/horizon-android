@@ -1,4 +1,4 @@
-# Horizon Nexo — Preview Update 4 — directional motion and quieter audio
+# Horizon Nexo — Preview Update 5 — spacious libraries and a Nexo introduction
 
 The approved five-panel 3D carousel is the source of this implementation. Geometry,
 closed depth path, directional lighting and the one-shot icon presentation remain
@@ -89,6 +89,29 @@ casters, with a wider bias to suppress self-shadow speckling. The shadow fill is
 softer. Maps reuse stationary geometry and reflected lighting updates at up to
 12 FPS while still. Actual meshes still cast the shadows and provide the planar
 reflection in the selected panel.
+
+## Update 5 library and introduction
+
+The home utility controls are a compact profile lens and settings dial in one
+quiet material rail. Their native actions and accessible names remain. During
+panel opening, that rail/footer fade and the renderer interpolates its safe
+viewport toward the usable screen. The expanded panel keeps an outer margin,
+cutout insets, its own integrated return and contextual system actions.
+
+Search stays in one toolbar; filtering/sorting move into a contextual dialog.
+The result count lives in the header, and rows use integrated toggle rails.
+Portrait has one column; landscape has two. Rows keep readable type and 48px
+controls. Scroll restore waits for the finished expansion and scroll anchoring
+is disabled so the first entry is not cut by late layout changes. Browser
+capacity checks import a 72-entry test-only manifest, not extra shipped mods.
+
+The original 1.85-second intro draws the Nexo mark with vector light traces,
+reveals the wordmark, hands it toward the home brand and brings in the actual
+3D carousel from depth. It shares the live scene, is silent, can be skipped or
+replayed, and respects reduced motion plus a saved startup switch. Native pause
+freezes both animation timing and scene rendering; resuming does not restart it.
+Replay from an open module preserves that module and fades back to its content.
+No external movie, generated raster asset or new audio is required.
 
 ## Explicit integration limits
 

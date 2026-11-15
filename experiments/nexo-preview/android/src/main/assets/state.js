@@ -2,7 +2,7 @@
 (function (scope) {
   'use strict';
   const PAGES = ['Jogar', 'Mods', 'Pacotes', 'Shaders', 'Skins'];
-  const DEFAULTS = { textScale: 1, reducedMotion: false, ambientMotion: true, sceneLighting: true, motionBlur: true, renderScale: 1, fps: 60, sound: .18, haptics: false, warmth: .5 };
+  const DEFAULTS = { textScale: 1, reducedMotion: false, ambientMotion: true, sceneLighting: true, motionBlur: true, introEnabled: true, renderScale: 1, fps: 60, sound: .18, haptics: false, warmth: .5 };
   const EXAMPLES = [
     { id: 'presence', page: 'Mods', name: 'Primeira pessoa', category: 'Imersão', description: 'Exemplo de presença e movimento do personagem.', enabled: true },
     { id: 'audio', page: 'Mods', name: 'Áudio espacial', category: 'Som', description: 'Exemplo de uma camada de profundidade sonora.', enabled: false },
@@ -53,6 +53,7 @@
     result.preferences.ambientMotion = p.ambientMotion !== false;
     result.preferences.sceneLighting = p.sceneLighting !== false;
     result.preferences.motionBlur = p.motionBlur !== false;
+    result.preferences.introEnabled = p.introEnabled !== false;
     result.preferences.haptics = p.haptics === true;
     if ([30, 45, 60].includes(p.fps)) result.preferences.fps = p.fps;
     for (const page of PAGES) {

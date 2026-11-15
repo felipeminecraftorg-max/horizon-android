@@ -3,8 +3,8 @@
   'use strict';
   const $ = id => document.getElementById(id), root = $('nexo-app');
   let storage; try { storage = localStorage; } catch (_) { storage = null; }
-  const store = NexoState.createStore(storage), dialogs = [...document.querySelectorAll('dialog')];
-  let page = null, listElement = null, queryElement = null, filterElement = null, sortElement = null, countElement = null;
+  const store = NexoState.createStore(storage), dialogs = [...document.querySelectorAll('dialog:not(#intro-dialog)')];
+  let page = null, listElement = null, queryElement = null, filterElement = null, sortElement = null, countElement = null, filterButton=null,clearButton=null;
   let scrollTimer = 0, noticeTimer = 0, launchBusy = false, rangeEdit = null, restoreScroll = false, pendingScroll = 0;
   function element(tag, attrs = {}, ...children) {
     const node = document.createElement(tag);
@@ -53,7 +53,7 @@
       if (input.type === 'checkbox') input.checked = value;
       else input.value = value;
     });
-    $('profile-button').textContent = profile().name;
+    $('profile-current').textContent = profile().name;
     $('profile-button').setAttribute('aria-label', 'Trocar perfil: ' + profile().name);
     if(window.NexoScene&&lastTextScale!==prefs.textScale){lastTextScale=prefs.textScale;NexoScene.updateLabels(true);}
     window.NexoScene?.refresh();
@@ -87,12 +87,12 @@
   function renderRows() {
     if (!listElement || !page) return;
     const oldScroll = listElement.scrollTop, rows = store.rows(page), total = store.get().catalog.filter(r => r.page === page).length;
-    listElement.replaceChildren(); countElement.textContent = rows.length + ' de ' + total + ' exemplos locais';
+    listElement.replaceChildren(); countElement.textContent = rows.length + ' de ' + total + ' · prévia';clearButton.hidden=!queryElement.value;filterButton.setAttribute('aria-pressed',String(store.view(page).filter!=='all'||store.view(page).sort!=='name'));
     rows.forEach(row => {
       const detail = element('button', { type: 'button', className: 'row-detail', 'aria-label': 'Detalhes de ' + row.name, onclick: () => showDetails(row) },
         element('span', { className: 'row-name' }, row.name), element('span', { className: 'row-caption' }, (row.favorite ? 'Favorito · ' : '') + row.category));
       const toggle = element('button', { type: 'button', className: 'row-toggle', 'aria-pressed': row.enabled, 'aria-label': (row.enabled ? 'Desativar ' : 'Ativar ') + row.name,
-        onclick: () => { store.toggle(row.id); renderRows(); sound('toggle'); notice('Seleção da prévia atualizada.', true); } }, row.enabled ? 'Ativado' : 'Desativado');
+        onclick: () => { store.toggle(row.id); renderRows(); sound('toggle'); notice('Seleção da prévia atualizada.', true); } }, element('span',{className:'switch-track','aria-hidden':'true'}),element('span',{className:'switch-caption'},row.enabled?'Ativado':'Desativado'));
       listElement.append(element('article', { className: 'catalog-row', 'data-item': row.id }, detail, toggle));
     });
     if (!rows.length) {
@@ -102,25 +102,22 @@
     }
     listElement.scrollTop = oldScroll;
   }
+  function icon(path){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg'),shape=document.createElementNS(svg.namespaceURI,'path');for(const [key,value] of Object.entries({viewBox:'0 0 24 24',width:'20',height:'20',fill:'none','aria-hidden':'true'}))svg.setAttribute(key,value);for(const [key,value] of Object.entries({d:path,stroke:'currentColor','stroke-width':'1.5','stroke-linecap':'round','stroke-linejoin':'round'}))shape.setAttribute(key,value);svg.append(shape);return svg;}
   function buildCatalog() {
-    const view = store.view(page), content = $('module-content');
-    queryElement = element('input', { type: 'search', placeholder: 'Buscar na biblioteca', 'aria-label': 'Buscar em ' + page, autocomplete: 'off', maxlength: 100 }); queryElement.value = view.query;
-    queryElement.addEventListener('input', () => { store.setView(page, { query: queryElement.value, scroll: 0 }); renderRows(); listElement.scrollTop = 0; });
-    filterElement = element('select', { 'aria-label': 'Filtrar estado' });
-    for (const [value, label] of [['all', 'Todos'], ['on', 'Ativados'], ['off', 'Desativados'], ['favorite', 'Favoritos']]) filterElement.append(element('option', { value }, label));
-    filterElement.value = view.filter;
-    filterElement.addEventListener('change', () => { store.setView(page, { filter: filterElement.value, scroll: 0 }); renderRows(); listElement.scrollTop = 0; });
-    sortElement = element('select', { 'aria-label': 'Ordenar biblioteca' });
-    for (const [value, label] of [['name', 'Nome'], ['recent', 'Alterados'], ['order', 'Prioridade']]) sortElement.append(element('option', { value }, label));
-    sortElement.value = view.sort;
-    sortElement.addEventListener('change', () => { store.setView(page, { sort: sortElement.value }); renderRows(); });
-    const search = element('div', { className: 'catalog-search' }, queryElement, element('button', { type: 'button', 'aria-label': 'Limpar busca', onclick: () => { queryElement.value = ''; queryElement.dispatchEvent(new Event('input')); queryElement.focus({ preventScroll: true }); } }, 'Limpar'));
-    countElement = element('p', { className: 'result-count', 'aria-live': 'polite' });
-    listElement = element('div', { className: 'catalog-list', 'aria-label': 'Resultados da biblioteca' });
-    listElement.addEventListener('scroll', () => { if(restoreScroll)return;clearTimeout(scrollTimer); scrollTimer = setTimeout(rememberScroll, 150); }, { passive: true });
-    content.append(element('div', { className: 'catalog-filter' }, search, filterElement, sortElement), countElement, listElement,
-      element('p', { className: 'catalog-hint' }, 'Exemplos para testar a interface; sem instalação no jogo.'));
-    pendingScroll = view.scroll; restoreScroll = true; renderRows(); listElement.scrollTop = pendingScroll;
+    const view=store.view(page),content=$('module-content');
+    queryElement=element('input',{type:'search',placeholder:'Buscar em '+page,'aria-label':'Buscar em '+page,autocomplete:'off',maxlength:100});queryElement.value=view.query;
+    queryElement.addEventListener('input',()=>{store.setView(page,{query:queryElement.value,scroll:0});renderRows();listElement.scrollTop=0;});
+    filterElement=element('select',{'aria-label':'Filtrar estado'});for(const [value,label] of [['all','Todos'],['on','Ativados'],['off','Desativados'],['favorite','Favoritos']])filterElement.append(element('option',{value},label));filterElement.value=view.filter;
+    filterElement.addEventListener('change',()=>{store.setView(page,{filter:filterElement.value,scroll:0});renderRows();listElement.scrollTop=0;});
+    sortElement=element('select',{'aria-label':'Ordenar biblioteca'});for(const [value,label] of [['name','Nome'],['recent','Alterados'],['order','Prioridade']])sortElement.append(element('option',{value},label));sortElement.value=view.sort;
+    sortElement.addEventListener('change',()=>{store.setView(page,{sort:sortElement.value});renderRows();});
+    clearButton=element('button',{type:'button',className:'catalog-clear','aria-label':'Limpar busca',onclick:()=>{queryElement.value='';queryElement.dispatchEvent(new Event('input'));queryElement.focus({preventScroll:true});}},icon('M7 7l10 10M17 7 7 17'));
+    const search=element('div',{className:'catalog-search'},icon('M16 16l5 5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0'),queryElement,clearButton);
+    filterButton=element('button',{type:'button',className:'catalog-filter-toggle','aria-label':'Filtrar e ordenar','aria-haspopup':'dialog',onclick:()=>openDialog($('catalog-filters-dialog'))},icon('M4 6h16M4 12h16M4 18h16M9 3v6M15 9v6M9 15v6'));
+    $('catalog-filters-body').replaceChildren(element('label',{},'Mostrar',filterElement),element('label',{},'Ordenar',sortElement),element('button',{type:'button',onclick:()=>{store.setView(page,{filter:'all',sort:'name',scroll:0});filterElement.value='all';sortElement.value='name';renderRows();listElement.scrollTop=0;}},'Restaurar filtros'));
+    countElement=$('module-eyebrow');listElement=element('div',{className:'catalog-list','aria-label':'Resultados da biblioteca'});
+    listElement.addEventListener('scroll',()=>{if(restoreScroll)return;clearTimeout(scrollTimer);scrollTimer=setTimeout(rememberScroll,150);},{passive:true});
+    content.append(element('div',{className:'catalog-tools'},search,filterButton),listElement);pendingScroll=view.scroll;restoreScroll=true;renderRows();
   }
   function buildSkins() {
     const area = element('div', { className: 'skin-space', role: 'img', 'aria-label': 'Personagem de demonstração. Arraste horizontalmente para girar.' });
@@ -132,11 +129,11 @@
       element('p', { className: 'note' }, 'Personagem de demonstração. Importação de skins e conexão com a conta ainda pendentes.'));
   }
   function moduleChanged(name, isOpen) {
-    root.classList.toggle('has-module', isOpen);
+    root.classList.toggle('has-module', isOpen);if(isOpen)document.querySelector('.app-header').inert=true;
     if (!isOpen) { rememberScroll(); $('module').inert = true; return; }
     if (page === name) return;
     rememberScroll(); page = name; listElement = null; restoreScroll = false;
-    $('module-options').hidden = name === 'Skins';
+    $('module-options').hidden = false;for(const id of ['import-catalog','export-catalog','reset-filters'])$(id).hidden=name==='Skins';
     $('module-title').textContent = name; $('module-eyebrow').textContent = name === 'Skins' ? 'PERSONAGEM DE PRÉVIA' : 'BIBLIOTECA DE PRÉVIA';
     $('module-content').replaceChildren(); $('module').hidden = false; $('module').inert = true;
     if (name === 'Skins') buildSkins(); else buildCatalog();
@@ -163,6 +160,7 @@
     finally { launchBusy = false; NexoScene.setLaunching(false); }
   }
   function back(fromAndroid = false) {
+    if(window.NexoIntro?.isActive()){NexoIntro.skip();return true;}
     const active = document.activeElement;
     if (!fromAndroid && active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) { active.blur(); return true; }
     const dialog = dialogs.slice().reverse().find(d => d.open);
@@ -185,7 +183,11 @@
     event.preventDefault(); try { store.addProfile($('profile-name').value);sound('confirm'); $('profile-name').value = ''; $('profile-error').textContent = ''; refreshPreferences(); NexoScene.updateLabels(); showProfiles(); }
     catch (error) { $('profile-error').textContent = error.message; }
   });
-  $('settings-button').addEventListener('click', () => { refreshPreferences(); openDialog($('settings-dialog')); });
+  function showSettings(){refreshPreferences();openDialog($('settings-dialog'));}
+  $('settings-button').addEventListener('click',showSettings);
+  $('module-settings').addEventListener('click',()=>{$('catalog-options-dialog').close();showSettings();});
+  $('module-profile').addEventListener('click',()=>{$('catalog-options-dialog').close();showProfiles();});
+  $('replay-intro').addEventListener('click',()=>{$('settings-dialog').close();NexoIntro.start({replay:true});});
   document.querySelectorAll('[data-pref]').forEach(input => {
     input.addEventListener(input.type === 'range' ? 'input' : 'change', () => {
       const name = input.dataset.pref, value = input.type === 'checkbox' ? input.checked : Number(input.value);
@@ -210,7 +212,7 @@
   });
   function setVisible(visible) {
     if (!visible) rememberScroll();
-    NexoAudio.setVisible(visible);
+    NexoAudio.setVisible(visible);window.NexoIntro?.setVisible(visible);
     window.NexoScene?.setVisible(visible);
   }
   document.addEventListener('visibilitychange', () => setVisible(!document.hidden));
@@ -219,11 +221,12 @@
     store, profile, play, sound, onHomeFace:projectLabel,hideMovingLabel(){$('front-label').style.opacity=0;}, onTabFace(points,index){document.querySelector('[data-card="'+index+'"]').style.transform=projectedTransform(points);}, skinRect(){ if(page!=='Skins')return null;const r=document.querySelector('.skin-space').getBoundingClientRect(),c=$('scene').getBoundingClientRect();return {x:r.left-c.left,y:r.top-c.top,width:r.width,height:r.height}; }, ready() { refreshPreferences(); if (store.storageFailed()) notice('O armazenamento está indisponível; esta sessão continuará em memória.'); },
     selectionChanged(index, isOpen) { const changed = store.get().selected !== index; store.select(index); moduleChanged(NexoState.PAGES[index], isOpen); if (changed) sound(); },
     onFrame({ opening, rect }) {
+      root.style.setProperty('--module-open',opening.toFixed(4));document.querySelector('.app-header').inert=opening>.01;document.querySelector('.app-footer').setAttribute('aria-hidden',String(opening>.01));
       if (!page) return;
       if(opening<.001&&!root.classList.contains('has-module')){$('module').hidden=true;page=null;return;}
       Object.assign($('module').style, { left: rect.left + 'px', top: rect.top + 'px', width: rect.width + 'px', height: rect.height + 'px', opacity: Math.max(0, Math.min(1, (opening - .76) / .24)) });
       $('module').inert = opening < .97 || !root.classList.contains('has-module');
-      if (opening >= .97 && root.classList.contains('has-module') && restoreScroll && listElement) { listElement.scrollTop = pendingScroll; restoreScroll = false; store.setView(page, {scroll:listElement.scrollTop}); }
+      if (opening >= .9999 && root.classList.contains('has-module') && restoreScroll && listElement) { listElement.scrollTop = pendingScroll; restoreScroll = false; store.setView(page, {scroll:listElement.scrollTop}); }
     }
   };
   window.Nexo = { back, setVisible, state: () => ({ ...store.snapshot(), launchBusy, page }) };
