@@ -1,7 +1,7 @@
-# Horizon Nexo — Preview Update 1
+# Horizon Nexo — Preview Update 2 — Y2K materials
 
 The approved five-panel 3D carousel is the source of this implementation. Geometry,
-closed depth path, directional materials and the one-shot icon presentation remain
+closed depth path, directional lighting and the one-shot icon presentation remain
 in `scene.js`. This is a new interface foundation, separate from the rejected Jade
 layout and separate from the actual Horizon game launcher.
 
@@ -22,8 +22,29 @@ section. Back restores the selected card. There is no separate Enter control.
 - A real 3D demonstration character with independent touch rotation in Skins.
 - Persistent text size, reduced motion, frame limit, GPU render scale, warm-light
   adjustment, original short procedural sound effects and optional native haptics.
-- Android Back delegation, native pause/resume, on-demand rendering and a separate
+- Android Back delegation, native pause/resume, suspended-background rendering and a separate
   Android identity: `dev.horizon.nexo.preview`. Existing Horizon/Jade apps remain.
+
+## Update 2 visual finish
+
+The same scene/controller now has original stylized chrome and smoke-polymer
+materials: analytic reflected softboxes, a Fresnel response, a clear-coat lobe,
+mipmapped seeded microtexture, thin machined edges and actual beveled prism icons.
+The implementation is a lightweight artistic model, not full physically based
+rendering, ray tracing, screen-space reflections or a shadow-map pipeline.
+
+Three layered shader ribbons flow behind the carousel. The same monotonic
+animation clock moves the material lighting. Idle atmosphere renders at no more
+than 24 FPS; gestures and transitions retain the chosen 30/45/60 cap. Android
+pause/hidden state cancels both timer and animation frame. Reduced motion and the
+independent live-background switch freeze ambient animation, while moving a card
+still changes its reflection through its actual surface orientation.
+
+Michroma is bundled offline for the main display titles; body text remains a
+readable system sans. Its SIL OFL 1.1 license and copyright are bundled as
+`android/src/main/assets/OFL-Michroma.txt`. See `THIRD_PARTY_NOTICES.md` for the
+pinned source. No Sony/Microsoft logos, proprietary typefaces or console assets
+are included. The existing preview state migrates without replacing the catalog.
 
 ## Explicit integration limits
 

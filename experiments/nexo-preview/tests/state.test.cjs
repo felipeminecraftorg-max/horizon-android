@@ -56,3 +56,9 @@ test('catalog priorities and recent changes survive a restart and export/import'
 test('appearance undo restores only preferences and keeps later catalog changes', () => {
   const s=createStore(memory());s.preference('warmth',.9);s.toggle('audio');assert.equal(s.undoAppearance(),true);assert.equal(s.get().preferences.warmth,.5);assert.equal(s.get().catalog.find(r=>r.id==='audio').enabled,true);
 });
+test('old preview state migrates without losing data and ambient choice survives restart', () => {
+  const storage=memory();storage.setItem('horizon.nexo.preview.v1',JSON.stringify({version:1,selected:2,preferences:{warmth:.7},catalog:[{id:'mine',page:'Mods',name:'Meu mod',enabled:true}]}));
+  const s=createStore(storage);assert.equal(s.get().preferences.ambientMotion,true);assert.equal(s.get().selected,2);assert.equal(s.rows('Mods')[0].name,'Meu mod');
+  s.preference('ambientMotion',false);const again=createStore(storage);assert.equal(again.get().preferences.ambientMotion,false);assert.equal(again.get().preferences.warmth,.7);
+  again.resetAppearance();again.undoAppearance();assert.equal(again.get().preferences.ambientMotion,false);assert.equal(again.rows('Mods')[0].enabled,true);
+});

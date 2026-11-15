@@ -84,3 +84,12 @@ copyright 2026 d3grando, MIT. Exact revisions and adaptation notes are recorded 
 module retains its full MIT LICENSE. Changes provide static Android hook
 adapters, opt-in configuration, profile-state reset and compatibility guards.
 These are a fixed compiled set, not support for loading arbitrary native mods.
+
+## Nexo preview display font
+
+`experiments/nexo-preview/android/src/main/assets/Michroma-Regular.ttf` is the
+unmodified Michroma display font, copyright 2011 The Michroma Project Authors,
+by Vernon Adams, under the SIL Open Font License 1.1. This is a font asset, not
+imported program or shader source. Source: [google/fonts at cc39c4c2](https://github.com/google/fonts/tree/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl/michroma),
+font Git blob `59e8c534349962143f45b48152f80524fe9045bc`.
+The complete notice and license are bundled beside it in `OFL-Michroma.txt`.

@@ -2,12 +2,12 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#101b2b"><title>Horizon Nexo — Prévia 1</title>
+<meta name="theme-color" content="#090f19"><title>Horizon Nexo — Prévia 2</title>
 <link rel="stylesheet" href="nexo.css">
 </head>
 <body>
 <main id="nexo-app" class="nexo-study">
-  <header class="app-header"><div><span class="wordmark">NEXO</span><small>PRÉVIA 1 · INTERFACE</small></div><div class="header-actions"><button id="profile-button" type="button" aria-label="Trocar perfil">Meu perfil</button><button id="settings-button" type="button">Ajustes</button></div></header>
+  <header class="app-header"><div><span class="wordmark">NEXO</span><small>HORIZON · PRÉVIA 02</small></div><div class="header-actions"><button id="profile-button" type="button" aria-label="Trocar perfil">Meu perfil</button><button id="settings-button" type="button">Ajustes</button></div></header>
   <div id="scene-wrap"><canvas id="scene" aria-label="Carrossel 3D. Arraste para selecionar e toque na aba em destaque para abrir.">Nexo: Jogar, Mods, Pacotes, Shaders e Skins.</canvas>
     <div id="front-label" aria-hidden="true"><span class="front-prefix"></span><span class="front-title"></span><span class="front-caption"></span></div>
     <section id="module" hidden inert aria-labelledby="module-title"><header class="module-header"><div><small id="module-eyebrow">BIBLIOTECA DE PRÉVIA</small><h1 id="module-title">Mods</h1></div><button type="button" id="module-options" aria-label="Mais opções da biblioteca" aria-haspopup="dialog">Mais</button></header><div id="module-content"></div></section>
@@ -21,6 +21,7 @@
 <dialog id="settings-dialog" aria-labelledby="settings-title"><header><h2 id="settings-title">Ajustes do Nexo</h2><button type="button" data-close>Fechar</button></header><div class="dialog-body">
 <label>Tamanho do texto<select data-pref="textScale"><option value="1">Padrão</option><option value="1.15">Ampliado</option><option value="1.3">Grande</option></select></label>
 <label>Movimento reduzido<input type="checkbox" data-pref="reducedMotion"></label>
+<label>Fundo vivo<input type="checkbox" data-pref="ambientMotion"></label>
 <label>Limite de quadros<select data-pref="fps"><option value="30">30 FPS</option><option value="45">45 FPS</option><option value="60">60 FPS</option></select></label>
 <label>Resolução dos efeitos<select data-pref="renderScale"><option value="1">Completa</option><option value="0.75">Equilibrada</option><option value="0.6">Econômica</option></select></label>
 <label>Cor de apoio<input type="range" data-pref="warmth" min="0" max="1" step="0.05" aria-label="Intensidade da luz quente"></label>
