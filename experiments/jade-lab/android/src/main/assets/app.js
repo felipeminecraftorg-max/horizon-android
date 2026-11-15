@@ -25,7 +25,7 @@
     azimuth:-38,elevation:.72,intensity:1.24,ambient:.66,
     roughness:.29,metallic:.31,reflectivity:.72,bevel:.57,
     depth:.65,ao:.43,edgeLight:.74,heroGlow:.79,bloom:.38,
-    bg:"#192328",surface:"#354249",accent:"#85d3a0",cool:"#b4d0cc",warm:"#d9c9aa",
+    bg:"#192328",surface:"#354249",accent:"#85d3a0",cool:"#b4d0cc",warm:"#d3a0b8",
     sceneNeutral:"#899b9e",sceneMetal:"#586a72",sceneHighlight:"#e5e3d6",
     environmentLight:.84,environmentWarmth:.40,
     contrast:1.10,saturation:1.07,
@@ -481,6 +481,10 @@
         "uSceneTexture","uScenePass","uSceneNeutral"],
       controls:clone(state),note:"GPU rects use CSS viewport coordinates; see source app."
     }));
+    if(window.JadeDeckFinish){
+      entries.push({name:"shaders/deck-coat.vert",bytes:textBytes(window.JadeDeckFinish.vertexSource)});
+      entries.push({name:"shaders/deck-coat.frag",bytes:textBytes(window.JadeDeckFinish.fragmentSource())});
+    }
     entries.push(json("manifest.json",{
       name:"Horizon Jade Lab Pack",version:1,createdAt:new Date().toISOString(),
       source:"experiments/jade-lab",format:FORMAT,
@@ -660,6 +664,7 @@
         difference===2?"rear":"hidden";
       tile.dataset.stack=pos;
       tile.setAttribute("aria-hidden",pos==="hidden"?"true":"false");
+      if(pos==="front")tile.setAttribute("aria-current","page");else tile.removeAttribute("aria-current");
       tile.tabIndex=pos==="hidden"?-1:0;
     });
     const position=el("scene-position");
@@ -681,24 +686,26 @@
     const previous=el("scene-prev"),next=el("scene-next");
     if(previous)previous.addEventListener("click",()=>cycleStack(-1));
     if(next)next.addEventListener("click",()=>cycleStack(1));
-    let start=null;
+    let start=null,suppressClick=false;
     scene.addEventListener("pointerdown",e=>{
-      if(e.target.closest("button,select,input"))return;
-      start={x:e.clientX,y:e.clientY};
+      if(e.target.closest("select,input,.scene-navigation"))return;
+      start={x:e.clientX,y:e.clientY,id:e.pointerId};
     },{passive:true});
     scene.addEventListener("pointerup",e=>{
-      if(!start)return;
+      if(!start||e.pointerId!==start.id)return;
       const dx=e.clientX-start.x,dy=e.clientY-start.y;start=null;
-      if(Math.abs(dx)>52&&Math.abs(dx)>Math.abs(dy)*1.5)
-        cycleStack(dx<0?1:-1);
+      const horizontal=Math.abs(dx)>52&&Math.abs(dx)>Math.abs(dy)*1.5;
+      const vertical=Math.abs(dy)>52&&Math.abs(dy)>Math.abs(dx)*1.5;
+      if(horizontal||vertical){suppressClick=true;cycleStack((horizontal?dx:dy)<0?1:-1);setTimeout(()=>{suppressClick=false;},0);}
     },{passive:true});
+    scene.addEventListener("click",e=>{if(suppressClick){e.preventDefault();e.stopImmediatePropagation();}},{capture:true});
     scene.addEventListener("pointercancel",()=>{start=null;},{passive:true});
     document.addEventListener("keydown",e=>{
       if(e.altKey||e.ctrlKey||e.metaKey)return;
       if(e.target?.closest?.("input,textarea,select,[contenteditable]"))return;
-      if(e.key==="ArrowRight"||e.key==="PageDown"){
+      if(e.key==="ArrowRight"||e.key==="ArrowDown"||e.key==="PageDown"){
         cycleStack(1);e.preventDefault();
-      }else if(e.key==="ArrowLeft"||e.key==="PageUp"){
+      }else if(e.key==="ArrowLeft"||e.key==="ArrowUp"||e.key==="PageUp"){
         cycleStack(-1);e.preventDefault();
       }
     });

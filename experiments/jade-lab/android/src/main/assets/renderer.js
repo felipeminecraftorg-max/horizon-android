@@ -133,11 +133,11 @@ vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
       float turn=.58+.42*sin(pos.x*scale*3.9+i*1.64-flow*.82);
       vec3 spectral=layer==0?uPalette[3].rgb:
                     layer==1?uPalette[2].rgb:
-                    layer==2?uPalette[4].rgb:uPalette[3].rgb;
+                    layer==2?mix(uPalette[4].rgb,uPalette[3].rgb,.20):uPalette[3].rgb;
       float weight=(.78-.10*i)*power*horizonFade*uAtmos.y;
-      col+=spectral*envelope*weight*(.102+.065*turn);
+      col+=spectral*envelope*weight*(.20+.085*turn);
       col+=mix(spectral,vec3(.77,.84,.91),.21)*
-           illuminated*weight*uBackdropDetail.z*.055;
+           illuminated*weight*uBackdropDetail.z*.135;
       col-=ink*under*weight*.18;
     }
   }else if(style<3.5){
@@ -208,7 +208,7 @@ void main() {
     // the selected color no longer tints the entire dashboard.
     background=mix(background,
       mix(uSceneNeutral[0].rgb,uSceneNeutral[1].rgb,.25),
-      diffused*uEnvironment.x*.43);
+      diffused*uEnvironment.x*.24);
     background+=uSceneNeutral[2].rgb*
       radial(uv,vec2(.75,.23),vec2(.67,.62))*uEnvironment.z*.037;
     fragmentColor=vec4(background,1.0);
@@ -375,7 +375,7 @@ void main() {
   let canvas, gl, program, uniform = {}, buffer, working = false;
   let sceneTexture=null,sceneFbo=null,sceneSize=[0,0],sceneAvailable=false,
     geometryDirty=true,rectCache=new Float32Array(12*4),
-    slowFrames=0,adaptiveScale=1;
+    slowFrames=0,adaptiveScale=1,cpuMs=0,lastScaleChange=0,frameCount=0,metricStart=0,actualFps=0;
   let preset, paused = false, last = 0, elapsed = 0, dpr = 1, renderCount = 0;
   let selectedPage="Play";
   let cursor = [0, 0], error = "",lastCssLight=0;
@@ -455,6 +455,7 @@ void main() {
       document.addEventListener("visibilitychange", () => {last=0;});
       working = true;
       resize();
+      window.JadeDeckFinish?.init();
       requestAnimationFrame(frame);
       return true;
     } catch(e) {
@@ -526,15 +527,21 @@ void main() {
     last=now;
     if(!paused && !(preset && preset.reducedMotion)) elapsed+=dt;
     resize();
-    if(dt>.054)slowFrames++;else slowFrames=Math.max(0,slowFrames-1);
-    if(slowFrames>=20&&adaptiveScale>.52){
-      adaptiveScale=Math.max(.52,adaptiveScale-.12);
-      slowFrames=0;resize();notify("GPU ECO · "+Math.round(adaptiveScale*100)+"%");
-    }
+    const started=performance.now();
     draw();
-    renderCount++;
-    if(renderCount%120===0)notify("WEBGL2 · "+
-      Math.round(1000/Math.max(1,dt*1000))+" FPS");
+    cpuMs=cpuMs*.85+(performance.now()-started)*.15;
+    renderCount++;frameCount++;
+    if(!metricStart)metricStart=now;
+    if(now-metricStart>=1000){
+      actualFps=frameCount*1000/(now-metricStart);
+      // CPU submission is a measured lower bound, not a GPU timing claim.
+      // Do not decrease resolution just because the user requested 30 FPS.
+      if(cpuMs>1000/limit*.95&&now-lastScaleChange>3000&&adaptiveScale>.60){
+        adaptiveScale=Math.max(.60,adaptiveScale-.08);lastScaleChange=now;
+      }
+      notify("WEBGL2 · "+Math.round(actualFps)+" FPS");
+      metricStart=now;frameCount=0;
+    }
   }
   function vec4(name, values) {
     gl.uniform4fv(uniform[name], new Float32Array(values));
@@ -628,18 +635,19 @@ void main() {
       gl.uniform1i(uniform.uScenePass,0);
     }else gl.uniform1i(uniform.uScenePass,2);
     gl.drawArrays(gl.TRIANGLES,0,6);
+    window.JadeDeckFinish?.frame(preset,elapsed,cursor,paused,dpr);
   }
   function setPreset(p) {
-    preset=p;geometryDirty=true;
+    preset=p;geometryDirty=true;window.JadeDeckFinish?.changed();
     if(gl)resize();
   }
   function setPage(name) {
-    selectedPage=String(name||"Play");geometryDirty=true;
+    selectedPage=String(name||"Play");geometryDirty=true;window.JadeDeckFinish?.changed();
     // Keyboard/deck navigation also moves the active point light.
     cursor=selectedPage==="Play"?[innerWidth*.43,innerHeight*.28]:
       [innerWidth*.70,innerHeight*.30];
   }
-  function pause(value) {paused=!!value;return paused;}
+  function pause(value) {paused=!!value;document.body.dataset.paused=String(paused);return paused;}
   function recenter() {cursor=[innerWidth*.35,innerHeight*.4];}
   function screenshot() {
     if(!gl) return null;
@@ -647,7 +655,7 @@ void main() {
     return canvas.toDataURL("image/png");
   }
   function state() {return {webgl2:working,paused,error,sceneCache:sceneAvailable,
-    adaptiveScale,dimensions:[canvas&&canvas.width,canvas&&canvas.height]};}
+    adaptiveScale,cpuMs,fps:actualFps,elapsed,dimensions:[canvas&&canvas.width,canvas&&canvas.height]};}
   window.JadeRenderer={init,setPreset,setPage,pause,recenter,screenshot,state,
     vertexSource:VERTEX_SOURCE,fragmentSource:FRAGMENT_SOURCE,refresh:draw};
 })();
