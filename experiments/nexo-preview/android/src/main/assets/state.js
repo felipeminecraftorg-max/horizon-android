@@ -62,7 +62,7 @@
   }
   function createStore(storage, clock = () => Date.now()) {
     const key = 'horizon.nexo.preview.v1';
-    let state = fresh(), undo = null, storageError = !storage;
+    let state = fresh(), undo = null, appearanceUndo = null, storageError = !storage;
     try { state = normalize(JSON.parse(storage?.getItem(key) || 'null')); } catch (_) { storageError = true; }
     function save() { if (!storage) { storageError = true; return; } try { storage.setItem(key, JSON.stringify(state)); storageError = false; } catch (_) { storageError = true; } }
     function view(page) { return state.views[page] ||= { query: '', filter: 'all', sort: 'name', scroll: 0 }; }
@@ -89,13 +89,14 @@
         peers.forEach((r, i) => { r.order = i; }); view(row.page).sort = 'order'; save();
       },
       undo() { if (!undo) return false; state = undo; undo = null; save(); return true; },
-      beginEdit() { undo = clone(state); },
+      beginEdit() { undo = clone(state); appearanceUndo = clone(state.preferences); },
       preference(name, value, checkpoint = true) {
         if (!(name in DEFAULTS)) return;
-        if (checkpoint) undo = clone(state); const candidate = clone(state); candidate.preferences[name] = value;
+        if (checkpoint) { undo = clone(state); appearanceUndo = clone(state.preferences); } const candidate = clone(state); candidate.preferences[name] = value;
         state.preferences = normalize(candidate).preferences; save();
       },
-      resetAppearance() { undo = clone(state); Object.assign(state.preferences, { warmth: DEFAULTS.warmth, renderScale: DEFAULTS.renderScale }); save(); },
+      undoAppearance() { if (!appearanceUndo) return false; state.preferences = appearanceUndo; appearanceUndo = null; undo = null; save(); return true; },
+      resetAppearance() { undo = clone(state); appearanceUndo = clone(state.preferences); Object.assign(state.preferences, { warmth: DEFAULTS.warmth, renderScale: DEFAULTS.renderScale }); save(); },
       chooseProfile(id) { if (state.profiles.some(p => p.id === id)) { state.profile = id; save(); } },
       addProfile(name) {
         name = clean(name, 50); if (!name) throw Error('Escreva um nome para o perfil.');

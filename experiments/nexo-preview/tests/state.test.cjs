@@ -53,3 +53,6 @@ test('catalog priorities and recent changes survive a restart and export/import'
   assert.equal(again.rows('Mods')[0].id,'audio'); assert.deepEqual(again.rows('Pacotes').map(r=>r.id),['mineral','satin']);
   const imported = createStore(memory()); imported.importText(again.exportText()); imported.setView('Pacotes',{sort:'order'}); assert.deepEqual(imported.rows('Pacotes').map(r=>r.id),['mineral','satin']);
 });
+test('appearance undo restores only preferences and keeps later catalog changes', () => {
+  const s=createStore(memory());s.preference('warmth',.9);s.toggle('audio');assert.equal(s.undoAppearance(),true);assert.equal(s.get().preferences.warmth,.5);assert.equal(s.get().catalog.find(r=>r.id==='audio').enabled,true);
+});

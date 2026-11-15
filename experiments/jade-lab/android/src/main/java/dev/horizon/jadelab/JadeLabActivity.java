@@ -62,6 +62,9 @@ public final class JadeLabActivity extends Activity {
         WebSettings settings = browser.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
+        if (getPackageName().contains("nexo")) {
+            settings.setTextZoom(Math.round(getResources().getConfiguration().fontScale * 100));
+        }
         settings.setAllowFileAccess(true);
         settings.setAllowContentAccess(true);
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
@@ -138,7 +141,7 @@ public final class JadeLabActivity extends Activity {
     @Override public void onBackPressed() {
         if (browser == null) { super.onBackPressed(); return; }
         browser.evaluateJavascript(
-            "Boolean(window.Nexo ? window.Nexo.back() : window.JadeLab && window.JadeLab.back())",
+            "Boolean(window.Nexo ? window.Nexo.back(true) : window.JadeLab && window.JadeLab.back())",
             result -> {
                 if (!"true".equals(result)) JadeLabActivity.super.onBackPressed();
             });

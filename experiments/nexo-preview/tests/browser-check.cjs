@@ -30,7 +30,7 @@ const server=http.createServer((req,res)=>{const name=decodeURIComponent(req.url
   checks.push('accent-insensitive search, separate toggle/details, favorites and view state persist after restart');
   const before=await page.evaluate(()=>Nexo.state().catalog.length);
   await page.locator('#catalog-file').setInputFiles({name:'bad.json',mimeType:'application/json',buffer:Buffer.from('{bad')});await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('JSON válido'));assert.equal(await page.evaluate(()=>Nexo.state().catalog.length),before);
-  const downloadPromise=page.waitForEvent('download');await page.getByRole('button',{name:'Exportar lista',exact:true}).click();const download=await downloadPromise;assert.equal(JSON.parse(fs.readFileSync(await download.path(),'utf8')).format,'HORIZON_NEXO_CATALOG_V1');
+  await page.getByRole('button',{name:'Mais opções da biblioteca',exact:true}).click();const downloadPromise=page.waitForEvent('download');await page.getByRole('button',{name:'Exportar lista Nexo',exact:true}).click();const download=await downloadPromise;assert.equal(JSON.parse(fs.readFileSync(await download.path(),'utf8')).format,'HORIZON_NEXO_CATALOG_V1');
   checks.push('invalid import preserves catalog; export downloads an actual JSON manifest');
   await close();await page.locator('#profile-button').click();await page.locator('#profile-name').fill('Redmi');await page.getByRole('button',{name:'Adicionar',exact:true}).click();await page.locator('#profiles-dialog [data-close]').click();assert.equal(await page.locator('#profile-button').textContent(),'Redmi');
   await select(0);const playPoint=await frontPoint();await page.touchscreen.tap(playPoint.x,playPoint.y);await page.waitForFunction(()=>document.querySelector('#notice').textContent.includes('lançamento pelo Horizon'));assert.equal(await page.evaluate(()=>NexoScene.getState().open),false);assert.equal(await page.evaluate(()=>NexoScene.getState().launching),false);
@@ -48,7 +48,7 @@ const server=http.createServer((req,res)=>{const name=decodeURIComponent(req.url
    const module=await page.locator('#module').boundingBox(),list=await page.locator('.catalog-list').boundingBox(),back=await page.getByRole('button',{name:'Voltar às abas',exact:true}).boundingBox();
    assert.ok(module&&module.x>=0&&module.y>=0&&module.x+module.width<=width+1&&module.y+module.height<=height+1,`module outside ${width}x${height}: `+JSON.stringify(module));
    assert.ok(list&&list.height>=35,'list is unusably short: '+JSON.stringify(list));assert.ok(back&&back.y+back.height<=height+1,'back is clipped: '+JSON.stringify(back));
-   await page.screenshot({path:path.join(out,`mods-${width}x${height}.png`)});await close();
+   await page.screenshot({path:path.join(out,`mods-${width}x${height}.png`)});if(width>height){await page.locator('.catalog-list').evaluate(e=>e.scrollTop=e.scrollHeight);await page.waitForTimeout(200);const prior=await page.locator('.catalog-list').evaluate(e=>e.scrollTop);await close();await open(1);assert.ok(Math.abs(await page.locator('.catalog-list').evaluate(e=>e.scrollTop)-prior)<3,'landscape scroll was not restored');}await close();
   }
   await page.evaluate(()=>Nexo.setVisible(false));assert.equal(await page.evaluate(()=>NexoScene.getState().visible),false);await page.evaluate(()=>Nexo.setVisible(true));
   assert.deepEqual(errors,[]);checks.push('responsive portrait/landscape modules and return control stay within viewport; background rendering can pause');

@@ -5,7 +5,7 @@
   let storage; try { storage = localStorage; } catch (_) { storage = null; }
   const store = NexoState.createStore(storage), dialogs = [...document.querySelectorAll('dialog')];
   let page = null, listElement = null, queryElement = null, filterElement = null, sortElement = null, countElement = null;
-  let scrollTimer = 0, noticeTimer = 0, audio = null, launchBusy = false, rangeEdit = null;
+  let scrollTimer = 0, noticeTimer = 0, audio = null, launchBusy = false, rangeEdit = null, restoreScroll = false, pendingScroll = 0;
   function element(tag, attrs = {}, ...children) {
     const node = document.createElement(tag);
     for (const [key, value] of Object.entries(attrs)) {
@@ -56,7 +56,7 @@
     dialog.querySelector('[data-close]').addEventListener('click', () => closeDialog(dialog));
     dialog.addEventListener('click', event => { if (event.target === dialog) { const r = dialog.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) closeDialog(dialog); } });
   });
-  function rememberScroll() { if (page && listElement) store.setView(page, { scroll: listElement.scrollTop }); }
+  function rememberScroll() { if (page && listElement && !restoreScroll) store.setView(page, { scroll: listElement.scrollTop }); }
   function clearFilters() {
     store.setView(page, { query: '', filter: 'all', scroll: 0 });
     queryElement.value = ''; filterElement.value = 'all'; renderRows(); queryElement.focus({ preventScroll: true });
@@ -109,11 +109,10 @@
     const search = element('div', { className: 'catalog-search' }, queryElement, element('button', { type: 'button', 'aria-label': 'Limpar busca', onclick: () => { queryElement.value = ''; queryElement.dispatchEvent(new Event('input')); queryElement.focus({ preventScroll: true }); } }, 'Limpar'));
     countElement = element('p', { className: 'result-count', 'aria-live': 'polite' });
     listElement = element('div', { className: 'catalog-list', 'aria-label': 'Resultados da biblioteca' });
-    listElement.addEventListener('scroll', () => { clearTimeout(scrollTimer); scrollTimer = setTimeout(rememberScroll, 150); }, { passive: true });
+    listElement.addEventListener('scroll', () => { if(restoreScroll)return;clearTimeout(scrollTimer); scrollTimer = setTimeout(rememberScroll, 150); }, { passive: true });
     content.append(element('div', { className: 'catalog-filter' }, search, filterElement, sortElement), countElement, listElement,
-      element('div', { className: 'catalog-actions' }, element('button', { type: 'button', onclick: () => $('catalog-file').click() }, 'Importar lista'), element('button', { type: 'button', onclick: exportCatalog }, 'Exportar lista')),
       element('p', { className: 'catalog-hint' }, 'Exemplos para testar a interface; sem instalação no jogo.'));
-    renderRows(); listElement.scrollTop = view.scroll;
+    pendingScroll = view.scroll; restoreScroll = true; renderRows(); listElement.scrollTop = pendingScroll;
   }
   function buildSkins() {
     const area = element('div', { className: 'skin-space', role: 'img', 'aria-label': 'Personagem de demonstração. Arraste horizontalmente para girar.' });
@@ -128,7 +127,8 @@
     root.classList.toggle('has-module', isOpen);
     if (!isOpen) { rememberScroll(); page = null; $('module').inert = true; $('module').hidden = true; return; }
     if (page === name) return;
-    rememberScroll(); page = name; listElement = null;
+    rememberScroll(); page = name; listElement = null; restoreScroll = false;
+    $('module-options').hidden = name === 'Skins';
     $('module-title').textContent = name; $('module-eyebrow').textContent = name === 'Skins' ? 'PERSONAGEM DE PRÉVIA' : 'BIBLIOTECA DE PRÉVIA';
     $('module-content').replaceChildren(); $('module').hidden = false; $('module').inert = true;
     if (name === 'Skins') buildSkins(); else buildCatalog();
@@ -154,9 +154,9 @@
     catch (error) { notice('Não foi possível iniciar: ' + String(error.message || error).slice(0, 180)); }
     finally { launchBusy = false; NexoScene.setLaunching(false); }
   }
-  function back() {
+  function back(fromAndroid = false) {
     const active = document.activeElement;
-    if (active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) { active.blur(); return true; }
+    if (!fromAndroid && active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) { active.blur(); return true; }
     const dialog = dialogs.slice().reverse().find(d => d.open);
     if (dialog) { dialog.close(); return true; }
     if (NexoScene.getState().open || NexoScene.getState().launching) { NexoScene.close(); return true; }
@@ -168,6 +168,10 @@
       onclick: () => { store.chooseProfile(p.id); refreshPreferences(); NexoScene.updateLabels(); $('profiles-dialog').close(); } }, p.name, element('small', {}, p.version + ' · Perfil de prévia'))));
     openDialog($('profiles-dialog'));
   }
+  $('module-options').addEventListener('click', () => openDialog($('catalog-options-dialog')));
+  $('import-catalog').addEventListener('click', () => { $('catalog-options-dialog').close(); $('catalog-file').click(); });
+  $('export-catalog').addEventListener('click', () => { $('catalog-options-dialog').close(); exportCatalog(); });
+  $('reset-filters').addEventListener('click', () => { $('catalog-options-dialog').close(); clearFilters(); });
   $('profile-button').addEventListener('click', showProfiles);
   $('profile-form').addEventListener('submit', event => {
     event.preventDefault(); try { store.addProfile($('profile-name').value); $('profile-name').value = ''; $('profile-error').textContent = ''; refreshPreferences(); NexoScene.updateLabels(); showProfiles(); }
@@ -184,7 +188,7 @@
   });
   $('reset-appearance').addEventListener('click', () => { store.resetAppearance(); refreshPreferences(); notice('Aparência restaurada.', true); });
   function undo() { if (store.undo()) { refreshPreferences(); if (page && page !== 'Skins') renderRows(); notice('Alteração desfeita.'); } }
-  $('undo-appearance').addEventListener('click', undo); $('notice-undo').addEventListener('click', undo);
+  $('undo-appearance').addEventListener('click', () => { if (store.undoAppearance()) { refreshPreferences(); notice('Aparência anterior restaurada.'); } }); $('notice-undo').addEventListener('click', undo);
   $('notice-close').addEventListener('click', () => { $('notice').hidden = true; });
   $('catalog-file').addEventListener('change', async event => {
     const file = event.target.files?.[0]; if (!file) return;
@@ -208,12 +212,13 @@
   document.addEventListener('visibilitychange', () => setVisible(!document.hidden));
   window.addEventListener('pagehide', rememberScroll);
   window.NexoApp = {
-    store, profile, play, sound, ready() { refreshPreferences(); if (store.storageFailed()) notice('O armazenamento está indisponível; esta sessão continuará em memória.'); },
+    store, profile, play, sound, skinRect(){ if(page!=='Skins')return null;const r=document.querySelector('.skin-space').getBoundingClientRect(),c=$('scene').getBoundingClientRect();return {x:r.left-c.left,y:r.top-c.top,width:r.width,height:r.height}; }, ready() { refreshPreferences(); if (store.storageFailed()) notice('O armazenamento está indisponível; esta sessão continuará em memória.'); },
     selectionChanged(index, isOpen) { const changed = store.get().selected !== index; store.select(index); moduleChanged(NexoState.PAGES[index], isOpen); if (changed) sound(); },
     onFrame({ opening, rect }) {
       if (!page) return;
       Object.assign($('module').style, { left: rect.left + 'px', top: rect.top + 'px', width: rect.width + 'px', height: rect.height + 'px', opacity: Math.max(0, Math.min(1, (opening - .76) / .24)) });
       $('module').inert = opening < .97;
+      if (opening >= .97 && restoreScroll && listElement) { listElement.scrollTop = pendingScroll; restoreScroll = false; store.setView(page, {scroll:listElement.scrollTop}); }
     }
   };
   window.Nexo = { back, setVisible, state: () => ({ ...store.snapshot(), launchBusy, page }) };

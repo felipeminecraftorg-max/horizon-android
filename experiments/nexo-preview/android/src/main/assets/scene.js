@@ -65,7 +65,7 @@ function render(now){const w=canvas.clientWidth,h=canvas.clientHeight,ratio=Math
  if(i===2)for(let k=0;k<3;k++)object(plate,mul(iconM,mul(trans((k-1)*.035,(k-1)*.19,(k-1)*.13),rz(-.1))),k===2?warm:cool,alpha,.3);
  if(i===3){drawMesh(diamond,iconM,cool,alpha,0,.72);drawMesh(diamond,mul(iconM,mul(trans(.13,.05,.20),scale(.58))),warm,alpha,0,.65);}
  if(i===4){object(head,mul(iconM,trans(0,.23,0)),cool,alpha,.15);object(shoulders,mul(iconM,trans(0,-.20,0)),warm,alpha,.3);
- if(op>.76){const size=Math.min(H*sy*.43,W*sx*.8)/1.6,figure=mul(parent,mul(trans(0,-H*sy*.04,.48),mul(ry(NexoApp.store.get().skinTurn),scale(size))));
+ const skinFrame=op>.97?NexoApp.skinRect():null;if(skinFrame){const r=skinFrame,dist=eye-z-.48,unit=2*dist/(h*f),size=Math.max(.01,Math.min(r.height*.88,r.width*.8)*unit/1.8),cx=((r.x+r.width/2)/w*2-1)*dist*aspect/f-x,cy=(1-(r.y+r.height/2)/h*2)*dist/f+.08-y,figure=mul(parent,mul(trans(cx,cy,.48),mul(ry(NexoApp.store.get().skinTurn),scale(size))));
  object(head,mul(figure,trans(0,.57,0)),[.73,.61,.45],1,.05);object(torso,mul(figure,trans(0,-.01,0)),cool,1,.12);
  for(const side of [-1,1]){object(limb,mul(figure,trans(side*.40,-.04,0)),[.36,.48,.57],1,.08);object(leg,mul(figure,trans(side*.14,-.64,0)),[.20,.28,.40],1,.08);}}
  }

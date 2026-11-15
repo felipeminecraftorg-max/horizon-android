@@ -9,7 +9,7 @@
 <main id="nexo-app" class="nexo-study">
   <header class="app-header"><div><span class="wordmark">NEXO</span><small>PRÉVIA 1 · INTERFACE</small></div><div class="header-actions"><button id="profile-button" type="button" aria-label="Trocar perfil">Meu perfil</button><button id="settings-button" type="button">Ajustes</button></div></header>
   <div id="scene-wrap"><canvas id="scene" aria-label="Carrossel 3D. Arraste para selecionar e toque na aba em destaque para abrir.">Nexo: Jogar, Mods, Pacotes, Shaders e Skins.</canvas>
-    <section id="module" hidden inert aria-labelledby="module-title"><header class="module-header"><div><small id="module-eyebrow">BIBLIOTECA DE PRÉVIA</small><h1 id="module-title">Mods</h1></div></header><div id="module-content"></div></section>
+    <section id="module" hidden inert aria-labelledby="module-title"><header class="module-header"><div><small id="module-eyebrow">BIBLIOTECA DE PRÉVIA</small><h1 id="module-title">Mods</h1></div><button type="button" id="module-options" aria-label="Mais opções da biblioteca" aria-haspopup="dialog">Mais</button></header><div id="module-content"></div></section>
   </div>
   <nav class="nexo-categories" aria-label="Seções">
     <button type="button" data-page="0" aria-pressed="true">Jogar</button><button type="button" data-page="1" aria-pressed="false">Mods</button><button type="button" data-page="2" aria-pressed="false">Pacotes</button><button type="button" data-page="3" aria-pressed="false">Shaders</button><button type="button" data-page="4" aria-pressed="false">Skins</button>
@@ -30,6 +30,7 @@
 </div></dialog>
 <dialog id="profiles-dialog" aria-labelledby="profiles-title"><header><h2 id="profiles-title">Perfis de prévia</h2><button type="button" data-close>Fechar</button></header><div class="dialog-body"><div id="profile-list"></div><form id="profile-form"><label for="profile-name">Novo perfil</label><input id="profile-name" name="name" maxlength="50" autocomplete="off" placeholder="Nome do perfil"><button type="submit">Adicionar</button><p id="profile-error" role="alert"></p></form></div></dialog>
 <dialog id="details-dialog" aria-labelledby="details-title"><header><h2 id="details-title">Detalhes</h2><button type="button" data-close>Fechar</button></header><div id="details-content" class="dialog-body"></div></dialog>
+<dialog id="catalog-options-dialog" aria-labelledby="catalog-options-title"><header><h2 id="catalog-options-title">Opções da biblioteca</h2><button type="button" data-close>Fechar</button></header><div class="dialog-body"><button type="button" id="import-catalog">Importar lista Nexo</button><button type="button" id="export-catalog">Exportar lista Nexo</button><button type="button" id="reset-filters">Limpar busca e filtros</button><p class="note">Este update importa e exporta manifestos Nexo em JSON.</p></div></dialog>
 <input type="file" id="catalog-file" accept="application/json,.json" hidden>
 <div id="notice" role="status" hidden><span></span><button type="button" id="notice-undo" hidden>Desfazer</button><button type="button" id="notice-close" aria-label="Dispensar aviso">Fechar</button></div>
 <script src="state.js"></script><script src="app.js"></script><script src="scene.js"></script>
