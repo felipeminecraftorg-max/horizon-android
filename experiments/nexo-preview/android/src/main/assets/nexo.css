@@ -14,3 +14,5 @@ dialog>header h2{min-width:0;overflow-wrap:anywhere}.profile-choice{overflow-wra
 #front-label{position:absolute;left:0;top:0;width:1024px;height:668px;transform-origin:0 0;pointer-events:none;z-index:1;will-change:transform,opacity}#front-label span{position:absolute;left:65px;right:65px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1;font-weight:400}.front-prefix{top:59px;font-size:30px;color:#9ebbd4}.front-title{top:462px;font-size:calc(86px * var(--scale));color:#e3ebf2}.front-caption{top:calc(564px + (var(--scale) - 1) * 80px);font-size:calc(35px * var(--scale));color:#b7cbdc}#module{z-index:2}
 
 #scene-wrap{overflow:hidden}
+
+@media(max-height:500px) and (orientation:landscape){.catalog-search{min-width:0;flex:2 1 180px}.catalog-filter select{flex:1 0 110px}}
