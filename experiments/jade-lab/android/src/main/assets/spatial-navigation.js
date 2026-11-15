@@ -156,7 +156,7 @@
   function init(cb){
     if(initialized)return;initialized=true;callbacks=cb||{};restore();$('profile-name').textContent=profile;document.body.dataset.jacket=jacket;
     const scene=$('console-scene');scene.addEventListener('pointerdown',pointerDown);scene.addEventListener('pointermove',pointerMove,{passive:false});scene.addEventListener('pointerup',e=>pointerUp(e));scene.addEventListener('pointercancel',e=>pointerUp(e,true));scene.addEventListener('lostpointercapture',e=>{if(gesture)pointerUp(e,true);});
-    scene.addEventListener('click',e=>{if(performance.now()<suppressUntil&&(e.target===scene||e.target.closest('.cards'))){e.preventDefault();e.stopImmediatePropagation();return;}const tile=e.target.closest('.tile[data-page]'),target=hitTest(e.clientX,e.clientY)||tile?.dataset.page;if(target)select(target);},{capture:true});
+    scene.addEventListener('click',e=>{if(e.target.closest('#deck-picker,.deck-access,.hero'))return;if(performance.now()<suppressUntil&&(e.target===scene||e.target.closest('.cards'))){e.preventDefault();e.stopImmediatePropagation();return;}const tile=e.target.closest('.tile[data-page]'),target=hitTest(e.clientX,e.clientY)||tile?.dataset.page;if(target)select(target);},{capture:true});
     $('hero-action').addEventListener('click',()=>open());$('profile-action').addEventListener('click',()=>open('Play'));
     $('quick-settings').addEventListener('click',()=>open('Settings'));$('account-action').addEventListener('click',()=>open('Skins'));
     $('deck-overview').addEventListener('click',openPicker);$('close-deck-picker').addEventListener('click',closePicker);

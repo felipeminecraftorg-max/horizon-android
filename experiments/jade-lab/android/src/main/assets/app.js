@@ -483,14 +483,14 @@
         "uPalette","uRects","uFocusIndex","uSelectionStyle",
         "uBackdropShape","uBackdropLayers","uBackdropLight","uBackdropDetail",
         "uGlassModel","uGlassOptics","uGlassDetail","uGlassTargets",
-        "uSceneTexture","uScenePass","uSceneNeutral"],
+        "uSceneTexture","uScenePass","uSceneNeutral","uSection"],
       controls:clone(state),note:"GPU rects use CSS viewport coordinates; see source app."
     }));
     if(window.JadeDeckFinish){
       entries.push({name:"shaders/deck-coat.vert",bytes:textBytes(window.JadeDeckFinish.vertexSource)});
       entries.push({name:"shaders/deck-coat.frag",bytes:textBytes(window.JadeDeckFinish.fragmentSource())});
     }
-    if(window.JadeNavigation)entries.push(json("navigation.json",{model:"spatial-deck",selected:window.JadeNavigation.state(),modules:Object.keys(window.JadeNavigation.meta)}));
+    if(window.JadeNavigation)entries.push(json("navigation.json",{model:"spatial-deck",atmosphere:window.JadeNavigation.environment(),selected:window.JadeNavigation.state(),modules:Object.keys(window.JadeNavigation.meta)}));
     entries.push(json("manifest.json",{
       name:"Horizon Jade Lab Pack",version:1,createdAt:new Date().toISOString(),
       source:"experiments/jade-lab",format:FORMAT,

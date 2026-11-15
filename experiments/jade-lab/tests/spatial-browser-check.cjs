@@ -8,11 +8,11 @@ const server=http.createServer((req,res)=>{let name=decodeURIComponent(req.url.s
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const browser=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
  const context=await browser.newContext({viewport:{width:1280,height:720},deviceScaleFactor:1,hasTouch:true});
- const page=await context.newPage(),errors=[],checks=[],viewports=[];page.on('pageerror',e=>errors.push(e.message));
+ const page=await context.newPage();page.setDefaultTimeout(20000);page.setDefaultNavigationTimeout(20000);const errors=[],checks=[],viewports=[];page.on('pageerror',e=>errors.push(e.message));
  const cdp=await context.newCDPSession(page);
  async function pick(name){await page.locator('#deck-overview').click();await page.locator('[data-pick="'+name+'"]').click();await page.waitForTimeout(700);assert.equal(await page.evaluate(()=>JadeNavigation.state().page),name);}
- async function open(name){await pick(name);assert.equal(await page.evaluate(()=>JadeNavigation.state().location),'home');await page.locator('#hero-action').click();await page.waitForFunction(()=>JadeNavigation.state().phase==='open');assert.equal(await page.locator('#module-screen').getAttribute('data-module'),name);}
- async function close(){await page.getByRole('button',{name:'Voltar ao deck',exact:true}).click();await page.waitForFunction(()=>JadeNavigation.state().phase==='home');}
+ async function open(name){console.log('Opening module:',name);await pick(name);assert.equal(await page.evaluate(()=>JadeNavigation.state().location),'home');await page.locator('#hero-action').click();await page.waitForFunction(()=>JadeNavigation.state().phase==='open');assert.equal(await page.locator('#module-screen').getAttribute('data-module'),name);}
+ async function close(){console.log('Returning to deck');await page.getByRole('button',{name:'Voltar ao deck',exact:true}).click();await page.waitForFunction(()=>JadeNavigation.state().phase==='home');}
  async function faceCheck(scope){const faces=await page.locator(scope+' [data-spatial-surface]').evaluateAll(els=>els.filter(el=>el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden').map(el=>{const s=getComputedStyle(el),m=new DOMMatrixReadOnly(s.transform);return {tag:el.tagName,id:el.id||el.textContent.trim().slice(0,35),tilt:Math.abs(m.m13)+Math.abs(m.m23)+Math.abs(m.m31)+Math.abs(m.m32)};}));assert.ok(faces.length>=4);for(const f of faces)assert.ok(f.tilt>.015,'flat interactive face '+f.id);}
  async function exposedPoint(){return page.evaluate(()=>{
    const middle=document.querySelector('.tile[data-stack="middle"]'),front=document.querySelector('.tile[data-stack="front"]');
@@ -30,7 +30,8 @@ const server=http.createServer((req,res)=>{let name=decodeURIComponent(req.url.s
   assert.equal(await page.evaluate(()=>JadeDeckFinish.state().ready),true);
   assert.equal(await page.locator('#scene-prev,#scene-next').count(),0);
   assert.equal(await page.locator('.tile[data-stack="front"],.tile[data-stack="middle"],.tile[data-stack="rear"]').count(),3);
-  await page.waitForTimeout(850);await faceCheck('#preview');
+  await page.waitForTimeout(850);await faceCheck('#preview');console.log('Home surfaces verified');
+  await page.screenshot({path:path.join(out,'home-1280x720.png'),animations:'disabled'});
   const target=await exposedPoint();assert.ok(target,'no directly tappable rear card');
   await page.touchscreen.tap(target.x,target.y);assert.equal(await page.evaluate(()=>JadeNavigation.state().page),target.page);assert.equal(await page.evaluate(()=>JadeNavigation.state().location),'home');
   await page.waitForTimeout(750);
@@ -43,7 +44,7 @@ const server=http.createServer((req,res)=>{let name=decodeURIComponent(req.url.s
   assert.equal(await page.evaluate(()=>JadeNavigation.state().page),target.page,'selection changed before release');
   await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:start.x-100,y:start.y,id:1}]});await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
   await page.waitForTimeout(750);assert.equal(await page.evaluate(()=>JadeNavigation.state().page),'Packs');
-  checks.push('native touch drag follows finger, then snaps','rear card taps select without activation','on-screen arrows removed','shared 3D faces');
+  console.log('Native touch selection and dragging verified');checks.push('native touch drag follows finger, then snaps','rear card taps select without activation','on-screen arrows removed','shared 3D faces');
   await open('Mods');await faceCheck('#module-screen');
   await page.getByRole('button',{name:'Som',exact:true}).click();assert.equal(await page.locator('#mod-list .mod-row').count(),1);
   await page.locator('#mod-search').fill('audio');assert.equal(await page.locator('#mod-list .mod-row').count(),1,'accent-insensitive search failed');

@@ -63,6 +63,7 @@ jobs:
           glslangValidator -S frag /tmp/deck-coat.frag
           glslangValidator -S vert /tmp/deck-coat.vert
       - name: Exercise tactile deck, spatial consistency and module interfaces
+        timeout-minutes: 8
         run: |
           npm install --prefix /tmp/jade-browser --no-audit --no-fund playwright@1.56.1
           JADE_PLAYWRIGHT_MODULE=/tmp/jade-browser/node_modules/playwright node experiments/jade-lab/tests/spatial-browser-check.cjs
