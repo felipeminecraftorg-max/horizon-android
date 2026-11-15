@@ -38,6 +38,7 @@ uniform vec4 uGlassTargets;// hero, tiles, system chrome, play CTA
 uniform sampler2D uSceneTexture;
 uniform int uScenePass; // 1=backdrop draw, 0=composite, 2=fallback
 uniform vec4 uEnvironment; // ambient strength, material energy, warmth, spread
+uniform vec4 uSection; // module identity and animated atmosphere blend
 uniform vec4 uSceneNeutral[3]; // independent silver backdrop, brushed metal and pearl light
 
 float hash12(vec2 p) {
@@ -152,6 +153,49 @@ vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
                      i==1?uPalette[3].rgb:uPalette[4].rgb;
       col+=spectral*rim*power*uAtmos.y*.038;
     }
+  }
+  // Each module inhabits the same wave field, with its own light and
+  // spatial motif. This is transient navigation state, not a saved palette.
+  if(uSection.y>.001){
+    float id=uSection.x,amount=uSection.y;
+    vec3 key=vec3(.35,.62,.48),counter=vec3(.52,.54,.71);
+    vec2 lightCenter=vec2(.28,.47);
+    float motif=0.;
+    if(id<1.5){
+      float horizon=.59+.045*sin(uv.x*6.0+flow*.3);
+      motif=exp(-pow((uv.y-horizon)/.018,2.0));
+    }else if(id<2.5){
+      key=vec3(.35,.68,.52);counter=vec3(.63,.43,.28);
+      vec2 grid=abs(fract(uv*vec2(9.,6.))-.5);
+      motif=(1.-smoothstep(.012,.022,min(grid.x,grid.y)))*radial(uv,vec2(.65,.55),vec2(.8,.7));
+      lightCenter=vec2(.19,.42);
+    }else if(id<3.5){
+      key=vec3(.43,.53,.74);counter=vec3(.70,.53,.39);
+      motif=exp(-pow((uv.y-uv.x*.28-.20-.015*sin(flow))/.027,2.0));
+      lightCenter=vec2(.55,.30);
+    }else if(id<4.5){
+      key=vec3(.34,.66,.72);counter=vec3(.70,.36,.51);
+      float ring=length((uv-vec2(.53,.46))*vec2(1.15,1.));
+      motif=exp(-pow((ring-.23-.008*sin(flow))/.018,2.));
+      lightCenter=vec2(.60,.38);
+    }else if(id<5.5){
+      key=vec3(.46,.56,.62);counter=vec3(.65,.55,.31);
+      motif=pow(.5+.5*cos(uv.x*36.+uv.y*3.),18.)*.5;
+      lightCenter=vec2(.33,.55);
+    }else if(id<6.5){
+      key=vec3(.65,.57,.40);counter=vec3(.30,.57,.62);
+      motif=radial(uv,vec2(.53,.65),vec2(.23,.49));
+      lightCenter=vec2(.51,.28);
+    }else{
+      key=vec3(.54,.61,.65);counter=vec3(.46,.57,.43);
+      float ring=length((uv-vec2(.56,.50))*vec2(1.,1.4));
+      motif=exp(-pow((ring-.40)/.025,2.0))*.5;
+      lightCenter=vec2(.70,.35);
+    }
+    vec3 moduleField=col*.73+key*radial(uv,lightCenter,vec2(.7,.6))*.065;
+    moduleField+=counter*radial(uv,vec2(1.)-lightCenter,vec2(.7,.6))*.043;
+    moduleField+=mix(key,counter,.35)*motif*.030;
+    col=mix(col,moduleField,amount);
   }
   // Mapped background texture is kept lower contrast than text-bearing tiles.
   // The grain is stable across frames; no high-frequency flicker or shimmer.
@@ -421,7 +465,7 @@ void main() {
         "uFocusIndex","uSelectionStyle","uBackdropShape",
         "uBackdropLayers","uBackdropLight","uBackdropDetail",
         "uGlassModel","uGlassOptics","uGlassDetail","uGlassTargets",
-        "uSceneTexture","uScenePass","uEnvironment","uSceneNeutral[0]"];
+        "uSceneTexture","uScenePass","uEnvironment","uSection","uSceneNeutral[0]"];
       keys.forEach(k => { uniform[k] = gl.getUniformLocation(program, k); });
       gl.uniform1i(uniform.uSceneTexture,0);
       buffer = gl.createBuffer();
@@ -495,7 +539,7 @@ void main() {
     rectCache.fill(0);
     NAMES.forEach((name,index)=>{
       const element=document.querySelector('[data-surface="'+name+'"]');
-      if(!element||element.classList?.contains("tile"))return;
+      if(!element||element.classList?.contains("tile")||element.hasAttribute("data-spatial-surface"))return;
       if((name==="topbar"||name==="nav"||name==="footer")&&!preset.glassChrome)return;
       if(getComputedStyle(element).display==="none")return;
       const r=element.getBoundingClientRect();
@@ -549,6 +593,7 @@ void main() {
   function draw() {
     if (!preset || !program || !working) return;
     gl.useProgram(program);
+    vec4("uSection",window.JadeNavigation?.environment()||[0,0,0,0]);
     const e=preset.environmentLight??.3;
     gl.uniform4f(uniform.uEnvironment,e,.60,preset.environmentWarmth??.28,.60);
     gl.uniform4fv(uniform["uSceneNeutral[0]"],new Float32Array(

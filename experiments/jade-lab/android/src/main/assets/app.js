@@ -202,6 +202,7 @@
   }
   function sync() {
     window.JadeRenderer.setPreset(state);
+    if(typeof document.body!=="undefined")document.body.dataset.reducedMotion=String(state.reducedMotion);
     const root=document.documentElement;
     for(const k of [...PALETTES.colorFields,...PALETTES.sceneColorFields])
       root.style.setProperty("--"+k,state[k]);
@@ -231,8 +232,12 @@
     const scene=el("console-scene");
     if(scene){
       scene.style.setProperty("--deck-depth",Math.round(30+state.sceneDepth*100)+"px");
-      scene.style.setProperty("--deck-gap",Math.round(26+state.sceneSpacing*27)+"px");
+      scene.style.setProperty("--spatial-deck-depth",Math.round(30+state.sceneDepth*100)+"px");
+      scene.style.setProperty("--deck-gap",Math.round(44+state.sceneSpacing*16)+"px");
+      scene.style.setProperty("--spatial-deck-gap",Math.round(44+state.sceneSpacing*16)+"px");
       scene.style.setProperty("--deck-tilt",String(state.sceneTilt)+"deg");
+      scene.style.setProperty("--spatial-deck-tilt",String(state.sceneTilt)+"deg");
+      document.documentElement.style.setProperty("--spatial-yaw",String(-state.sceneTilt)+"deg");
       scene.style.setProperty("--avatar-idle-duration",
         String((7.5-state.avatarMotion*4.5).toFixed(2))+"s");
       scene.dataset.reducedMotion=state.reducedMotion?"true":"false";
@@ -478,13 +483,14 @@
         "uPalette","uRects","uFocusIndex","uSelectionStyle",
         "uBackdropShape","uBackdropLayers","uBackdropLight","uBackdropDetail",
         "uGlassModel","uGlassOptics","uGlassDetail","uGlassTargets",
-        "uSceneTexture","uScenePass","uSceneNeutral"],
+        "uSceneTexture","uScenePass","uSceneNeutral","uSection"],
       controls:clone(state),note:"GPU rects use CSS viewport coordinates; see source app."
     }));
     if(window.JadeDeckFinish){
       entries.push({name:"shaders/deck-coat.vert",bytes:textBytes(window.JadeDeckFinish.vertexSource)});
       entries.push({name:"shaders/deck-coat.frag",bytes:textBytes(window.JadeDeckFinish.fragmentSource())});
     }
+    if(window.JadeNavigation)entries.push(json("navigation.json",{model:"spatial-deck",atmosphere:window.JadeNavigation.environment(),selected:window.JadeNavigation.state(),modules:Object.keys(window.JadeNavigation.meta)}));
     entries.push(json("manifest.json",{
       name:"Horizon Jade Lab Pack",version:1,createdAt:new Date().toISOString(),
       source:"experiments/jade-lab",format:FORMAT,
@@ -567,7 +573,6 @@
     // can always restore the sheet, including on portrait phones.
     editor.classList.add("collapsed");
     el("open-editor").addEventListener("click",()=>{editor.classList.remove("hidden","collapsed");});
-    el("quick-settings").addEventListener("click",()=>{editor.classList.remove("hidden","collapsed");});
     el("minimize-editor").addEventListener("click",()=>editor.classList.toggle("collapsed"));
     el("hide-editor").addEventListener("click",()=>editor.classList.add("hidden"));
     el("maximize-editor").addEventListener("click",()=>{
@@ -627,7 +632,7 @@
     });
     body.addEventListener("pointerup",()=>safeSave(true),{passive:true});
     el("import-file").addEventListener("change",async e=>{
-      try{await importFile(e.target.files&&e.target.files[0]);}
+      try{await importFile(e.target.files&&e.target.files[0]);window.JadeNavigation?.refreshModule();}
       catch(err){toast("Importação: "+(err.message||err));}
       e.target.value="";
     });
@@ -653,6 +658,7 @@
     if(editor&&!editor.classList.contains("hidden")&&!editor.classList.contains("collapsed")){
       editor.classList.add("collapsed");return true;
     }
+    if(window.JadeNavigation?.back())return true;
     if(page!=="Play"){pageSelect("Play");return true;}
     return false;
   }
@@ -689,42 +695,16 @@
     pageSelect(STACK_PAGES[next]);
   }
   function setupScene(){
-    const scene=el("console-scene");if(!scene)return;
-    const previous=el("scene-prev"),next=el("scene-next");
-    if(previous)previous.addEventListener("click",()=>cycleStack(-1));
-    if(next)next.addEventListener("click",()=>cycleStack(1));
-    let start=null,suppressClick=false;
-    scene.addEventListener("pointerdown",e=>{
-      if(e.target.closest("select,input,.scene-navigation"))return;
-      start={x:e.clientX,y:e.clientY,id:e.pointerId};
-    },{passive:true});
-    scene.addEventListener("pointerup",e=>{
-      if(!start||e.pointerId!==start.id)return;
-      const dx=e.clientX-start.x,dy=e.clientY-start.y;start=null;
-      const horizontal=Math.abs(dx)>52&&Math.abs(dx)>Math.abs(dy)*1.5;
-      const vertical=Math.abs(dy)>52&&Math.abs(dy)>Math.abs(dx)*1.5;
-      if(horizontal||vertical){suppressClick=true;cycleStack((horizontal?dx:dy)<0?1:-1);setTimeout(()=>{suppressClick=false;},0);}
-    },{passive:true});
-    scene.addEventListener("click",e=>{if(suppressClick){e.preventDefault();e.stopImmediatePropagation();}},{capture:true});
-    scene.addEventListener("pointercancel",()=>{start=null;},{passive:true});
-    document.addEventListener("keydown",e=>{
-      if(e.altKey||e.ctrlKey||e.metaKey)return;
-      if(e.target?.closest?.("input,textarea,select,[contenteditable]"))return;
-      if(e.key==="ArrowRight"||e.key==="ArrowDown"||e.key==="PageDown"){
-        cycleStack(1);e.preventDefault();
-      }else if(e.key==="ArrowLeft"||e.key==="ArrowUp"||e.key==="PageUp"){
-        cycleStack(-1);e.preventDefault();
-      }
-    });
+    window.JadeNavigation.init({select:pageSelect});
   }
   const PAGE_DATA={
-    Play:["READY TO PLAY","MINECRAFT","JAVA EDITION 26.3","● Install needed","Install Minecraft"],
-    Mods:["EXTENSIONS","MODS","NATIVE + HNMOD","● Presets and projects","Open Mods"],
-    Packs:["ASSETS","RESOURCE PACKS","TEXTURES · GUI · ICONS","● Live preview","Open Packs"],
-    Shaders:["VISUALS","SHADERS","GPU EFFECTS · WEBGL2","● Material lab","Open Shaders"],
-    Files:["STORAGE","MY FILES","FILE MANAGER","● Local packages","Open Files"],
-    Settings:["SYSTEM","SETTINGS","PERFORMANCE · GRAPHICS","● Lab controls","Open Settings"],
-    Skins:["IDENTITY","SKINS","PLAYER & APPEARANCE","● Profile preview","Open Skins"]
+    Play:["READY TO PLAY","MINECRAFT","JAVA EDITION 26.3","● Prévia da sessão","Entrar em Jogar"],
+    Mods:["EXTENSIONS","MODS","NATIVE + HNMOD","● Presets and projects","Entrar em Mods"],
+    Packs:["ASSETS","RESOURCE PACKS","TEXTURES · GUI · ICONS","● Live preview","Entrar em Pacotes"],
+    Shaders:["VISUALS","SHADERS","GPU EFFECTS · WEBGL2","● Material lab","Entrar em Shaders"],
+    Files:["STORAGE","MY FILES","FILE MANAGER","● Local packages","Abrir Arquivos"],
+    Settings:["SYSTEM","SETTINGS","PERFORMANCE · GRAPHICS","● Lab controls","Abrir Sistema"],
+    Skins:["IDENTITY","SKINS","PLAYER & APPEARANCE","● Profile preview","Abrir Skins"]
   };
   function pageSelect(next) {
     if(!(next in PAGE_DATA))return;
@@ -746,16 +726,14 @@
     });
     window.JadeRenderer.setPage?.(page);
     updateStack(page);
+    window.JadeNavigation?.selected(page);
     const hero=el("preview")?.querySelector?.(".hero");
     if(hero)hero.dataset.sceneActive=page==="Play"?"true":"false";
   }
   function init() {
     restore();sync();renderPanel();setupEditor();setupScene();
     window.JadeRenderer.init();
-    document.querySelectorAll("[data-page]").forEach(button=>
-      button.addEventListener("click",()=>pageSelect(button.dataset.page)));
     pageSelect("Play");
-    el("hero-action").addEventListener("click",()=>toast("Prévia de "+page+"; este laboratório não instala o jogo"));
     if(window.JadeRenderer.state().error)toast(window.JadeRenderer.state().error);
     // Native Android may invoke this after entering immersive mode.
     window.addEventListener("pageshow",()=>window.JadeRenderer.refresh());
