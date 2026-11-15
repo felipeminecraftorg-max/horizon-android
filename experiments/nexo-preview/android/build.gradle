@@ -6,8 +6,8 @@ android {
         applicationId 'dev.horizon.nexo.preview'
         minSdk 29
         targetSdk 35
-        versionCode 3
-        versionName '1.2.0-update3'
+        versionCode 4
+        versionName '1.3.0-update4'
     }
     sourceSets { main { java.srcDirs = ['../../jade-lab/android/src/main/java'] } }
     signingConfigs {

@@ -28,7 +28,7 @@
     if (prefs.haptics && window.AndroidBridge?.haptic) window.AndroidBridge.haptic();
     NexoAudio.play(kind,prefs.sound);
   }
-  let lastLabelKey = null;
+  let lastLabelKey = null,lastTextScale=null;
   function projectedTransform(points) {
     const [a,b,c,d]=points,dx1=b[0]-c[0],dx2=d[0]-c[0],dx3=a[0]-b[0]+c[0]-d[0],dy1=b[1]-c[1],dy2=d[1]-c[1],dy3=a[1]-b[1]+c[1]-d[1],det=dx1*dy2-dx2*dy1;
     if(Math.abs(det)<.000001)return;
@@ -37,7 +37,7 @@
     return 'matrix3d('+matrix.join(',')+')';
   }
   function projectLabel(points,index,opacity,blur=0){
-    $('front-label').style.transform=projectedTransform(points);$('front-label').style.opacity=opacity;const width=Math.max(1,Math.hypot(points[1][0]-points[0][0],points[1][1]-points[0][1]));$('front-label').style.filter='blur('+(blur*1024/width).toFixed(3)+'px)';
+    $('front-label').style.transform=projectedTransform(points);$('front-label').style.opacity=opacity;
     const labelKey=index+'|'+profile().name+'|'+profile().version;if(lastLabelKey===labelKey)return;lastLabelKey=labelKey;
     $('front-label').querySelector('.front-prefix').textContent=String(index+1).padStart(2,'0')+' / HORIZON';
     $('front-label').querySelector('.front-title').textContent=NexoState.PAGES[index];
@@ -55,12 +55,13 @@
     });
     $('profile-button').textContent = profile().name;
     $('profile-button').setAttribute('aria-label', 'Trocar perfil: ' + profile().name);
+    if(window.NexoScene&&lastTextScale!==prefs.textScale){lastTextScale=prefs.textScale;NexoScene.updateLabels(true);}
     window.NexoScene?.refresh();
   }
-  function openDialog(dialog) { if (!dialog.open) { dialog.showModal(); sound('click'); } }
+  function openDialog(dialog) { if (!dialog.open) { dialog.showModal(); } }
   function closeDialog(dialog) { dialog.close(); }
   dialogs.forEach(dialog => {
-    dialog.querySelector('[data-close]').addEventListener('click', () => {closeDialog(dialog);sound('back');});
+    dialog.querySelector('[data-close]').addEventListener('click', () => {closeDialog(dialog);});
     dialog.addEventListener('click', event => { if (event.target === dialog) { const r = dialog.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) closeDialog(dialog); } });
   });
   function rememberScroll() { if (page && listElement && !restoreScroll) store.setView(page, { scroll: listElement.scrollTop }); }
@@ -165,7 +166,7 @@
     const active = document.activeElement;
     if (!fromAndroid && active && ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)) { active.blur(); return true; }
     const dialog = dialogs.slice().reverse().find(d => d.open);
-    if (dialog) { dialog.close(); sound('back'); return true; }
+    if (dialog) { dialog.close(); return true; }
     if (NexoScene.getState().open || NexoScene.getState().launching) { NexoScene.close(); return true; }
     return false;
   }
@@ -215,7 +216,7 @@
   document.addEventListener('visibilitychange', () => setVisible(!document.hidden));
   window.addEventListener('pagehide', rememberScroll);
   window.NexoApp = {
-    store, profile, play, sound, onHomeFace:projectLabel, onTabFace(points,index){document.querySelector('[data-card="'+index+'"]').style.transform=projectedTransform(points);}, skinRect(){ if(page!=='Skins')return null;const r=document.querySelector('.skin-space').getBoundingClientRect(),c=$('scene').getBoundingClientRect();return {x:r.left-c.left,y:r.top-c.top,width:r.width,height:r.height}; }, ready() { refreshPreferences(); if (store.storageFailed()) notice('O armazenamento está indisponível; esta sessão continuará em memória.'); },
+    store, profile, play, sound, onHomeFace:projectLabel,hideMovingLabel(){$('front-label').style.opacity=0;}, onTabFace(points,index){document.querySelector('[data-card="'+index+'"]').style.transform=projectedTransform(points);}, skinRect(){ if(page!=='Skins')return null;const r=document.querySelector('.skin-space').getBoundingClientRect(),c=$('scene').getBoundingClientRect();return {x:r.left-c.left,y:r.top-c.top,width:r.width,height:r.height}; }, ready() { refreshPreferences(); if (store.storageFailed()) notice('O armazenamento está indisponível; esta sessão continuará em memória.'); },
     selectionChanged(index, isOpen) { const changed = store.get().selected !== index; store.select(index); moduleChanged(NexoState.PAGES[index], isOpen); if (changed) sound(); },
     onFrame({ opening, rect }) {
       if (!page) return;

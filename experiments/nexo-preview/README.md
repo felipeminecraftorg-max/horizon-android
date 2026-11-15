@@ -1,4 +1,4 @@
-# Horizon Nexo — Preview Update 3 — direct tabs and sampled audio
+# Horizon Nexo — Preview Update 4 — directional motion and quieter audio
 
 The approved five-panel 3D carousel is the source of this implementation. Geometry,
 closed depth path, directional lighting and the one-shot icon presentation remain
@@ -25,7 +25,7 @@ surface. There is no separate Enter control.
 - Real JSON catalog import/export with validation and atomic failure recovery.
 - A real 3D demonstration character with independent touch rotation in Skins.
 - Persistent text size, reduced motion, frame limit, GPU render scale, warm-light
-  adjustment, seven bundled CC0 audio recordings and optional native haptics.
+  adjustment, seven softly mastered CC0 cues and optional native haptics.
 - Android Back delegation, native pause/resume, suspended-background rendering and a separate
   Android identity: `dev.horizon.nexo.preview`. Existing Horizon/Jade apps remain.
 
@@ -66,20 +66,29 @@ follow those same projected faces for keyboard/screen-reader activation and
 focus; there is no secondary row or global arrow-key menu. The integrated return
 arrow is a 48-pixel target in the panel header. Android Back is retained.
 
-The oscillator cues are replaced by seven original, unmodified Kenney recordings
-(CC0), from Interface Sounds 1.0 and UI Audio. Selection, expansion, return,
-confirmation, toggles, details and errors have separate short cues. A local
-HTMLAudio player preloads the files, respects the saved volume, limits repeated
-cues and stops all playback on native pause/hidden state. There is no generated
-fallback tone or remote request. Pack notices and exact provenance/checksums are
-bundled in `android/src/main/assets/sounds/`; see THIRD_PARTY_NOTICES.md.
+The seven audio cues are edited Kenney Interface Sounds 1.0 assets (CC0),
+from five upstream files. The sharp tonal cues and old error buzz are replaced by
+short, lower/filtered samples with 6 ms attacks, soft tails and matched levels.
+Decoded peaks remain below -10 dBFS. Playback has another 0.5 master factor,
+per-event gains, a single active voice and 110/180 ms repeat limits. Generic
+dialog open/close no longer plays an extra cue. Source hashes and exact rate,
+EQ, trim, fade and gain settings are bundled in `sounds/sources.json`.
 
-Transitions now use velocity-dependent blur, with a small blur during panel
-expansion/collapse; the native text layer receives a matching screen-space blur.
-The blur settles to zero and reduced motion disables it. Shadows and the selected
-panel's planar reflections can be switched off together in settings. Their map
-resolution follows the existing render-scale setting; native pause cancels all
-render passes. Shadow and reflection maps reuse the actual scene meshes.
+Motion blur uses current/previous per-mesh transforms and camera projection to
+write a real per-pixel screen-velocity buffer. A 1/90-second shutter factor is
+independent of the render FPS; vectors are capped at 32 framebuffer pixels. Nine
+samples follow that pixel's motion with depth-aware edge dilation. Only the
+moving region is composited. Static backgrounds/header/controls keep their
+original image; at rest the extra GPU pass is skipped. Reduced motion disables
+it, and viewport resize/native pause resets history. The native front-card title
+uses its corresponding GPU text while its panel moves and returns to sharp
+native text at rest. There is no CSS Gaussian blur on the scene or controls.
+
+Shadow comparisons now use high-precision fragment arithmetic and back-face
+casters, with a wider bias to suppress self-shadow speckling. The shadow fill is
+softer. Maps reuse stationary geometry and reflected lighting updates at up to
+12 FPS while still. Actual meshes still cast the shadows and provide the planar
+reflection in the selected panel.
 
 ## Explicit integration limits
 
