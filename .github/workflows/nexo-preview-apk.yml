@@ -3,7 +3,7 @@ run-name: Nexo Update 1 · ${{ github.sha }}
 on:
   push:
     branches: [feature/nexo-preview-update1]
-    paths: ['experiments/nexo-preview/**', 'experiments/jade-lab/android/src/main/java/**', '.github/workflows/nexo-preview-apk.yml']
+    paths: ['experiments/nexo-preview/**', 'experiments/jade-lab/android/src/main/java/**', '.github/workflows/nexo-preview-apk.yml', 'tools/check_public_tree.py', 'tests/test_nexo_public_tree.py']
   workflow_dispatch:
 permissions:
   contents: read
@@ -18,6 +18,10 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
+      - name: Verify original preview bridge and private-artifact protection
+        run: |
+          python3 tools/check_public_tree.py
+          python3 -m unittest tests.test_nexo_public_tree tests.test_android_source_export
       - name: Check JavaScript and local state behavior
         run: |
           for file in experiments/nexo-preview/android/src/main/assets/*.js; do node --check "$file"; done

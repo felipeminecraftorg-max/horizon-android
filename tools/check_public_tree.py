@@ -12,6 +12,10 @@ ORIGINAL_JDK_TOOLS = {"tools/JfrSummary.java", "tests/java/JfrFixture.java"}
 # Owner-approved, original NativeActivity result callback; not recovered game code.
 ANDROID_RESULT_BRIDGE = "packaging/android/java/dev/horizon/android/HorizonActivity.java"
 ANDROID_DOCUMENTS_BRIDGE = "packaging/android/java/dev/horizon/android/HorizonDocumentsProvider.java"
+# Original owner-requested offline UI test harness, shared by the Jade and Nexo previews.
+# Only this exact source is admitted; the current tree must retain its origin header.
+ANDROID_PREVIEW_BRIDGE = "experiments/jade-lab/android/src/main/java/dev/horizon/jadelab/JadeLabActivity.java"
+ANDROID_PREVIEW_HEADER = "// Horizon Android UI preview: original offline test harness, not recovered game code."
 # Owner-approved (2026-11-08): the mod converter's lane 3 on Android, its runtime and the Java API
 # slice Java mods link against. Original code written for Horizon (named as Mojang's, Fabric's
 # and the loggers' API so a mod's calls resolve), never recovered game code. An exact list
@@ -48,7 +52,7 @@ def prohibited(path):
     if any(part in {".local", ".gradle", "node_modules", "__pycache__"} for part in parsed.parts):
         return True
     # Original JDK-only tools are an exact allowlist; recovered game Java stays private.
-    if path in ORIGINAL_JDK_TOOLS or path in {ANDROID_RESULT_BRIDGE, ANDROID_DOCUMENTS_BRIDGE}:
+    if path in ORIGINAL_JDK_TOOLS or path in {ANDROID_RESULT_BRIDGE, ANDROID_DOCUMENTS_BRIDGE, ANDROID_PREVIEW_BRIDGE}:
         return False
     if lane3_source(path):
         return False
@@ -103,13 +107,14 @@ def main():
     if not history:
         # A lane 3 file in the tree must say it is Horizon's own; any other is rejected.
         for path in paths_in_repository(False):
-            if path and lane3_source(path):
+            if path and (lane3_source(path) or path == ANDROID_PREVIEW_BRIDGE):
                 try:
                     with open(path, encoding="utf-8") as source:
                         first = source.readline()
                 except OSError:
                     continue
-                if not first.startswith(LANE3_HEADER):
+                expected_header = ANDROID_PREVIEW_HEADER if path == ANDROID_PREVIEW_BRIDGE else LANE3_HEADER
+                if not first.startswith(expected_header):
                     rejected.append(path)
         rejected.sort()
     if rejected:

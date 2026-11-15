@@ -1,3 +1,4 @@
+// Horizon Android UI preview: original offline test harness, not recovered game code.
 package dev.horizon.jadelab;
 
 import android.app.Activity;
