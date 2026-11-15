@@ -111,7 +111,9 @@ void main(){
     Object.assign(canvas.style,{left:bounds.x+'px',top:bounds.y+'px',width:bounds.w+'px',height:bounds.h+'px'});
     gl.viewport(0,0,w,h);gl.clearColor(0,0,0,0);gl.clear(gl.COLOR_BUFFER_BIT);gl.useProgram(program);
     gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,20,0);gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,2,gl.FLOAT,false,20,12);
-    gl.enable(gl.BLEND);gl.blendFuncSeparate(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA,gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
+    // Front geometry replaces rear coating in its footprint; alpha blending
+    // here would leak the hidden rear card's highlight through the front.
+    gl.disable(gl.BLEND);
     const v4=(k,a)=>gl.uniform4fv(uniform[k],a);
     gl.uniform2f(uniform.uResolution,w,h);gl.uniform2f(uniform.uViewport,innerWidth,innerHeight);gl.uniform2f(uniform.uPointer,...pointer);gl.uniform2f(uniform.uCoatOrigin,bounds.x,bounds.y);gl.uniform2f(uniform.uCoatSize,bounds.w,bounds.h);gl.uniform1f(uniform.uTime,time);gl.uniform1f(uniform.uReduced,p.reducedMotion?1:0);gl.uniform1f(uniform.uGlassOn,p.glassCards?1:0);
     gl.uniform4fv(uniform['uPalette[0]'],['bg','surface','accent','cool','warm'].flatMap(k=>colors(p[k])));gl.uniform4fv(uniform['uSceneNeutral[0]'],['sceneNeutral','sceneMetal','sceneHighlight'].flatMap(k=>colors(p[k])));

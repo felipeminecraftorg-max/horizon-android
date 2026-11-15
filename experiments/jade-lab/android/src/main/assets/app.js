@@ -645,11 +645,18 @@
       window.JadeRenderer.recenter();toast("Luz centralizada");
     });
     document.addEventListener("keydown",e=>{
-      if(e.key==="Escape" && !editor.classList.contains("collapsed")){
-        editor.classList.add("collapsed");e.preventDefault();
-      }
+      if(e.key==="Escape" && back())e.preventDefault();
     });
   }
+  function back(){
+    const editor=el("editor");
+    if(editor&&!editor.classList.contains("hidden")&&!editor.classList.contains("collapsed")){
+      editor.classList.add("collapsed");return true;
+    }
+    if(page!=="Play"){pageSelect("Play");return true;}
+    return false;
+  }
+
   // The spatial deck is the ONLY app navigation. Hero is contextual content.
   const STACK_PAGES=["Play","Mods","Packs","Shaders","Files","Skins","Settings"];
   let stackIndex=0;
@@ -756,7 +763,7 @@
   window.JadeLab={getPreset:presetObject,getSection:sectionObject,defaults:()=>clone(DEFAULTS),
     palettes:PALETTES.profiles,applyPalette:setPalette,selectedPalette:()=>state.paletteId,
     exportPreset:downloadPreset,exportPack:downloadPack,exportSection:downloadSection,
-    importFile,setField,changeTab,zipStore,findStoredZipPreset};
+    importFile,setField,changeTab,zipStore,findStoredZipPreset,back};
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init);
   else init();
 })();

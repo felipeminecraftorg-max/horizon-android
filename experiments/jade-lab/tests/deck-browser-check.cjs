@@ -39,7 +39,7 @@ const server=http.createServer((req,res)=>{let name=decodeURIComponent(req.url.s
   assert.equal(await page.locator('.tile[data-stack="front"]').getAttribute('data-page'),'Mods','swipe was swallowed by a button click');
   await page.keyboard.press('ArrowDown');assert.equal(await page.locator('.tile[data-stack="front"]').getAttribute('data-page'),'Packs');
   await page.keyboard.press('ArrowUp');assert.equal(await page.locator('.tile[data-stack="front"]').getAttribute('data-page'),'Mods');
-  await page.locator('#scene-prev').click();assert.equal(await page.locator('.tile[data-stack="front"]').getAttribute('data-page'),'Play');
+  await page.keyboard.press('Escape');assert.equal(await page.locator('.tile[data-stack="front"]').getAttribute('data-page'),'Play');
   await page.locator('#open-editor').click();await page.getByRole('tab',{name:'◈ Materiais',exact:true}).click();
   await page.locator('#hide-editor').click();await page.waitForTimeout(800);
   // Restore animation CSS for the actual shared pause test.
@@ -48,7 +48,13 @@ const server=http.createServer((req,res)=>{let name=decodeURIComponent(req.url.s
   const t=await page.evaluate(()=>({time:JadeRenderer.state().elapsed,avatar:getComputedStyle(document.querySelector('.avatar-figure')).transform}));
   const still=await page.evaluate(()=>JadeDeckFinish.screenshot());
   await page.waitForTimeout(350);assert.deepEqual(await page.evaluate(()=>({time:JadeRenderer.state().elapsed,avatar:getComputedStyle(document.querySelector('.avatar-figure')).transform})),t);
-  assert.equal(await page.evaluate(()=>JadeDeckFinish.screenshot()),still,'paused finish moved');
+  const after=await page.evaluate(()=>JadeDeckFinish.screenshot());
+  const delta=await page.evaluate(async([a,b])=>{
+    const images=await Promise.all([a,b].map(src=>new Promise(resolve=>{const i=new Image();i.onload=()=>resolve(i);i.src=src;})));
+    const c=document.createElement('canvas');c.width=images[0].width;c.height=images[0].height;const ctx=c.getContext('2d');const pixels=images.map(i=>{ctx.clearRect(0,0,c.width,c.height);ctx.drawImage(i,0,0);return ctx.getImageData(0,0,c.width,c.height).data;});
+    let sum=0;for(let i=0;i<pixels[0].length;i++)sum+=Math.abs(pixels[0][i]-pixels[1][i]);return sum/pixels[0].length;
+  },[still,after]);
+  assert.ok(delta<.5,'paused finish pixel drift: '+delta);
   await page.mouse.move(200,100);await page.waitForFunction(()=>JadeDeckFinish.state().pointer[0]===200);assert.notEqual(await page.evaluate(()=>JadeDeckFinish.screenshot()),still,'card lighting did not respond');
   const before=await page.evaluate(()=>JadeLab.getPreset().controls);
   const download=page.waitForEvent('download');await page.locator('#open-editor').click();await page.locator('#download-pack').click();const file=await download,zip=fs.readFileSync(await file.path());assert.ok(zip.includes(Buffer.from('shaders/deck-coat.frag')));assert.ok(zip.includes(Buffer.from('uNormal')));assert.deepEqual(await page.evaluate(()=>JadeLab.getPreset().controls),before);

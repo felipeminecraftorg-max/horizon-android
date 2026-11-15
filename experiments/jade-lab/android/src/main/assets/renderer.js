@@ -536,7 +536,7 @@ void main() {
       actualFps=frameCount*1000/(now-metricStart);
       // CPU submission is a measured lower bound, not a GPU timing claim.
       // Do not decrease resolution just because the user requested 30 FPS.
-      if(cpuMs>1000/limit*.95&&now-lastScaleChange>3000&&adaptiveScale>.60){
+      if(!paused&&!preset.reducedMotion&&cpuMs>1000/limit*.95&&now-lastScaleChange>3000&&adaptiveScale>.60){
         adaptiveScale=Math.max(.60,adaptiveScale-.08);lastScaleChange=now;
       }
       notify("WEBGL2 · "+Math.round(actualFps)+" FPS");
