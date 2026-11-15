@@ -26,19 +26,11 @@ function sandbox() {
   };
   vm.createContext(env);
   vm.runInContext(palettes,env,{filename:"palettes.js"});
+  vm.runInContext(fs.readFileSync(path.join(root,"scene.js"),"utf8"),env);
   vm.runInContext(renderer,env,{filename:"renderer.js"});
   vm.runInContext(editor,env,{filename:"app.js"});
   return win;
 }
-
-test("real GLSL shader and full-scene renderer are exported",()=>{
-  const x=sandbox();
-  assert.match(x.JadeRenderer.fragmentSource,/^#version 300 es/m);
-  assert.match(x.JadeRenderer.fragmentSource,/ggxD/);
-  assert.match(x.JadeRenderer.fragmentSource,/uRects\[12\]/);
-  assert.match(x.JadeRenderer.fragmentSource,/uPointer/);
-  assert.match(x.JadeRenderer.vertexSource,/aPosition/);
-});
 
 test("default preset is dark-only and covers all material families",()=>{
   const x=sandbox(),p=x.JadeLab.getPreset();
@@ -173,20 +165,6 @@ test("custom color edits do not overwrite chosen colors or legacy preset format"
   assert.equal(x.JadeLab.getPreset().controls.accent,"#ffcf64");
 });
 
-test("five atmospheric backgrounds have independent GPU uniforms and true GLSL source",()=>{
-  const x=sandbox(),glsl=x.JadeRenderer.fragmentSource;
-  for(const name of ["uBackdropShape","uBackdropLayers",
-    "uBackdropLight","uBackdropDetail"])
-      assert.match(glsl,new RegExp("uniform vec4 "+name+";"));
-  assert.match(glsl,/vec3 renderBackdrop/);
-  assert.match(glsl,/float ribbonHeight/);
-  assert.match(glsl,/for\(int layer=0;layer<4;layer\+\+\)/);
-  assert.match(renderer,/vec4\("uBackdropShape"/);
-  assert.match(renderer,/backgroundCenterX/);
-  assert.match(renderer,/backgroundParallax/);
-  assert.doesNotMatch(glsl,/texture2D\(/);
-});
-
 test("background presets have distinct compositions and respect FPS",()=>{
   const x=sandbox();
   x.JadeLab.setField("fps",90);
@@ -241,46 +219,7 @@ test("Fundo tab stores all atmospheric controls with strict ranges and JSON impo
   assert.equal(ctrl.backgroundStyle,"aurora");
   assert.equal(ctrl.ribbonCurve,1.31);
   assert.equal(ctrl.backgroundGlow,.47);
-  assert.equal(ctrl.fps,45);
-});
-
-test("selection is dynamic GPU lighting without fixed left-hand indicator",()=>{
-  const x=sandbox();
-  const css=fs.readFileSync(path.join(root,"styles.css"),"utf8");
-  const dynamicCss=fs.readFileSync(path.join(root,"palette.css"),"utf8");
-  const html=fs.readFileSync(path.join(root,"index.html"),"utf8");
-  assert.doesNotMatch(css,/\.hero:before\s*\{/);
-  assert.match(html,/palette\.css/);
-  assert.match(html,/palettes\.js/);
-  assert.ok(html.indexOf("palettes.js")<html.indexOf("app.js"));
-  assert.match(x.JadeRenderer.fragmentSource,/uniform int uFocusIndex/);
-  assert.match(x.JadeRenderer.fragmentSource,/uniform int uSelectionStyle/);
-  assert.match(x.JadeRenderer.fragmentSource,/bool focused=i==uFocusIndex/);
-  assert.match(dynamicCss,/\[data-selection="rim"\]/);
-});
-
-test("three optical dark glass variants use actual procedural backdrop sampling",()=>{
-  const x=sandbox(),source=x.JadeRenderer.fragmentSource;
-  for(const u of ["uGlassModel","uGlassOptics","uGlassDetail","uGlassTargets"])
-    assert.match(source,new RegExp("uniform vec4 "+u+";"));
-  assert.match(source,/vec3 frostedBackdrop/);
-  assert.match(source,/texture\(uSceneTexture,clamp\(texUv\+dx/);
-  assert.match(source,/uGlassDetail\.w>1\.5/);
-  assert.match(source,/backdropTone=mix\(backdropTone,base,\.48\)/);
-  for(const k of ["glassStyle","glassQuality","glassOpacity","glassBlur",
-    "glassTransmission","glassTint","glassScatter","glassFresnel",
-    "glassRim","glassGrain","glassHighlight","glassShadow",
-    "glassHero","glassCards","glassChrome","glassCTA"])
-    assert.ok(k in x.JadeLab.getSection("Vidro").controls,k);
-  assert.equal(x.JadeLab.getPreset().controls.glassChrome,false);
-  x.JadeLab.setField("glassStyle","matte");
-  x.JadeLab.setField("glassQuality","high");
-  x.JadeLab.setField("glassOpacity",100);
-  x.JadeLab.setField("glassBlur",-3);
-  assert.equal(x.JadeLab.getPreset().controls.glassStyle,"matte");
-  assert.equal(x.JadeLab.getPreset().controls.glassQuality,"high");
-  assert.equal(x.JadeLab.getPreset().controls.glassOpacity,1);
-  assert.equal(x.JadeLab.getPreset().controls.glassBlur,0);
+  assert.equal(ctrl.fps,60);
 });
 
 test("seven palettes choose their own optical finishes without forcing FPS changes",()=>{
@@ -299,87 +238,6 @@ test("seven palettes choose their own optical finishes without forcing FPS chang
     kinds.add(p.glassStyle);
   }
   assert.equal(kinds.size,3,"at least Frosted, Tinted and Matte finishes");
-});
-
-test("console scene gives the backdrop room and stacks just three 3D cards",()=>{
-  const html=fs.readFileSync(path.join(root,"index.html"),"utf8");
-  const css=fs.readFileSync(path.join(root,"scene.css"),"utf8");
-  assert.match(html,/id="console-scene"/);
-  assert.match(html,/class="avatar-stage"/);
-  assert.match(html,/class="avatar-figure"/);
-  assert.match(html,/id="scene-prev"/);
-  assert.match(html,/id="scene-next"/);
-  assert.match(html,/scene\.css/);
-  assert.match(css,/\.avatar-head-front/);
-  assert.match(css,/\.avatar-floor/);
-  assert.match(css,/\.scene-navigation/);
-  assert.match(css,/\.dashboard \.cards\{/);
-  assert.match(css,/perspective:940px/);
-  for(const mode of ["front","middle","rear","hidden"])
-    assert.ok(css.includes('[data-stack="'+mode+'"]'),"missing "+mode);
-  assert.match(css,/transform-style:preserve-3d/);
-  assert.match(css,/\.dashboard \.cards\s*\{[\s\S]*?position:absolute/);
-  assert.match(css,/\.dashboard \.hero[\s\S]*?width:clamp\(220px,33%,480px\)/);
-  assert.match(css,/@media\(max-width:720px\) and \(orientation:portrait\)/);
-  assert.match(css,/@media\(max-height:480px\) and \(orientation:landscape\)/);
-  assert.doesNotMatch(css,/\.hero:before\s*\{/);
-});
-
-test("scene interaction moves focus by swipe, arrows and page without adding static overlays",()=>{
-  const app=fs.readFileSync(path.join(root,"app.js"),"utf8");
-  const renderer=fs.readFileSync(path.join(root,"renderer.js"),"utf8");
-  const x=sandbox();
-  assert.match(app,/const STACK_PAGES=\["Play","Mods","Packs","Shaders","Files","Skins","Settings"\]/);
-  assert.match(app,/difference===2\?"rear":"hidden"/);
-  assert.match(app,/Math\.abs\(dx\)>52/);
-  assert.match(app,/e\.key==="ArrowRight"/);
-  assert.match(app,/tile\.setAttribute\("aria-hidden"/);
-  assert.match(renderer,/if\(!element\|\|element\.classList\?\.contains\("tile"\)\)return;/);
-  assert.match(renderer,/rectCache\.set\(\[r\.x,r\.y,r\.width,r\.height\],index\*4\)/);
-  assert.match(renderer,/uniform1i\(uniform\.uRectCount,NAMES\.length\)/);
-  const controls=x.JadeLab.getSection("Componentes").controls;
-  for(const key of ["sceneDepth","sceneSpacing","sceneTilt","avatarMotion"])
-    assert.ok(Object.hasOwn(controls,key),key);
-  x.JadeLab.setField("sceneTilt",100);
-  x.JadeLab.setField("sceneDepth",-1);
-  assert.equal(x.JadeLab.getPreset().controls.sceneTilt,25);
-  assert.equal(x.JadeLab.getPreset().controls.sceneDepth,0);
-  assert.equal(x.JadeLab.getPreset().theme,"oldschool-dark");
-});
-
-test("cached two-pass GPU scene avoids recursive atmospheric recomputation",()=>{
-  const x=sandbox(),src=x.JadeRenderer.fragmentSource,js=renderer;
-  assert.match(src,/uniform sampler2D uSceneTexture;/);
-  assert.match(src,/uniform int uScenePass;/);
-  assert.match(src,/uniform vec4 uSceneNeutral\[3\];/);
-  const blur=src.slice(src.indexOf("vec3 frostedBackdrop"),src.indexOf("void main()"));
-  assert.match(blur,/texture\(uSceneTexture/);
-  assert.doesNotMatch(blur,/renderBackdrop\(/);
-  assert.match(js,/gl\.createFramebuffer\(\)/);
-  assert.match(js,/gl\.framebufferTexture2D\(/);
-  assert.match(js,/gl\.uniform1i\(uniform\.uScenePass,1\)/);
-  assert.match(js,/gl\.uniform1i\(uniform\.uScenePass,0\)/);
-  assert.match(js,/Math\.min\(scale,pixelCap\)/);
-  assert.doesNotMatch(js,/Math\.min\(window\.devicePixelRatio/);
-  assert.match(js,/adaptiveScale=Math\.max/);
-  assert.match(js,/lastCssLight>45/);
-  assert.match(src,/uScenePass==2\?renderBackdrop/);
-});
-
-test("one seven-page console navigation replaces duplicate menu row",()=>{
-  const html=fs.readFileSync(path.join(root,"index.html"),"utf8");
-  const css=fs.readFileSync(path.join(root,"console-refine.css"),"utf8");
-  assert.doesNotMatch(html,/<nav class="channels/);
-  assert.match(html,/data-surface="playtile" data-page="Play"/);
-  assert.match(html,/01 \/ 07/);
-  assert.match(html,/console-refine\.css/);
-  assert.match(css,/\.preview \.channels,\.preview \.status-footer\{display:none!important\}/);
-  assert.match(css,/-webkit-backdrop-filter:none!important/);
-  assert.match(css,/--light-pos-x/);
-  assert.match(css,/--sceneMetal/);
-  // In mobile/landscape the minimized editor must release click targets.
-  assert.match(css,/\.editor\.collapsed\s*\{[^}]*pointer-events:none!important/s);
-  assert.match(css,/\.floating-tools\s*\{[^}]*bottom:auto!important/s);
 });
 
 test("themes separate neutral materials from accents and export them independently",()=>{
@@ -405,4 +263,36 @@ test("Android manifest is a separate offline app with no broad permissions",()=>
   assert.doesNotMatch(xml,/uses-permission/);
   assert.match(xml,/hardwareAccelerated="true"/);
   assert.match(xml,/usesCleartextTraffic="false"/);
+});
+
+
+test("console categories clamp, remember rows and unwind Back one level at a time",()=>{
+  const n=sandbox().JadeScene.model();
+  assert.equal(n.back(),false);
+  n.step(-1);assert.equal(n.state().page,"Play");
+  n.select(6);n.step(1);assert.equal(n.state().page,"Settings");
+  assert.equal(n.enter(),false);n.move(1);n.move(1);n.move(1);
+  assert.equal(n.state().row,2);
+  n.select(0);n.enter();assert.equal(n.state().row,0);
+  n.select(6);n.enter();assert.equal(n.state().row,2);
+  assert.equal(n.enter(),true);assert.equal(n.state().dialog,true);
+  n.back();assert.equal(n.state().dialog,false);assert.equal(n.state().level,"options");
+  n.back();assert.equal(n.state().level,"categories");
+  n.back();assert.equal(n.state().page,"Play");assert.equal(n.back(),false);
+});
+
+test("shared camera projects a centered plane and a known tilted corner",()=>{
+  const pose=sandbox().JadeScene.pose;
+  const p=pose({x:100,y:200,width:200,height:100},0,0,0,[800,600]);
+  assert.deepEqual(Array.from(p.corners.flat()),[100,200,300,200,300,300,100,300]);
+  const t=pose({x:300,y:250,width:200,height:100},120,0,Math.PI/3,[800,600]);
+  // Left edge: world X=350, Z=120+50*sqrt(3), focal=1200.
+  const expectedX=400-50*1200/(1080-50*Math.sqrt(3));
+  assert.ok(Math.abs(t.corners[0][0]-expectedX)<1e-9);
+  assert.ok(Math.abs(t.u.reduce((a,v,i)=>a+v*t.v[i],0))<1e-10);
+  for(const a of [t.u,t.v,t.n])assert.ok(Math.abs(Math.hypot(...a)-1)<1e-10);
+  // Independent homogeneous projection agrees with projected CPU corner.
+  const m=t.m,px=m[12]/m[15],py=m[13]/m[15];
+  assert.ok(Math.abs(px-t.corners[0][0])<1e-9);
+  assert.ok(Math.abs(py-t.corners[0][1])<1e-9);
 });

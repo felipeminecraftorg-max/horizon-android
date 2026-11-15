@@ -10,8 +10,8 @@ android {
         applicationId 'dev.horizon.jadelab'
         minSdk 29
         targetSdk 35
-        versionCode 5
-        versionName '1.4.0-dark'
+        versionCode 6
+        versionName '2.0.0-scene'
     }
 
     signingConfigs {

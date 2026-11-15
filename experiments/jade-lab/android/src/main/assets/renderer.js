@@ -1,45 +1,22 @@
-/* Horizon Jade Lab: WebGL2 scene with physically evaluated material response.
- * Entire display is rendered as a continuous GPU composition; labels/buttons
- * are a crisp interactive DOM overlay. No image sprites or copyrighted assets.
- */
-(function () {
-  "use strict";
-  const VERTEX_SOURCE = '#version 300 es\nin vec2 aPosition;\nvoid main(){gl_Position=vec4(aPosition,0.0,1.0);}';
-  const FRAGMENT_SOURCE = `#version 300 es
+/* Shared 3D scene: analytic ray/plane and ray/box intersections, one camera,
+ * point light, cast shadows and one-bounce reflections. DOM text uses the
+ * exact same projective matrices. No CSS lighting or fake perspective. */
+(function(){
+  'use strict';
+  const VERTEX_SOURCE='#version 300 es\nin vec2 aPosition;\nvoid main(){gl_Position=vec4(aPosition,0.,1.);}';
+  const FRAGMENT_SOURCE=`#version 300 es
 precision highp float;
 out vec4 fragmentColor;
-uniform vec2 uResolution;
-uniform vec2 uViewport;
-uniform vec2 uPointer;
-uniform float uTime;
-uniform float uReduced;
-uniform int uRectCount;
-uniform vec4 uRects[12];
-uniform vec4 uPalette[5];
-uniform vec4 uAtmos;
-uniform vec4 uLight;
-uniform vec4 uMaterial;
-uniform vec4 uSurface;
-uniform vec4 uMotion;
-uniform vec4 uDetail;
-uniform int uFocusIndex;
-uniform int uSelectionStyle;
-// The backdrop uses independent uniforms to avoid changing the material ABI.
-uniform vec4 uBackdropShape;  // style, brightness, scale, curvature
-uniform vec4 uBackdropLayers; // count, width, softness, flow rate
-uniform vec4 uBackdropLight;  // halo, depth, centerX, centerY
-uniform vec4 uBackdropDetail; // texture, parallax, edge gleam, color contrast
-// Independent dark glass system: style, translucency, diffusion and quality.
-// Each float is supplied from a real editable/exportable Jade Lab parameter.
-uniform vec4 uGlassModel;  // style [0..3], opacity, blurRadius, transmission
-uniform vec4 uGlassOptics; // tint, scatter, fresnel, chromatic rim
-uniform vec4 uGlassDetail; // fine grain, satin glint, contact shadow, tap tier
-uniform vec4 uGlassTargets;// hero, tiles, system chrome, play CTA
+uniform vec2 uResolution,uViewport,uPointer;
+uniform float uTime,uReduced,uNavigation;
+uniform vec4 uPalette[5],uSceneNeutral[3];
+uniform vec4 uAtmos,uLight,uMaterial,uSurface,uMotion,uDetail,uEnvironment;
+uniform vec4 uBackdropShape,uBackdropLayers,uBackdropLight,uBackdropDetail;
+uniform vec4 uGlassModel,uGlassOptics,uGlassDetail,uGlassTargets;
 uniform sampler2D uSceneTexture;
-uniform int uScenePass; // 1=backdrop draw, 0=composite, 2=fallback
-uniform vec4 uEnvironment; // ambient strength, material energy, warmth, spread
-uniform vec4 uSceneNeutral[3]; // independent silver backdrop, brushed metal and pearl light
-
+uniform int uScenePass,uSelectionStyle,uCount;
+uniform vec4 uCenters[8],uAxesU[8],uAxesV[8],uMeta[8];
+uniform vec4 uBoxCenters[6],uBoxSizes[6];
 float hash12(vec2 p) {
   vec3 p3=fract(vec3(p.xyx)*0.1031);
   p3+=dot(p3,p3.yzx+33.33);
@@ -114,6 +91,7 @@ vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
       vec2 pos=uv;
       float t=flow*(.9+.23*i);
       float y=ribbonHeight(pos.x,i,t,scale,bend);
+      y+=.024*sin(pos.x*4.0-t*.8)*uNavigation;
       if(style>1.5){
         // Satin: diagonal soft bands with very restrained movement.
         y=pos.x*(.26+.035*i)+.22+(i-1.5)*.12+
@@ -134,10 +112,10 @@ vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
       vec3 spectral=layer==0?uPalette[3].rgb:
                     layer==1?uPalette[2].rgb:
                     layer==2?uPalette[4].rgb:uPalette[3].rgb;
-      float weight=(.78-.10*i)*power*horizonFade*uAtmos.y;
-      col+=spectral*envelope*weight*(.102+.065*turn);
+      float weight=(.92-.12*i)*power*horizonFade*uAtmos.y;
+      col+=spectral*envelope*weight*(.36+.16*turn);
       col+=mix(spectral,vec3(.77,.84,.91),.21)*
-           illuminated*weight*uBackdropDetail.z*.055;
+           illuminated*weight*uBackdropDetail.z*.18;
       col-=ink*under*weight*.18;
     }
   }else if(style<3.5){
@@ -160,6 +138,7 @@ vec3 renderBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
   float grain=(coarse*.32+fine*.68-.50)*
       (uAtmos.z+uBackdropDetail.x*.65)*.036;
   col+=grain;
+  col+=uSceneNeutral[2].rgb*grad*uEnvironment.x*.018;
   float vignette=length((uv-.5)*vec2(1.04,.95));
   col*=1.0-smoothstep(.18,.79,vignette)*uAtmos.w*.56;
   return max(col,vec3(0.0));
@@ -194,460 +173,274 @@ vec3 frostedBackdrop(vec2 uv,vec2 p,float time,vec2 mouse) {
   }
   return sum/weight;
 }
-void main() {
-  vec2 p=vec2(gl_FragCoord.x/uResolution.x,1.0-gl_FragCoord.y/uResolution.y)*uViewport;
-  vec2 uv=p/max(uViewport,vec2(1.0));
-  // Physical viewport coordinates remain independent from render scale.
-  // Reduced motion freezes time, while cursor-driven lighting remains alive.
-  float tt=uTime*uMotion.x*(1.0-uReduced);
-  vec2 cursor=uPointer/max(uViewport,vec2(1.0));
-  if(uScenePass==1){
-    vec3 background=renderBackdrop(uv,p,tt,cursor);
-    float diffused=radial(uv,vec2(.5,.43),vec2(.85,.8));
-    // Gray pearl and warm ivory coexist with a much smaller colored accent:
-    // the selected color no longer tints the entire dashboard.
-    background=mix(background,
-      mix(uSceneNeutral[0].rgb,uSceneNeutral[1].rgb,.25),
-      diffused*uEnvironment.x*.43);
-    background+=uSceneNeutral[2].rgb*
-      radial(uv,vec2(.75,.23),vec2(.67,.62))*uEnvironment.z*.037;
-    fragmentColor=vec4(background,1.0);
-    return;
+// Positive Z faces the camera. Every plane has orthonormal U/V axes.
+float panelHit(vec3 ro,vec3 rd,int i,out vec3 hit,out vec2 local){
+  vec3 n=normalize(cross(uAxesU[i].xyz,uAxesV[i].xyz));
+  float denom=dot(rd,n);
+  if(abs(denom)<.00001)return 1e8;
+  float t=dot(uCenters[i].xyz-ro,n)/denom;
+  if(t<=.05)return 1e8;
+  hit=ro+rd*t;
+  vec3 d=hit-uCenters[i].xyz;
+  local=vec2(dot(d,uAxesU[i].xyz),dot(d,uAxesV[i].xyz));
+  float sd=sround(local,vec2(0.),vec2(uCenters[i].w,uAxesU[i].w),uMeta[i].w);
+  return sd<.5?t:1e8;
+}
+mat3 rotation(float a){float c=cos(a),s=sin(a);return mat3(c,0.,-s,0.,1.,0.,s,0.,c);}
+float boxHit(vec3 ro,vec3 rd,int i,out vec3 normal,out vec3 local){
+  mat3 rot=rotation(uBoxSizes[i].w);
+  vec3 o=transpose(rot)*(ro-uBoxCenters[i].xyz),d=transpose(rot)*rd;
+  vec3 safe=mix(vec3(-1.),vec3(1.),step(vec3(0.),d))*max(abs(d),vec3(.00001));
+  vec3 t0=(-uBoxSizes[i].xyz-o)/safe,t1=(uBoxSizes[i].xyz-o)/safe;
+  vec3 near3=min(t0,t1),far3=max(t0,t1);
+  float nearT=max(max(near3.x,near3.y),near3.z),farT=min(min(far3.x,far3.y),far3.z);
+  if(farT<max(nearT,.05))return 1e8;
+  local=(o+d*nearT)/max(uBoxSizes[i].xyz,vec3(.001));
+  vec3 n=vec3(0.);
+  if(near3.x>=near3.y&&near3.x>=near3.z)n.x=-sign(d.x);
+  else if(near3.y>=near3.z)n.y=-sign(d.y);else n.z=-sign(d.z);
+  normal=rot*n;return nearT;
+}
+float shadowAt(vec3 p,vec3 normal,vec3 light,int selfPanel,int selfBox){
+  vec3 ro=p+normal*1.3,rd=normalize(light-ro);
+  float reach=length(light-ro),visibility=1.;
+  for(int j=0;j<8;j++){
+    if(j>=uCount)break;if(j==selfPanel)continue;
+    vec3 h;vec2 q;float t=panelHit(ro,rd,j,h,q);
+    if(t<reach)visibility*=mix(.23,.58,uMeta[j].z*uGlassModel.w);
   }
-  vec3 result=uScenePass==2?renderBackdrop(uv,p,tt,cursor):
-    texture(uSceneTexture,vec2(uv.x,1.0-uv.y)).rgb;
-  cursor-=vec2(.5);
-  float angle=uLight.x*3.14159265/180.0;
-  vec3 light=normalize(vec3(cos(angle)*.87+cursor.x*uMotion.z,
-        sin(angle)*.87-cursor.y*uMotion.z,uLight.y+.26));
-  vec3 view=vec3(0.0,0.0,1.0);
-  vec3 halfVec=normalize(view+light);
-  float rough=clamp(uMaterial.x,.075,.96);
-  float metallic=clamp(uMaterial.y,0.0,1.0);
-
-  for(int i=0;i<12;i++) {
-    if(i>=uRectCount) break;
-    vec4 r=uRects[i];
-    if(r.z<=0.0 || r.w<=0.0) continue;
-    // Skip full material calculation outside the local bounding rectangle.
-    if(p.x<r.x-31.0 || p.y<r.y-31.0 ||
-       p.x>r.x+r.z+31.0 || p.y>r.y+r.w+31.0) continue;
-    float radius=(i==2?22.0:i==10?13.0:i==0?17.0:12.0);
-    radius=min(radius,min(r.z,r.w)*.26);
-    vec2 mid=r.xy+r.zw*.5;
-    float d=sround(p,mid,r.zw,radius);
-    float shadow=max(0.0,1.0-smoothstep(1.0,26.0,d));
-    result*=1.0-shadow*uSurface.y*.18;
-    float inMask=1.0-smoothstep(-.55,.85,d);
-    if(inMask<0.0001) continue;
-    // Actual focused surface: no procedural left stripe or baked status bar.
-    // Local material response is calculated in screen space on every frame.
-    bool focused=i==uFocusIndex;
-    vec2 q=(p-r.xy)/max(r.zw,vec2(1.0));
-    float bevelDistance=smoothstep(-10.0,-.4,d);
-    vec3 normal=normalize(vec3(
-       (q.x-.5)*.52 + (q.x-.5)*bevelDistance*uMaterial.w*.68,
-       (q.y-.5)*.52 + (q.y-.5)*bevelDistance*uMaterial.w*.68,
-       1.0-bevelDistance*uMaterial.w*.24));
-    float nl=max(dot(normal,light),0.0);
-    float nv2=max(dot(normal,view),.01);
-    float nh=max(dot(normal,halfVec),0.0);
-    float vh=max(dot(view,halfVec),0.0);
-    float dspec=ggxD(nh,rough);
-    float gspec=ggxG(nv2,nl,rough);
-    vec3 base=uPalette[1].rgb;
-    if(i==3 || i==7) base=mix(base,uPalette[2].rgb,.21);
-    if(i==4 || i==6) base=mix(base,uPalette[3].rgb,.25);
-    if(i==5) base=mix(base,uPalette[4].rgb,.22);
-    if(i==2) base=mix(base,uPalette[2].rgb,.09);
-    if(i==10) base=mix(base,uPalette[2].rgb,.52);
-    if(i==0 || i==1 || i==9) base=mix(uPalette[0].rgb,base,.69);
-    float softTop=mix(.9,1.08,1.0-q.y);
-    base*=softTop;
-    vec3 f0=mix(vec3(.034),base,metallic*.74);
-    vec3 fresnel=f0+(vec3(1.0)-f0)*pow(1.0-vh,5.0);
-    vec3 spec=fresnel*dspec*gspec/(4.0*nv2*max(nl,.01));
-    spec=min(spec,vec3(1.35));
-    float ao=1.0-uSurface.y*(.04+(.25*max(q.y-.48,0.0)));
-    float lighting=uLight.w+nl*uLight.z*.39;
-    vec3 mat=base*lighting*ao+spec*uMaterial.z*uLight.z*.47;
-    // Physically legible dark glass variants, drawn over the same original
-    // procedural backdrop: refracted transmission, matte pigment, Fresnel
-    // edge response, top-face microreflection and stable surface grain.
-    bool glassAllowed=(i==2?uGlassTargets.x>.5:
-      i==10?uGlassTargets.w>.5:
-      (i>=3 && i<=8)?uGlassTargets.y>.5:uGlassTargets.z>.5);
-    if(glassAllowed && uGlassModel.x<2.5) {
-      vec2 screenUv=p/max(uViewport,vec2(1.0));
-      vec2 pointerUv=cursor+vec2(.5);
-      vec3 behind=frostedBackdrop(screenUv,p,tt,pointerUv);
-      float model=uGlassModel.x;
-      float pigment=clamp(uGlassModel.y,0.0,1.0);
-      float transmission=clamp(uGlassModel.w,0.0,1.0);
-      float tint=clamp(uGlassOptics.x,0.0,1.0);
-      float scatter=clamp(uGlassOptics.y,0.0,1.0);
-      vec3 backdropTone=mix(behind,
-        mix(behind,uPalette[1].rgb,.28+.37*tint),tint);
-      if(model>.5 && model<1.5){
-        // Tinted Frost: tinted thicker polymer with more color and less
-        // transmission than Frosted Dark.
-        backdropTone=mix(backdropTone,uPalette[1].rgb,.20+.28*tint);
-        transmission*=.78;
-      }else if(model>1.5){
-        // Dense Matte: dense pigment, low transmission, broader reflected
-        // light; perceptibly different from a thin glass card.
-        backdropTone=mix(backdropTone,base,.48);
-        transmission*=.40;
-      }
-      float visible=transmission*(1.0-pigment*.76);
-      mat=mix(mat,backdropTone,visible);
-      // Turbid scattering grows toward glancing angles, never pure neon.
-      float glancing=pow(1.0-nv2,2.6);
-      mat+=uPalette[3].rgb*scatter*(.035+.065*glancing);
-      float fresnel=pow(1.0-clamp(dot(normal,view),0.0,1.0),4.5);
-      mat+=mix(uPalette[3].rgb,vec3(1.),.43)*
-          fresnel*uGlassOptics.z*.30;
-      float trim=bevelDistance*(.20+.80*max(dot(normal,light),0.0));
-      mat+=mix(uPalette[2].rgb,vec3(.82,.92,.96),.39)*
-          trim*uGlassOptics.w*.090;
-      // Long top reflection sits on the material, rather than a hard strip.
-      float topSweep=exp(-pow((q.y-(.11+.035*sin(q.x*4.1)))/.18,2.0))*
-                     smoothstep(.04,.26,q.x)*(1.0-smoothstep(.85,.98,q.x));
-      mat+=mix(vec3(1.),uPalette[3].rgb,.4)*
-          topSweep*uGlassDetail.y*(.036+.028*nl);
-      // Fine-grained roughness remains spatially stable at all frame rates.
-      float grain=(hash12(floor(p*.67))-0.5)*uGlassDetail.x*.035;
-      mat+=vec3(grain);
-      mat*=1.0-clamp(uGlassDetail.z,0.,1.)*
-          smoothstep(.42,.97,q.y)*.12;
-    }
-    // Gradients are physically located near a light source, not tint overlays.
-    vec2 pointToLight=q-vec2(.25+.20*cursor.x,.18+.16*cursor.y);
-    mat+=uPalette[2].rgb*exp(-dot(pointToLight,pointToLight)*4.2)
-         *uSurface.x*.060;
-    float rim=bevelDistance*uSurface.z;
-    mat+=mix(uPalette[2].rgb,vec3(1.0),.48)*rim*(.035+.075*nl);
-    float innerShadow=smoothstep(.03,.20,q.y)*(1.0-smoothstep(.76,.92,q.y));
-    mat*=1.0-innerShadow*uSurface.y*.045;
-    if(i==2 || i==10) {
-      float aura=radial(q,vec2(.32,.76),vec2(.87,1.1));
-      float breathing=.8+.2*sin(tt*1.8)*uMotion.y;
-      mat+=uPalette[2].rgb*aura*uSurface.w*.082*breathing;
-    }
-    if(i==10) mat+=uPalette[2].rgb*.025;
-    float border=(1.0-smoothstep(.2,1.9,abs(d+.5)));
-    mat+=mix(vec3(.13),uPalette[2].rgb,.62)*border*uSurface.z*.23;
-    // Focus does not add a fixed sidebar. It modifies the material's
-    // physically located light, Fresnel contour, or soft bottom glow.
-    if(focused){
-      float pulse=1.0-uReduced*.12+sin(tt*1.6)*uMotion.y*.12*(1.0-uReduced);
-      vec2 hotspot=q-vec2(.3+.1*cursor.x,.28+.08*cursor.y);
-      float halo=exp(-dot(hotspot,hotspot)*4.5)*pulse;
-      float edgeMask=1.0-smoothstep(.1,2.1,abs(d+.6));
-      if(uSelectionStyle==0){ // Material halo (default)
-        mat+=uPalette[2].rgb*halo*.105*uSurface.w;
-        mat+=mix(uPalette[3].rgb,vec3(1.0),.45)*edgeMask*.035*uSurface.z;
-      }else if(uSelectionStyle==1){ // Rim-lit outline
-        mat+=mix(uPalette[2].rgb,vec3(1.0),.23)*edgeMask*.15*uSurface.z;
-        mat+=uPalette[3].rgb*halo*.035*uSurface.w;
-      }else if(uSelectionStyle==2){ // Soft lower emphasis
-        float under=exp(-pow((q.y-.965)*39.0,2.0));
-        under*=smoothstep(.05,.29,q.x)*(1.0-smoothstep(.71,.95,q.x));
-        mat+=uPalette[2].rgb*under*.17;
-        mat+=uPalette[2].rgb*halo*.025;
-      }else{ // Quiet selection (accessibility-friendly)
-        mat+=uPalette[2].rgb*halo*.025;
-      }
-    }
-    // A deliberately subtle bloom, per local tile rather than global blur.
-    mat+=spec*uMotion.w*.12;
-    result=mix(result,mat,inMask*.96);
+  for(int j=0;j<6;j++){
+    if(j==selfBox)continue;vec3 n,q;
+    if(boxHit(ro,rd,j,n,q)<reach)visibility*=.30;
   }
-  float luminance=dot(result,vec3(.2126,.7152,.0722));
-  result=mix(vec3(luminance),result,uDetail.z);
-  result=(result-.5)*uDetail.y+.5;
+  return max(.18,visibility);
+}
+vec3 boxColor(int i,vec3 q,vec3 n){
+  float kind=uBoxCenters[i].w;
+  vec3 color=kind<.5?vec3(.56,.42,.31):kind<1.5?mix(uPalette[2].rgb,uSceneNeutral[1].rgb,.72):uPalette[1].rgb*.65;
+  if(kind<.5&&q.y<-.40)color=vec3(.065,.057,.047);
+  if(kind<.5&&n.z>.5&&q.y>-.08&&q.y<.12&&abs(abs(q.x)-.43)<.12)color=vec3(.03,.04,.04);
+  return color;
+}
+vec3 reflectionAt(vec3 p,vec3 ray,int self){
+  float closest=1e8;vec3 reflected=vec3(0.);
+  for(int j=0;j<8;j++){
+    if(j>=uCount)break;if(j==self)continue;vec3 h;vec2 q;
+    float t=panelHit(p+ray*2.,ray,j,h,q);
+    if(t<closest){closest=t;reflected=mix(uPalette[1].rgb,uPalette[2].rgb,uMeta[j].y*.25);}
+  }
+  for(int j=0;j<6;j++){
+    vec3 n,q;float t=boxHit(p+ray*2.,ray,j,n,q);
+    if(t<closest){closest=t;reflected=boxColor(j,q,n);}
+  }
+  return reflected;
+}
+vec3 lighting(vec3 base,vec3 p,vec3 n,vec3 eye,vec3 light,float rough,float metal,float visibility){
+  vec3 L=normalize(light-p),V=normalize(eye-p),H=normalize(V+L);
+  float nl=max(dot(n,L),0.),nv=max(dot(n,V),.01),nh=max(dot(n,H),0.),vh=max(dot(V,H),0.);
+  vec3 f0=mix(vec3(.045),base,metal);
+  vec3 f=f0+(vec3(1.)-f0)*pow(1.-vh,5.);
+  vec3 spec=min(vec3(2.),f*ggxD(nh,rough)*ggxG(nv,nl,rough)/(4.*nv*max(nl,.01)));
+  float distanceFalloff=1./(1.+dot(light-p,light-p)/2200000.);
+  float energy=uLight.z*distanceFalloff*visibility;
+  vec3 key=mix(uSceneNeutral[2].rgb,vec3(1.),.35);
+  vec3 fill=mix(uPalette[4].rgb,vec3(.8),.36)*uEnvironment.z;
+  return base*(uLight.w*.49+nl*energy*.83)*key+base*fill*(.05+.09*max(-L.x*n.x,0.))+
+      spec*energy*uMaterial.z*(.48+uMotion.w*.12);
+}
+void main(){
+  vec2 screen=vec2(gl_FragCoord.x/uResolution.x,1.-gl_FragCoord.y/uResolution.y)*uViewport;
+  vec2 uv=screen/uViewport;
+  float time=uTime*uMotion.x*(1.-uReduced);
+  vec2 mouse=uPointer/uViewport;
+  if(uScenePass==1){fragmentColor=vec4(renderBackdrop(uv,screen,time,mouse),1.);return;}
+  vec3 behind=uScenePass==2?renderBackdrop(uv,screen,time,mouse):texture(uSceneTexture,vec2(uv.x,1.-uv.y)).rgb;
+  vec3 eye=vec3(uViewport*.5,1200.),ray=normalize(vec3(screen-uViewport*.5,-1200.));
+  float angle=radians(uLight.x);
+  vec3 light=vec3(uViewport*vec2(.5+.36*cos(angle),.5+.36*sin(angle)),310.+uLight.y*240.);
+  light.xy+=(mouse-.5)*uViewport*uMotion.z*.37;
+  light.x+=sin(time*.7)*uViewport.x*.045*uMotion.y;
+  float nearest=1e8;int panel=-1,box=-1;vec3 point=vec3(0.),normal=vec3(0.),boxLocal=vec3(0.);vec2 local=vec2(0.);
+  for(int i=0;i<8;i++){
+    if(i>=uCount)break;vec3 h;vec2 q;float t=panelHit(eye,ray,i,h,q);
+    if(t<nearest){nearest=t;panel=i;point=h;local=q;}
+  }
+  for(int i=0;i<6;i++){
+    vec3 n,q;float t=boxHit(eye,ray,i,n,q);
+    if(t<nearest){nearest=t;box=i;point=eye+ray*t;normal=n;boxLocal=q;panel=-1;}
+  }
+  vec3 result=behind;
+  if(panel<0&&box<0){
+    // Shadows are projected onto the atmospheric back plane by the same light.
+    vec3 back=eye+ray*((-140.-eye.z)/ray.z);
+    float visibility=shadowAt(back,vec3(0.,0.,1.),light,-1,-1);
+    result*=mix(1.,visibility,.50*uSurface.y);
+  }else if(box>=0){
+    vec3 base=boxColor(box,boxLocal,normal);
+    float visibility=shadowAt(point,normal,light,-1,box);
+    result=lighting(base,point,normal,eye,light,clamp(uMaterial.x+.18,.1,.9),.12,visibility);
+    result+=uPalette[2].rgb*pow(1.-max(dot(normal,normalize(eye-point)),0.),3.)*uSurface.z*.065;
+  }else{
+    vec2 size=vec2(uCenters[panel].w,uAxesU[panel].w),q=local/size+.5;
+    float sd=sround(local,vec2(0.),size,uMeta[panel].w);
+    vec2 corner=sign(local)*max(abs(local)-size*.5+uMeta[panel].w,vec2(0.));
+    vec2 edge=length(corner)>.001?normalize(corner):abs(local.x)/size.x>abs(local.y)/size.y?vec2(sign(local.x),0.):vec2(0.,sign(local.y));
+    float bevel=smoothstep(-5.0,-.2,sd);
+    vec3 U=uAxesU[panel].xyz,V=uAxesV[panel].xyz,N=normalize(cross(U,V));
+    normal=normalize(N+bevel*(U*edge.x+V*edge.y)*uMaterial.w*.75);
+    float selected=uMeta[panel].y;
+    vec3 base=mix(uPalette[1].rgb,uSceneNeutral[1].rgb,.20);
+    base=mix(base,uPalette[2].rgb,selected*.13);
+    if(uMeta[panel].x<1.5){
+      // Original embossed landscape: strata, distant ridges and a copper sun.
+      float ridge=.42+.08*sin(q.x*5.)+.045*sin(q.x*13.+1.3);
+      float terrain=smoothstep(ridge-.012,ridge+.012,q.y);
+      base=mix(uPalette[0].rgb*.80,mix(uSceneNeutral[1].rgb,uPalette[2].rgb,.24)*.57,terrain);
+      base+=uPalette[4].rgb*radial(q,vec2(.23,.28),vec2(.32,.30))*.16;
+      float fine=abs(fract(q.y*35.+floor(q.x*22.)*.09)-.5);
+      base+=uPalette[2].rgb*terrain*(1.-smoothstep(.02,.05,fine))*.015;
+    }
+    float visibility=shadowAt(point,normal,light,panel,-1);
+    float rough=clamp(uMaterial.x,.075,.96),metal=clamp(uMaterial.y,0.,1.);
+    result=lighting(base,point,normal,eye,light,rough,metal,visibility);
+    bool glassAllowed=uMeta[panel].z>.5;
+    if(glassAllowed&&uGlassModel.x<2.5){
+      vec2 offset=(normal.xy-N.xy)*uGlassModel.z*.014;
+      vec3 through=frostedBackdrop(clamp(uv+offset,vec2(0.),vec2(1.)),screen,time,mouse);
+      float transmission=uGlassModel.w*(1.-uGlassModel.y*.76);
+      if(uGlassModel.x>.5)transmission*=uGlassModel.x<1.5?.78:.40;
+      vec3 backdropTone=mix(through,base,uGlassOptics.x*.40);
+      if(uGlassModel.x>1.5)backdropTone=mix(backdropTone,base,.48);
+      result=mix(result,backdropTone,transmission*.64);
+      result+=uPalette[3].rgb*uGlassOptics.y*.015;
+    }
+    float nv=max(dot(normal,normalize(eye-point)),0.);
+    float fresnel=pow(1.-nv,4.);
+    vec3 reflected=reflectionAt(point,reflect(ray,normal),panel);
+    result+=reflected*(.10+metal*.50)*uMaterial.z;
+    vec2 envUv=clamp(uv+normal.xy*(.09+.09*rough),vec2(.001),vec2(.999));
+    vec3 environment=texture(uSceneTexture,vec2(envUv.x,1.-envUv.y)).rgb;
+    result+=environment*(.10+metal*.22)*uMaterial.z+uSceneNeutral[2].rgb*fresnel*uGlassOptics.z*.18;
+    float border=1.-smoothstep(.25,1.3,abs(sd+.7));
+    result+=mix(uSceneNeutral[2].rgb,uPalette[2].rgb,.25)*border*(.09+selected*.11)*uSurface.z;
+    result+=uPalette[2].rgb*radial(q,vec2(.24,.2),vec2(1.,.9))*selected*uSurface.w*.045;
+    result+=uSceneNeutral[2].rgb*exp(-pow((q.y-.10)/.17,2.))*uGlassDetail.y*.025;
+    result+=(hash12(floor(screen*.8))-.5)*(uGlassDetail.x*.02);
+    result*=1.-q.y*uGlassDetail.z*.055;
+    if(selected>.5){
+      if(uSelectionStyle==0)result+=uPalette[2].rgb*.035;
+      else if(uSelectionStyle==1)result+=uPalette[2].rgb*border*.13;
+      else if(uSelectionStyle==2)result+=uPalette[2].rgb*smoothstep(.93,.99,q.y)*.24;
+    }
+    result+=uPalette[2].rgb*uNavigation*exp(-pow((q.x-.5)/.6,2.))*.014;
+    result=mix(behind,result,1.-smoothstep(-.7,.4,sd));
+  }
+  float lum=dot(result,vec3(.2126,.7152,.0722));
+  result=mix(vec3(lum),result,uDetail.z);
+  result=(result-.10)*uDetail.y+.10;
   result*=.94+uDetail.x*.12;
-  result=tonemap(result);
-  fragmentColor=vec4(result,1.0);
+  fragmentColor=vec4(tonemap(result),1.);
 }
 `;
-  const NAMES = ["topbar", "nav", "hero", "mods", "packs", "shaders", "files", "skins", "settings", "footer", "cta"];
-  let canvas, gl, program, uniform = {}, buffer, working = false;
-  let sceneTexture=null,sceneFbo=null,sceneSize=[0,0],sceneAvailable=false,
-    geometryDirty=true,rectCache=new Float32Array(12*4),
-    slowFrames=0,adaptiveScale=1;
-  let preset, paused = false, last = 0, elapsed = 0, dpr = 1, renderCount = 0;
-  let selectedPage="Play";
-  let cursor = [0, 0], error = "",lastCssLight=0;
-  const $ = (id) => document.getElementById(id);
-  const num = (v, fallback) => Number.isFinite(Number(v)) ? Number(v) : fallback;
-  function color(hex) {
-    const s = String(hex || "#000000").replace("#", "");
-    const n = parseInt(s, 16) || 0;
-    return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255, 1];
-  }
-  function compile(type, source) {
-    const shader = gl.createShader(type);
-    gl.shaderSource(shader, source);
-    gl.compileShader(shader);
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-      const problem = gl.getShaderInfoLog(shader) || "Shader compilation failed";
-      gl.deleteShader(shader);
-      throw new Error(problem);
-    }
-    return shader;
-  }
-  function init() {
-    canvas = $("gpu");
-    if (!canvas) return false;
-    try {
-      gl = canvas.getContext("webgl2", { alpha: false, premultipliedAlpha: false,
-        antialias: false, depth: false, stencil: false, preserveDrawingBuffer: true,
-        powerPreference: "high-performance" });
-      if (!gl) throw new Error("WebGL2 não suportado");
-      const vs = compile(gl.VERTEX_SHADER, VERTEX_SOURCE);
-      const fs = compile(gl.FRAGMENT_SHADER, FRAGMENT_SOURCE);
-      program = gl.createProgram();
-      gl.attachShader(program, vs);
-      gl.attachShader(program, fs);
-      gl.bindAttribLocation(program, 0, "aPosition");
-      gl.linkProgram(program);
-      gl.deleteShader(vs);
-      gl.deleteShader(fs);
-      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
-      gl.useProgram(program);
-      const keys = ["uResolution","uViewport","uPointer","uTime","uReduced","uRectCount",
-        "uRects[0]","uPalette[0]","uAtmos","uLight","uMaterial","uSurface","uMotion","uDetail",
-        "uFocusIndex","uSelectionStyle","uBackdropShape",
-        "uBackdropLayers","uBackdropLight","uBackdropDetail",
-        "uGlassModel","uGlassOptics","uGlassDetail","uGlassTargets",
-        "uSceneTexture","uScenePass","uEnvironment","uSceneNeutral[0]"];
-      keys.forEach(k => { uniform[k] = gl.getUniformLocation(program, k); });
-      gl.uniform1i(uniform.uSceneTexture,0);
-      buffer = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,1,-1,-1,1, -1,1,1,-1,1,1]), gl.STATIC_DRAW);
-      gl.enableVertexAttribArray(0);
-      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-      cursor = [innerWidth*.35, innerHeight*.5];
-      canvas.addEventListener("webglcontextlost",e=>{
-        e.preventDefault();working=false;error="Contexto GPU perdido";
-        sceneTexture=null;sceneFbo=null;sceneAvailable=false;notify(error);
-      });
-      canvas.addEventListener("webglcontextrestored", () => {working=false;init();});
-      window.addEventListener("pointermove",e=>{
-        if(e.target.closest?.("#editor"))return;
-        cursor=[e.clientX,e.clientY];
-        // One light position drives the GPU, cards, metal and avatar.
-        // Limit CSS writes because WebView style recalc is expensive.
-        const now=performance.now();
-        if(now-lastCssLight>45){
-          lastCssLight=now;
-          const root=document.documentElement;
-          root.style.setProperty("--light-pos-x",
-            (100*e.clientX/Math.max(1,innerWidth)).toFixed(1)+"%");
-          root.style.setProperty("--light-pos-y",
-            (100*e.clientY/Math.max(1,innerHeight)).toFixed(1)+"%");
-        }
-      },{passive:true});
-      window.addEventListener("resize",()=>{geometryDirty=true;resize();},{passive:true});
-      document.addEventListener("pointerdown",()=>{geometryDirty=true;},{passive:true});
-      document.addEventListener("visibilitychange", () => {last=0;});
-      working = true;
-      resize();
-      requestAnimationFrame(frame);
-      return true;
-    } catch(e) {
-      error = e.message || String(e);
-      const hint = $("gpu-fallback");
-      if (hint) {hint.hidden=false;hint.textContent="WebGL2: "+error;}
-      working=false;
-      return false;
-    }
-  }
-  function notify(s) {
-    const label=$("render-badge");
-    if(label) label.textContent=s.substring(0,36);
+  let canvas,gl,program,uniform={},buffer,sceneTexture,sceneFbo,sceneSize=[0,0];
+  let working=false,error='',preset={},paused=false,elapsed=0,last=0,raf=0,dirty=true;
+  let cursor=[0,0],sceneAvailable=false,adaptiveScale=1,frames=0,sampleStart=0,cpuSum=0,gpuSum=0,gpuSamples=0,cpuMs=0,gpuMs=null,actualFps=0;
+  let timerExt=null,queries=[],listeners=false,lastScaleChange=0,sceneData={surfaces:[],boxes:[],impulse:0},lastScene=null;
+  const $=id=>document.getElementById(id);
+  const num=(v,f)=>Number.isFinite(Number(v))?Number(v):f;
+  const color=hex=>{const n=parseInt(String(hex||'#000000').replace('#',''),16)||0;return[(n>>16&255)/255,(n>>8&255)/255,(n&255)/255,1];};
+  const vec4=(name,v)=>gl.uniform4fv(uniform[name],v);
+  function compile(type,source){const shader=gl.createShader(type);gl.shaderSource(shader,source);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(shader));return shader;}
+  function invalidate(){dirty=true;if(working&&!raf&&!document.hidden)raf=requestAnimationFrame(frame);}
+  function notify(){const n=$('render-badge'),fps=Math.round(actualFps);if(n)n.textContent=fps+' FPS · '+Math.round(canvas.width/innerWidth*100)+'%';const info=$('live-hint');if(info)info.textContent=fps+' FPS · CPU '+cpuMs.toFixed(1)+' ms'+(gpuMs===null?'':' · GPU '+gpuMs.toFixed(1)+' ms');}
+  function init(){
+    canvas=$('gpu');if(!canvas)return false;
+    try{
+      gl=canvas.getContext('webgl2',{alpha:false,antialias:false,depth:false,stencil:false,preserveDrawingBuffer:false,powerPreference:'high-performance'});
+      if(!gl)throw Error('WebGL2 não suportado');
+      const vs=compile(gl.VERTEX_SHADER,VERTEX_SOURCE),fs=compile(gl.FRAGMENT_SHADER,FRAGMENT_SOURCE);
+      program=gl.createProgram();gl.attachShader(program,vs);gl.attachShader(program,fs);gl.bindAttribLocation(program,0,'aPosition');gl.linkProgram(program);gl.deleteShader(vs);gl.deleteShader(fs);
+      if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));gl.useProgram(program);
+      const names=['uResolution','uViewport','uPointer','uTime','uReduced','uNavigation','uPalette[0]','uSceneNeutral[0]','uAtmos','uLight','uMaterial','uSurface','uMotion','uDetail','uEnvironment','uBackdropShape','uBackdropLayers','uBackdropLight','uBackdropDetail','uGlassModel','uGlassOptics','uGlassDetail','uGlassTargets','uSceneTexture','uScenePass','uSelectionStyle','uCount','uCenters[0]','uAxesU[0]','uAxesV[0]','uMeta[0]','uBoxCenters[0]','uBoxSizes[0]'];
+      names.forEach(k=>uniform[k]=gl.getUniformLocation(program,k));
+      buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+      timerExt=gl.getExtension('EXT_disjoint_timer_query_webgl2');
+      if(!listeners){
+        listeners=true;
+        window.addEventListener('pointermove',e=>{if(e.target.closest?.('#editor'))return;cursor=[e.clientX,e.clientY];invalidate();},{passive:true});
+        window.addEventListener('pointerdown',e=>{if(e.target.closest?.('#editor'))return;cursor=[e.clientX,e.clientY];invalidate();},{passive:true});
+        window.addEventListener('resize',()=>{window.JadeScene?.invalidate();invalidate();},{passive:true});
+        document.addEventListener('visibilitychange',()=>{last=0;sampleStart=0;frames=0;cpuSum=0;if(document.hidden){cancelAnimationFrame(raf);raf=0;}else invalidate();});
+        canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();working=false;cancelAnimationFrame(raf);raf=0;error='Contexto GPU perdido';queries=[];});
+        canvas.addEventListener('webglcontextrestored',()=>{sceneAvailable=false;sceneTexture=null;sceneFbo=null;sceneSize=[0,0];uniform={};init();});
+      }
+      cursor=[innerWidth*.38,innerHeight*.35];working=true;error='';document.body.classList.remove('gpu-unavailable');$('gpu-fallback').hidden=true;invalidate();return true;
+    }catch(e){working=false;error=String(e.message||e);window.JadeScene?.tick(0);document.body.classList.add('gpu-unavailable');const n=$('gpu-fallback');if(n){n.hidden=false;n.textContent='GPU indisponível · '+error;}return false;}
   }
   function allocateScene(w,h){
-    if(!gl||!w||!h)return;
     if(sceneAvailable&&sceneSize[0]===w&&sceneSize[1]===h)return;
-    if(sceneTexture)gl.deleteTexture(sceneTexture);
-    if(sceneFbo)gl.deleteFramebuffer(sceneFbo);
-    sceneTexture=gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D,sceneTexture);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
-    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
-    sceneFbo=gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER,sceneFbo);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,
-      gl.TEXTURE_2D,sceneTexture,0);
-    sceneAvailable=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;
-    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
-    gl.bindTexture(gl.TEXTURE_2D,null);
-    sceneSize=[w,h];
+    if(sceneTexture)gl.deleteTexture(sceneTexture);if(sceneFbo)gl.deleteFramebuffer(sceneFbo);
+    sceneTexture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,sceneTexture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+    sceneFbo=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,sceneFbo);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,sceneTexture,0);sceneAvailable=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.bindTexture(gl.TEXTURE_2D,null);sceneSize=[w,h];
+    if(!sceneAvailable)throw Error('Framebuffer de cena incompleto');
   }
-  function refreshRects(){
-    rectCache.fill(0);
-    NAMES.forEach((name,index)=>{
-      const element=document.querySelector('[data-surface="'+name+'"]');
-      if(!element||element.classList?.contains("tile"))return;
-      if((name==="topbar"||name==="nav"||name==="footer")&&!preset.glassChrome)return;
-      if(getComputedStyle(element).display==="none")return;
-      const r=element.getBoundingClientRect();
-      if(r.width<2||r.height<2)return;
-      rectCache.set([r.x,r.y,r.width,r.height],index*4);
-    });
-    geometryDirty=false;
+  function resize(){
+    const scale=Math.max(.35,Math.min(1,num(preset.quality,.75)*adaptiveScale));
+    const pixelCap=Math.min(1,Math.sqrt(900000/Math.max(1,innerWidth*innerHeight)));
+    const dpr=Math.min(scale,pixelCap),w=Math.max(2,Math.round(innerWidth*dpr)),h=Math.max(2,Math.round(innerHeight*dpr));
+    if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;allocateScene(Math.max(2,Math.round(w*.72)),Math.max(2,Math.round(h*.72)));}
   }
-  function resize() {
-    if (!gl || !canvas) return;
-    // Scale independently of Android DPR (often x3): DOM text stays sharp.
-    const scale=Math.max(.38,Math.min(.88,
-      num(preset && preset.quality,.62)*adaptiveScale));
-    const pixelCap=Math.min(1,Math.sqrt(620000/Math.max(1,innerWidth*innerHeight)));
-    dpr=Math.min(scale,pixelCap);
-    const w=Math.max(2,Math.round(innerWidth*dpr)),h=Math.max(2,Math.round(innerHeight*dpr));
-    if(canvas.width!==w||canvas.height!==h){
-      canvas.width=w;canvas.height=h;gl.viewport(0,0,w,h);
-      allocateScene(Math.max(2,Math.floor(w*.64)),Math.max(2,Math.floor(h*.64)));
+  function pollGpu(){
+    if(!timerExt)return;
+    const disjoint=gl.getParameter(timerExt.GPU_DISJOINT_EXT);
+    while(queries.length&&gl.getQueryParameter(queries[0],gl.QUERY_RESULT_AVAILABLE)){
+      const q=queries.shift();if(!disjoint){const ms=gl.getQueryParameter(q,gl.QUERY_RESULT)/1e6;gpuSum+=ms;gpuSamples++;}gl.deleteQuery(q);
     }
+    if(disjoint){queries.forEach(q=>gl.deleteQuery(q));queries=[];gpuMs=null;gpuSum=0;gpuSamples=0;}
   }
-  function frame(now) {
-    if (!working) return;
-    requestAnimationFrame(frame);
-    if (document.hidden) return;
-    const limit=Math.max(15,Math.min(120,num(preset && preset.fps,60)));
-    if(now-last<1000/limit - .6) return;
-    let dt=last?Math.min((now-last)/1000,.09):0;
-    last=now;
-    if(!paused && !(preset && preset.reducedMotion)) elapsed+=dt;
-    resize();
-    if(dt>.054)slowFrames++;else slowFrames=Math.max(0,slowFrames-1);
-    if(slowFrames>=20&&adaptiveScale>.52){
-      adaptiveScale=Math.max(.52,adaptiveScale-.12);
-      slowFrames=0;resize();notify("GPU ECO · "+Math.round(adaptiveScale*100)+"%");
+  function frame(now){
+    raf=0;if(!working||document.hidden)return;
+    const animated=!paused&&!preset.reducedMotion;
+    const limit=Math.max(15,Math.min(120,num(preset.fps,60)));
+    if(last&&now-last<1000/limit-.5){raf=requestAnimationFrame(frame);return;}
+    const dt=last?Math.min((now-last)/1000,.1):0;last=now;
+    if(animated)elapsed+=dt;
+    const start=performance.now();sceneData=window.JadeScene.tick(elapsed);
+    if(dirty||animated||sceneData.animating){
+      pollGpu();let query=null;
+      if(timerExt&&queries.length<4){query=gl.createQuery();gl.beginQuery(timerExt.TIME_ELAPSED_EXT,query);}
+      resize();draw();
+      if(query){gl.endQuery(timerExt.TIME_ELAPSED_EXT);queries.push(query);}
+      cpuSum+=performance.now()-start;frames++;dirty=false;
+      if(!sampleStart)sampleStart=now;
+      if(now-sampleStart>=1000){
+        actualFps=frames*1000/(now-sampleStart);cpuMs=cpuSum/frames;gpuMs=gpuSamples?gpuSum/gpuSamples:null;
+        const cost=Math.max(cpuMs,gpuMs||0),budget=1000/limit;
+        // Render work, not frame cadence: a deliberate 30 FPS cap is not load.
+        if(now-lastScaleChange>2500&&cost>budget*.92&&adaptiveScale>.55){adaptiveScale=Math.max(.55,adaptiveScale-.08);lastScaleChange=now;}
+        else if(now-lastScaleChange>6000&&cost<budget*.48&&adaptiveScale<1){adaptiveScale=Math.min(1,adaptiveScale+.04);lastScaleChange=now;}
+        notify();sampleStart=now;frames=0;cpuSum=0;gpuSum=0;gpuSamples=0;
+      }
     }
-    draw();
-    renderCount++;
-    if(renderCount%120===0)notify("WEBGL2 · "+
-      Math.round(1000/Math.max(1,dt*1000))+" FPS");
+    if(animated||sceneData.animating)raf=requestAnimationFrame(frame);
   }
-  function vec4(name, values) {
-    gl.uniform4fv(uniform[name], new Float32Array(values));
+  function draw(){
+    if(!working||!program)return;
+    gl.useProgram(program);gl.uniform2f(uniform.uResolution,canvas.width,canvas.height);gl.uniform2f(uniform.uViewport,innerWidth,innerHeight);gl.uniform2f(uniform.uPointer,...cursor);gl.uniform1f(uniform.uTime,elapsed);gl.uniform1f(uniform.uReduced,preset.reducedMotion?1:0);gl.uniform1f(uniform.uNavigation,sceneData.impulse||0);
+    gl.uniform4fv(uniform['uPalette[0]'],['bg','surface','accent','cool','warm'].flatMap(k=>color(preset[k])));gl.uniform4fv(uniform['uSceneNeutral[0]'],['sceneNeutral','sceneMetal','sceneHighlight'].flatMap(k=>color(preset[k])));
+    vec4('uAtmos',[preset.fog,preset.waves,preset.noise,preset.vignette]);vec4('uLight',[preset.azimuth,preset.elevation,preset.intensity,preset.ambient]);vec4('uMaterial',[preset.roughness,preset.metallic,preset.reflectivity,preset.bevel]);vec4('uSurface',[preset.depth,preset.ao,preset.edgeLight,preset.heroGlow]);vec4('uMotion',[preset.speed,preset.pulse,preset.parallax,preset.bloom]);vec4('uDetail',[preset.diffusion,preset.contrast,preset.saturation,0]);vec4('uEnvironment',[preset.environmentLight,1,preset.environmentWarmth,0]);
+    vec4('uBackdropShape',[Math.max(0,['ribbons','aurora','satin','halo','minimal'].indexOf(preset.backgroundStyle)),preset.backgroundIntensity,preset.backgroundScale,preset.ribbonCurve]);vec4('uBackdropLayers',[preset.ribbonLayers,preset.ribbonWidth,preset.ribbonSoftness,preset.backgroundFlow]);vec4('uBackdropLight',[preset.backgroundGlow,preset.gradientDepth,preset.backgroundCenterX,preset.backgroundCenterY]);vec4('uBackdropDetail',[preset.backgroundGrain,preset.backgroundParallax,preset.ribbonGleam,preset.backgroundContrast]);
+    vec4('uGlassModel',[Math.max(0,['frosted','tinted','matte','solid'].indexOf(preset.glassStyle)),preset.glassOpacity,preset.glassBlur,preset.glassTransmission]);vec4('uGlassOptics',[preset.glassTint,preset.glassScatter,preset.glassFresnel,preset.glassRim]);vec4('uGlassDetail',[preset.glassGrain,preset.glassHighlight,preset.glassShadow,Math.max(0,['fast','balanced','high'].indexOf(preset.glassQuality))]);vec4('uGlassTargets',[+preset.glassHero,+preset.glassCards,+preset.glassChrome,+preset.glassCTA]);gl.uniform1i(uniform.uSelectionStyle,Math.max(0,['halo','rim','underline','quiet'].indexOf(preset.selectionStyle)));
+    gl.uniform1i(uniform.uCount,sceneData.surfaces.length);
+    const centers=new Float32Array(32),us=new Float32Array(32),vs=new Float32Array(32),meta=new Float32Array(32),bc=new Float32Array(24),bs=new Float32Array(24);
+    sceneData.surfaces.forEach((p,i)=>{centers.set([...p.c,p.w],i*4);us.set([...p.u,p.h],i*4);vs.set([...p.v,0],i*4);meta.set([p.kind,+p.selected,+p.glass,12],i*4);});sceneData.boxes.forEach((b,i)=>{bc.set([...b.c,b.kind],i*4);bs.set([...b.size,b.angle],i*4);});
+    gl.uniform4fv(uniform['uCenters[0]'],centers);gl.uniform4fv(uniform['uAxesU[0]'],us);gl.uniform4fv(uniform['uAxesV[0]'],vs);gl.uniform4fv(uniform['uMeta[0]'],meta);gl.uniform4fv(uniform['uBoxCenters[0]'],bc);gl.uniform4fv(uniform['uBoxSizes[0]'],bs);
+    gl.activeTexture(gl.TEXTURE0);gl.uniform1i(uniform.uSceneTexture,0);gl.bindTexture(gl.TEXTURE_2D,null);gl.bindFramebuffer(gl.FRAMEBUFFER,sceneFbo);gl.viewport(0,0,...sceneSize);gl.uniform2f(uniform.uResolution,...sceneSize);gl.uniform1i(uniform.uScenePass,1);gl.drawArrays(gl.TRIANGLES,0,6);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,canvas.width,canvas.height);gl.uniform2f(uniform.uResolution,canvas.width,canvas.height);gl.bindTexture(gl.TEXTURE_2D,sceneTexture);gl.uniform1i(uniform.uScenePass,0);gl.drawArrays(gl.TRIANGLES,0,6);lastScene=sceneData;
   }
-  function draw() {
-    if (!preset || !program || !working) return;
-    gl.useProgram(program);
-    const e=preset.environmentLight??.3;
-    gl.uniform4f(uniform.uEnvironment,e,.60,preset.environmentWarmth??.28,.60);
-    gl.uniform4fv(uniform["uSceneNeutral[0]"],new Float32Array(
-      ["sceneNeutral","sceneMetal","sceneHighlight"].flatMap(k=>color(preset[k]))
-    ));
-    gl.uniform2f(uniform.uResolution,canvas.width,canvas.height);
-    gl.uniform2f(uniform.uViewport,innerWidth,innerHeight);
-    gl.uniform2f(uniform.uPointer,cursor[0],cursor[1]);
-    gl.uniform1f(uniform.uTime,elapsed);
-    gl.uniform1f(uniform.uReduced,preset.reducedMotion?1:0);
-    // Cached layout; transformed cards are rendered by the compositor.
-    if(geometryDirty||renderCount%18===0)refreshRects();
-    gl.uniform1i(uniform.uRectCount,NAMES.length);
-    const surfaces={Play:"hero",Mods:"mods",Packs:"packs",Shaders:"shaders",
-      Files:"files",Skins:"skins",Settings:"settings"};
-    const selectedSurface=surfaces[selectedPage]||"hero";
-    // Surface order is unchanged by navigation: only the light source moves.
-    gl.uniform1i(uniform.uFocusIndex,NAMES.indexOf(selectedSurface));
-    const modes=["halo","rim","underline","quiet"];
-    gl.uniform1i(uniform.uSelectionStyle,
-      Math.max(0,modes.indexOf(preset.selectionStyle)));
-    gl.uniform4fv(uniform["uRects[0]"],rectCache);
-    const c=["bg","surface","accent","cool","warm"].flatMap(k=>color(preset[k]));
-    gl.uniform4fv(uniform["uPalette[0]"],new Float32Array(c));
-    vec4("uAtmos",[preset.fog,preset.waves,preset.noise,preset.vignette]);
-    vec4("uLight",[preset.azimuth,preset.elevation,preset.intensity,preset.ambient]);
-    vec4("uMaterial",[preset.roughness,preset.metallic,preset.reflectivity,preset.bevel]);
-    vec4("uSurface",[preset.depth,preset.ao,preset.edgeLight,preset.heroGlow]);
-    vec4("uMotion",[preset.speed,preset.pulse,preset.parallax,preset.bloom]);
-    vec4("uDetail",[preset.diffusion,preset.contrast,preset.saturation,0]);
-    const styles=["ribbons","aurora","satin","halo","minimal"];
-    vec4("uBackdropShape",[
-      Math.max(0,styles.indexOf(preset.backgroundStyle)),
-      preset.backgroundIntensity,preset.backgroundScale,preset.ribbonCurve
-    ]);
-    vec4("uBackdropLayers",[
-      preset.ribbonLayers,preset.ribbonWidth,preset.ribbonSoftness,
-      preset.backgroundFlow
-    ]);
-    vec4("uBackdropLight",[
-      preset.backgroundGlow,preset.gradientDepth,
-      preset.backgroundCenterX,preset.backgroundCenterY
-    ]);
-    vec4("uBackdropDetail",[
-      preset.backgroundGrain,preset.backgroundParallax,
-      preset.ribbonGleam,preset.backgroundContrast
-    ]);
-    const glassModels=["frosted","tinted","matte","solid"];
-    const tapTiers=["fast","balanced","high"];
-    vec4("uGlassModel",[
-      Math.max(0,glassModels.indexOf(preset.glassStyle)),
-      preset.glassOpacity,preset.glassBlur,preset.glassTransmission
-    ]);
-    vec4("uGlassOptics",[
-      preset.glassTint,preset.glassScatter,
-      preset.glassFresnel,preset.glassRim
-    ]);
-    vec4("uGlassDetail",[
-      preset.glassGrain,preset.glassHighlight,preset.glassShadow,
-      Math.max(0,tapTiers.indexOf(preset.glassQuality))
-    ]);
-    vec4("uGlassTargets",[
-      preset.glassHero?1:0,preset.glassCards?1:0,
-      preset.glassChrome?1:0,preset.glassCTA?1:0
-    ]);
-    if(!sceneAvailable){
-      // On devices without a renderable offscreen texture, avoid sampling
-      // undefined content. Solid material still receives a lit GGX response.
-      vec4("uGlassTargets",[0,0,0,0]);
-    }
-    if(sceneAvailable){
-      // Never sample the texture while it is bound as an FBO attachment.
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D,null);
-      gl.bindFramebuffer(gl.FRAMEBUFFER,sceneFbo);
-      gl.viewport(0,0,sceneSize[0],sceneSize[1]);
-      gl.uniform2f(uniform.uResolution,sceneSize[0],sceneSize[1]);
-      gl.uniform1i(uniform.uScenePass,1);
-      gl.drawArrays(gl.TRIANGLES,0,6);
-      gl.bindFramebuffer(gl.FRAMEBUFFER,null);
-      gl.viewport(0,0,canvas.width,canvas.height);
-      gl.uniform2f(uniform.uResolution,canvas.width,canvas.height);
-      gl.bindTexture(gl.TEXTURE_2D,sceneTexture);
-      gl.uniform1i(uniform.uScenePass,0);
-    }else gl.uniform1i(uniform.uScenePass,2);
-    gl.drawArrays(gl.TRIANGLES,0,6);
-  }
-  function setPreset(p) {
-    preset=p;geometryDirty=true;
-    if(gl)resize();
-  }
-  function setPage(name) {
-    selectedPage=String(name||"Play");geometryDirty=true;
-    // Keyboard/deck navigation also moves the active point light.
-    cursor=selectedPage==="Play"?[innerWidth*.43,innerHeight*.28]:
-      [innerWidth*.70,innerHeight*.30];
-  }
-  function pause(value) {paused=!!value;return paused;}
-  function recenter() {cursor=[innerWidth*.35,innerHeight*.4];}
-  function screenshot() {
-    if(!gl) return null;
-    draw();
-    return canvas.toDataURL("image/png");
-  }
-  function state() {return {webgl2:working,paused,error,sceneCache:sceneAvailable,
-    adaptiveScale,dimensions:[canvas&&canvas.width,canvas&&canvas.height]};}
-  window.JadeRenderer={init,setPreset,setPage,pause,recenter,screenshot,state,
-    vertexSource:VERTEX_SOURCE,fragmentSource:FRAGMENT_SOURCE,refresh:draw};
+  function setPreset(p){preset={...p};window.JadeScene?.setPreset(preset);invalidate();}
+  function pause(v){paused=!!v;last=0;invalidate();return paused;}
+  function screenshot(){if(!working)return null;resize();draw();return canvas.toDataURL('image/png');}
+  function state(){return {webgl2:working,error,paused,sceneCache:sceneAvailable,adaptiveScale,fps:actualFps,cpuMs,gpuMs,dimensions:[canvas?.width,canvas?.height],surfaces:sceneData.surfaces.length,elapsed};}
+  window.JadeRenderer={init,setPreset,pause,recenter(){cursor=[innerWidth*.38,innerHeight*.35];invalidate();},setPage(){invalidate();},refresh:invalidate,invalidate,screenshot,state,vertexSource:VERTEX_SOURCE,fragmentSource:FRAGMENT_SOURCE,geometry:()=>lastScene};
 })();

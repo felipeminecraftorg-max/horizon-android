@@ -9,34 +9,34 @@
   if(!PALETTES)throw new Error("O catálogo de paletas não foi carregado");
   const DEFAULTS=Object.freeze({
     paletteId:"jade",selectionStyle:"halo",
-    sceneDepth:.68,sceneSpacing:.64,sceneTilt:13,avatarMotion:.48,
+    sceneDepth:.68,sceneSpacing:.64,sceneTilt:6,avatarMotion:.48,
     glassStyle:"frosted",glassQuality:"balanced",
-    glassOpacity:.38,glassBlur:.69,glassTransmission:.78,
+    glassOpacity:.38,glassBlur:.69,glassTransmission:.48,
     glassTint:.35,glassScatter:.42,glassFresnel:.58,glassRim:.64,
     glassGrain:.15,glassHighlight:.62,glassShadow:.52,
     glassHero:true,glassCards:true,glassChrome:false,glassCTA:false,
-    backgroundStyle:"ribbons",backgroundIntensity:1.05,
-    backgroundScale:1.12,backgroundFlow:.32,
+    backgroundStyle:"ribbons",backgroundIntensity:1.18,
+    backgroundScale:1.12,backgroundFlow:.75,
     ribbonLayers:3,ribbonCurve:.95,ribbonWidth:.73,ribbonSoftness:1.10,
     backgroundGlow:.78,gradientDepth:1.05,
     backgroundGrain:.16,backgroundCenterX:.34,backgroundCenterY:.58,
     backgroundParallax:.37,ribbonGleam:.72,backgroundContrast:.75,
-    fog:.48,waves:.33,noise:.09,vignette:.35,diffusion:.58,
+    fog:.48,waves:.72,noise:.09,vignette:.35,diffusion:.58,
     azimuth:-38,elevation:.72,intensity:1.24,ambient:.66,
     roughness:.29,metallic:.31,reflectivity:.72,bevel:.57,
     depth:.65,ao:.43,edgeLight:.74,heroGlow:.79,bloom:.38,
-    bg:"#192328",surface:"#354249",accent:"#85d3a0",cool:"#b4d0cc",warm:"#d9c9aa",
+    bg:"#10181d",surface:"#263b41",accent:"#80d9c3",cool:"#91b7c5",warm:"#d98096",
     sceneNeutral:"#899b9e",sceneMetal:"#586a72",sceneHighlight:"#e5e3d6",
-    environmentLight:.84,environmentWarmth:.40,
+    environmentLight:.40,environmentWarmth:.40,
     contrast:1.10,saturation:1.07,
-    speed:.48,pulse:.22,parallax:.62,reducedMotion:false,
-    quality:.62,fps:45
+    speed:.72,pulse:.22,parallax:.62,reducedMotion:false,
+    quality:.75,fps:60
   });
   const SPECS={
     paletteId:["Preset cromático","palette",null,null,"Cada perfil também altera luz, atmosfera e material"],
     selectionStyle:["Tipo de seleção","select",["halo","rim","underline","quiet"],null,"Halo, borda física, linha inferior ou seleção discreta"],
-    sceneDepth:["Profundidade da pilha",0,1.4,.01,"Separação tridimensional entre os cards"],
-    sceneSpacing:["Espaçamento entre cards",0,1.4,.01,"Distância vertical entre superfícies"],
+    sceneDepth:["Profundidade dos painéis",0,1.4,.01,"Separação tridimensional entre os cards"],
+    sceneSpacing:["Espaçamento entre opções",0,1.4,.01,"Distância vertical entre superfícies"],
     sceneTilt:["Inclinação 3D",0,25,1,"Quanto os botões giram em perspectiva"],
     avatarMotion:["Movimento do personagem",0,1,.01,"Flutuação suave do avatar original"],
     glassStyle:["Material dos painéis","select",["frosted","tinted","matte","solid"],null,
@@ -127,18 +127,18 @@
       ["Tipo de superfície",["glassStyle","glassQuality"]],
       ["Corpo do material",["glassOpacity","glassBlur","glassTransmission","glassTint","glassScatter"]],
       ["Acabamento óptico",["glassFresnel","glassRim","glassHighlight","glassGrain","glassShadow"]],
-      ["Aplicar em",["glassHero","glassCards","glassChrome","glassCTA"]]]},
+      ["Aplicar em",["glassHero","glassCards"]]]},
     {id:"Materiais",icon:"◈",intro:"Resposta física GGX: normal, micro-rugosidade e oclusão.",groups:[
       ["Acabamento",["roughness","metallic","reflectivity","bevel"]],
       ["Profundidade dos painéis",["depth","ao"]]]},
-    {id:"Paletas",icon:"◉",intro:"Sete identidades dark: cada uma tem luz, material, gradiente e contraste próprios.",groups:[
+    {id:"Paletas",icon:"◉",intro:"Sete identidades dark com cores complementares, luz e materiais próprios.",groups:[
       ["Identidades cromáticas",["paletteId"]]]},
     {id:"Cores",icon:"◌",intro:"Edite as cinco cores individualmente. Ao alterar uma cor, o preset vira Personalizado.",groups:[
       ["Cores de superfície",["bg","surface","accent"]],
       ["Neutros e metais",["sceneNeutral","sceneMetal","sceneHighlight","environmentLight","environmentWarmth"]],
       ["Luzes auxiliares",["cool","warm"]],
       ["Tratamento final",["contrast","saturation"]]]},
-    {id:"Componentes",icon:"▦",intro:"Cena com avatar original e três cartões tridimensionais. O fundo permanece visível.",groups:[
+    {id:"Componentes",icon:"▦",intro:"Câmera, painéis e personagem compartilham uma cena tridimensional.",groups:[
       ["Cena 3D de console",["sceneDepth","sceneSpacing","sceneTilt","avatarMotion"]],
       ["Hierarquia da seleção",["selectionStyle"]],
       ["Hero + botão principal",["heroGlow","depth","bevel"]],
@@ -166,7 +166,7 @@
     return Math.min(spec[2],Math.max(spec[1],number));
   };
   const PARAM_KEYS=Object.keys(SPECS);
-  let state=clone(DEFAULTS),tabId="Atmosfera",page="Play",paused=false,toastId=0;
+  let state=clone(DEFAULTS),tabId="Fundo",page="Play",paused=false,toastId=0;
   const groupOpen={},storeKey="horizon.jade.lab.dark.v1";
   let lastSavedAt=0;
   function sanitizeName(name) {
@@ -240,7 +240,7 @@
       if(avatar)avatar.style.animationPlayState=state.reducedMotion?"paused":"running";
     }
     const badge=el("live-hint");
-    if(badge)badge.textContent="LIVE GPU · "+state.paletteId.toUpperCase()+" · "+state.fps+" FPS";
+    if(badge)badge.textContent="CENA EM TEMPO REAL";
     safeSave();
   }
   function formatValue(key,value) {
@@ -475,12 +475,14 @@
     entries.push(json("uniforms.json",{
       engine:"WebGL2 / GLSL ES 300",theme:"oldschool-dark",
       uniforms:["uAtmos","uLight","uMaterial","uSurface","uMotion","uDetail",
-        "uPalette","uRects","uFocusIndex","uSelectionStyle",
+        "uPalette","uCenters","uAxesU","uAxesV","uMeta","uCount","uSelectionStyle",
+        "uBoxCenters","uBoxSizes","uNavigation",
         "uBackdropShape","uBackdropLayers","uBackdropLight","uBackdropDetail",
         "uGlassModel","uGlassOptics","uGlassDetail","uGlassTargets",
         "uSceneTexture","uScenePass","uSceneNeutral"],
-      controls:clone(state),note:"GPU rects use CSS viewport coordinates; see source app."
+      controls:clone(state),note:"Planes and boxes use CSS-pixel world coordinates; camera focal length 1200, positive Z toward viewer."
     }));
+    entries.push(json("scene/geometry.json",window.JadeRenderer.geometry?.()||{}));
     entries.push(json("manifest.json",{
       name:"Horizon Jade Lab Pack",version:1,createdAt:new Date().toISOString(),
       source:"experiments/jade-lab",format:FORMAT,
@@ -496,10 +498,10 @@
       "uniforms.json contains every live parameter used for this export.\n"+
       "Background uniforms are separate from GGX material uniforms for portability.\n"+
       "Shared environment colors are distinct from accent colors.\n"+
-      "uSceneNeutral[0] supplies neutral metal/pearl illumination from the same moving light.\n"+
+      "One 3D camera and moving point light evaluate planes, avatar, shadows and single-bounce reflections.\n"+
       "Glass uniforms: uGlassModel, uGlassOptics, uGlassDetail, uGlassTargets.\n"+
       "Glass diffusion samples the low resolution cached procedural GPU scene; text stays crisp.\n"+
-      "The deck is the only navigation; the top channel strip is gone.\n"+
+      "Horizontal categories, vertical contextual options and hierarchical Back.\n"+
       "This is an engineering reference pack, not a compiled Rust/WGSL mod.\n"+
       "The image preview is the GPU backdrop/material shader, not DOM text.\n"+
       "Import this ZIP back into Jade Lab using Import preset/pack.\n"
@@ -640,110 +642,13 @@
     el("reset-view").addEventListener("click",()=>{
       window.JadeRenderer.recenter();toast("Luz centralizada");
     });
-    document.addEventListener("keydown",e=>{
-      if(e.key==="Escape" && !editor.classList.contains("collapsed")){
-        editor.classList.add("collapsed");e.preventDefault();
-      }
-    });
   }
-  // The spatial deck is the ONLY app navigation. Hero is contextual content.
-  const STACK_PAGES=["Play","Mods","Packs","Shaders","Files","Skins","Settings"];
-  let stackIndex=0;
-  function updateStack(selected){
-    const direct=STACK_PAGES.indexOf(selected);
-    if(direct!==-1)stackIndex=direct;
-    const cards=document.querySelectorAll(".cards .tile[data-page]");
-    cards.forEach(tile=>{
-      const i=STACK_PAGES.indexOf(tile.dataset.page);
-      const difference=(i-stackIndex+STACK_PAGES.length)%STACK_PAGES.length;
-      const pos=difference===0?"front":difference===1?"middle":
-        difference===2?"rear":"hidden";
-      tile.dataset.stack=pos;
-      tile.setAttribute("aria-hidden",pos==="hidden"?"true":"false");
-      tile.tabIndex=pos==="hidden"?-1:0;
-    });
-    const position=el("scene-position");
-    if(position)position.textContent=String(stackIndex+1).padStart(2,"0")+
-      " / "+String(STACK_PAGES.length).padStart(2,"0");
-    const scene=el("console-scene");
-    if(scene){
-      scene.dataset.page=selected;
-      // The focused region and player avatar respond to one shared light.
-      scene.style.setProperty("--light-strength",selected==="Play"?"0.75":"1");
-    }
-  }
-  function cycleStack(direction){
-    const next=(stackIndex+direction+STACK_PAGES.length)%STACK_PAGES.length;
-    pageSelect(STACK_PAGES[next]);
-  }
-  function setupScene(){
-    const scene=el("console-scene");if(!scene)return;
-    const previous=el("scene-prev"),next=el("scene-next");
-    if(previous)previous.addEventListener("click",()=>cycleStack(-1));
-    if(next)next.addEventListener("click",()=>cycleStack(1));
-    let start=null;
-    scene.addEventListener("pointerdown",e=>{
-      if(e.target.closest("button,select,input"))return;
-      start={x:e.clientX,y:e.clientY};
-    },{passive:true});
-    scene.addEventListener("pointerup",e=>{
-      if(!start)return;
-      const dx=e.clientX-start.x,dy=e.clientY-start.y;start=null;
-      if(Math.abs(dx)>52&&Math.abs(dx)>Math.abs(dy)*1.5)
-        cycleStack(dx<0?1:-1);
-    },{passive:true});
-    scene.addEventListener("pointercancel",()=>{start=null;},{passive:true});
-    document.addEventListener("keydown",e=>{
-      if(e.altKey||e.ctrlKey||e.metaKey)return;
-      if(e.target?.closest?.("input,textarea,select,[contenteditable]"))return;
-      if(e.key==="ArrowRight"||e.key==="PageDown"){
-        cycleStack(1);e.preventDefault();
-      }else if(e.key==="ArrowLeft"||e.key==="PageUp"){
-        cycleStack(-1);e.preventDefault();
-      }
-    });
-  }
-  const PAGE_DATA={
-    Play:["READY TO PLAY","MINECRAFT","JAVA EDITION 26.3","● Install needed","Install Minecraft"],
-    Mods:["EXTENSIONS","MODS","NATIVE + HNMOD","● Presets and projects","Open Mods"],
-    Packs:["ASSETS","RESOURCE PACKS","TEXTURES · GUI · ICONS","● Live preview","Open Packs"],
-    Shaders:["VISUALS","SHADERS","GPU EFFECTS · WEBGL2","● Material lab","Open Shaders"],
-    Files:["STORAGE","MY FILES","FILE MANAGER","● Local packages","Open Files"],
-    Settings:["SYSTEM","SETTINGS","PERFORMANCE · GRAPHICS","● Lab controls","Open Settings"],
-    Skins:["IDENTITY","SKINS","PLAYER & APPEARANCE","● Profile preview","Open Skins"]
-  };
-  function pageSelect(next) {
-    if(!(next in PAGE_DATA))return;
-    page=next;
-    const x=PAGE_DATA[page];
-    el("hero-eyebrow").textContent=x[0];el("hero-title").textContent=x[1];
-    el("hero-subtitle").textContent=x[2];el("hero-status").textContent=x[3];
-    el("hero-button-label").textContent=x[4];
-    document.querySelectorAll(".channel").forEach(btn=>{
-      const current=btn.dataset.page===page;
-      btn.classList.toggle("active",current);
-      if(current)btn.setAttribute("aria-current","page");else btn.removeAttribute("aria-current");
-    });
-    document.querySelectorAll(".hero[data-surface],.tile[data-page]").forEach(node=>{
-      const selected=node.classList.contains("hero")?page==="Play":
-        node.dataset.page===page;
-      node.classList.toggle("is-selected",selected);
-      if(node.matches("button"))node.setAttribute("aria-pressed",String(selected));
-    });
-    window.JadeRenderer.setPage?.(page);
-    updateStack(page);
-    const hero=el("preview")?.querySelector?.(".hero");
-    if(hero)hero.dataset.sceneActive=page==="Play"?"true":"false";
-  }
+
   function init() {
-    restore();sync();renderPanel();setupEditor();setupScene();
+    restore();sync();renderPanel();setupEditor();
+    window.JadeScene.init({changeTab,exportPreset:downloadPreset,exportPack:downloadPack});
     window.JadeRenderer.init();
-    document.querySelectorAll("[data-page]").forEach(button=>
-      button.addEventListener("click",()=>pageSelect(button.dataset.page)));
-    pageSelect("Play");
-    el("hero-action").addEventListener("click",()=>toast("Prévia de "+page+"; este laboratório não instala o jogo"));
     if(window.JadeRenderer.state().error)toast(window.JadeRenderer.state().error);
-    // Native Android may invoke this after entering immersive mode.
     window.addEventListener("pageshow",()=>window.JadeRenderer.refresh());
   }
   window.JadeLab={getPreset:presetObject,getSection:sectionObject,defaults:()=>clone(DEFAULTS),

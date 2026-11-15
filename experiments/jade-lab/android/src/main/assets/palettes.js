@@ -8,21 +8,21 @@
   const PROFILES = {
     jade: {
       name:"Jade", tagline:"Console orgânico · luz viva e metal acetinado",
-      colors:{bg:"#192328",surface:"#354249",accent:"#85d3a0",cool:"#b4d0cc",warm:"#d9c9aa"},
-      atmosphere:{fog:.48,waves:.33,vignette:.35,noise:.09,contrast:1.10,saturation:1.07},
+      colors:{bg:"#10181d",surface:"#263b41",accent:"#80d9c3",cool:"#91b7c5",warm:"#d98096"},
+      atmosphere:{fog:.48,waves:.72,vignette:.35,noise:.09,contrast:1.10,saturation:1.07},
       lighting:{azimuth:-38,elevation:.72,intensity:1.24,ambient:.66,edgeLight:.74,heroGlow:.79,bloom:.38},
       material:{roughness:.29,metallic:.31,reflectivity:.72,bevel:.57,depth:.65,ao:.43}
     },
     amethyst: {
       name:"Amethyst", tagline:"Ametista · roxo profundo e brilho de lavanda",
-      colors:{bg:"#201d2c",surface:"#423d51",accent:"#c5a4ed",cool:"#a9b8da",warm:"#e4c3b8"},
+      colors:{bg:"#201d2c",surface:"#423d51",accent:"#c5a4ed",cool:"#a9b8da",warm:"#cceda4"},
       atmosphere:{fog:.59,waves:.22,vignette:.43,noise:.10,contrast:1.11,saturation:1.10},
       lighting:{azimuth:-53,elevation:.64,intensity:1.16,ambient:.63,edgeLight:.89,heroGlow:.92,bloom:.43},
       material:{roughness:.34,metallic:.28,reflectivity:.83,bevel:.62,depth:.77,ao:.51}
     },
     azure: {
       name:"Azure", tagline:"Azul glacial · superfícies cristalinas e névoa fria",
-      colors:{bg:"#1a2832",surface:"#34495a",accent:"#8fd3eb",cool:"#b9dfe7",warm:"#ddc9ac"},
+      colors:{bg:"#1a2832",surface:"#34495a",accent:"#8fd3eb",cool:"#b9dfe7",warm:"#eba78f"},
       atmosphere:{fog:.44,waves:.25,vignette:.30,noise:.07,contrast:1.07,saturation:1.02},
       lighting:{azimuth:-24,elevation:.84,intensity:1.34,ambient:.74,edgeLight:.90,heroGlow:.66,bloom:.31},
       material:{roughness:.24,metallic:.35,reflectivity:.94,bevel:.54,depth:.60,ao:.35}
@@ -43,14 +43,14 @@
     },
     cobalt: {
       name:"Cobalt", tagline:"Azul elétrico refinado · energia e profundidade",
-      colors:{bg:"#19253d",surface:"#3a4964",accent:"#a5b9ed",cool:"#a6cce6",warm:"#d6c0d3"},
+      colors:{bg:"#19253d",surface:"#3a4964",accent:"#a5b9ed",cool:"#a6cce6",warm:"#edd9a5"},
       atmosphere:{fog:.51,waves:.35,vignette:.38,noise:.08,contrast:1.16,saturation:1.09},
       lighting:{azimuth:-30,elevation:.68,intensity:1.33,ambient:.67,edgeLight:.98,heroGlow:1.04,bloom:.42},
       material:{roughness:.25,metallic:.43,reflectivity:1.01,bevel:.66,depth:.84,ao:.47}
     },
     smoke: {
       name:"Smoke", tagline:"Fumaça · grafite quente e cinza suave",
-      colors:{bg:"#242329",surface:"#454249",accent:"#dfd0c4",cool:"#abb4bd",warm:"#d7b9a8"},
+      colors:{bg:"#242329",surface:"#454249",accent:"#dfd0c4",cool:"#abb4bd",warm:"#c4d3df"},
       atmosphere:{fog:.26,waves:.07,vignette:.41,noise:.18,contrast:1.09,saturation:.79},
       lighting:{azimuth:-61,elevation:.74,intensity:1.02,ambient:.73,edgeLight:.55,heroGlow:.37,bloom:.16},
       material:{roughness:.52,metallic:.23,reflectivity:.57,bevel:.42,depth:.63,ao:.40}
@@ -61,8 +61,8 @@
   // the user can still override every number independently in Fundo.
   const BACKDROPS={
     jade:{
-      backgroundStyle:"ribbons",backgroundIntensity:1.05,
-      backgroundScale:1.12,backgroundFlow:.32,
+      backgroundStyle:"ribbons",backgroundIntensity:1.18,
+      backgroundScale:1.12,backgroundFlow:.75,
       ribbonLayers:3,ribbonCurve:.95,ribbonWidth:.73,ribbonSoftness:1.10,
       ribbonGleam:.72,backgroundGlow:.78,gradientDepth:1.05,
       backgroundContrast:.75,backgroundGrain:.16,
@@ -121,7 +121,7 @@
   // independent visual decisions, not simple color replacements.
   const GLASS={
     jade:{glassStyle:"frosted",glassQuality:"balanced",glassOpacity:.38,
-      glassBlur:.69,glassTransmission:.78,glassTint:.35,
+      glassBlur:.69,glassTransmission:.48,glassTint:.35,
       glassScatter:.42,glassFresnel:.58,glassRim:.64,
       glassGrain:.15,glassHighlight:.62,glassShadow:.52},
     amethyst:{glassStyle:"tinted",glassQuality:"balanced",glassOpacity:.31,
@@ -153,7 +153,7 @@
   // Pearl, silver and brushed metal are chosen to harmonize with every theme.
   const SCENE_TONES={
     jade:{sceneNeutral:"#899b9e",sceneMetal:"#586a72",sceneHighlight:"#e5e3d6",
-      environmentLight:.84,environmentWarmth:.40},
+      environmentLight:.40,environmentWarmth:.40},
     amethyst:{sceneNeutral:"#888b9d",sceneMetal:"#615b73",sceneHighlight:"#e8deea",
       environmentLight:.80,environmentWarmth:.25},
     azure:{sceneNeutral:"#879da9",sceneMetal:"#597584",sceneHighlight:"#e5edf0",
