@@ -120,7 +120,7 @@ impl Launcher {
             let mut lines:Vec<String>=frame.texts.iter().filter(|t|inside(rect,t.x,t.y)).map(|t|t.text.clone()).filter(|s|!s.trim().is_empty()).collect();
             lines.dedup();
             let nearest=frame.texts.iter().filter(|t|t.size>=11. && (t.y-rect[1]).abs()<35. && t.x<rect[0]+rect[2])
-                .min_by(|a,b|((a.y-rect[1]).abs()+(a.x-rect[0]).abs()*.02).total_cmp(&((b.y-rect[1]).abs()+(b.x-rect[0]).abs()*.02)));
+                .min_by(|a,b|((a.y-rect[1]).abs()+(a.x-rect[0]).abs()*0.02).total_cmp(&((b.y-rect[1]).abs()+(b.x-rect[0]).abs()*0.02)));
             let mut label=field.map(|f|if f.label.is_empty(){f.hint.clone()}else{f.label.clone()})
                 .or_else(||button.map(|b|b.label.clone())).or_else(||lines.first().cloned()).or_else(||nearest.map(|t|t.text.clone())).unwrap_or_else(||"Select".into());
             let mut kind=if field.is_some(){"field"}else{"button"};
@@ -132,7 +132,7 @@ impl Launcher {
                 Action::ToggleLocal(i)|Action::DeleteLocal(i)=>{if let Some(item)=self.catalog.local.get(i){group=format!("local:{i}");identity=item.file.clone();if matches!(action,Action::ToggleLocal(_)){label=item.title.clone();kind="toggle";}}},
                 _=>{},
             }
-            let switch=frame.switches.iter().find(|(r,_)|inside(rect,r[0]+r[2]*.5,r[1]+r[3]*.5));
+            let switch=frame.switches.iter().find(|(r,_)|inside(rect,r[0]+r[2]*0.5,r[1]+r[3]*0.5));
             if switch.is_some() && kind=="button" {kind="toggle";if let Some(t)=nearest{if label=="On"||label=="Off"{label=t.text.clone();}}}
             let range=ranges.iter().find(|(_,a,_,_)|*a==action);
             let mut fraction=None;
@@ -145,7 +145,7 @@ impl Launcher {
             let id=previous.iter().find(|b|b.action==action&&b.identity==identity).map(|b|b.id).unwrap_or_else(||{let n=self.nexo.next;self.nexo.next+=1;n});
             if self.nexo.bindings.iter().any(|b|b.id==id){continue;}
             self.nexo.bindings.push(Binding{id,action,identity});
-            let image=frame.images.iter().find(|i|inside(rect,i.rect[0]+i.rect[2]*.5,i.rect[1]+i.rect[3]*.5)).map(|i|i.src.clone());
+            let image=frame.images.iter().find(|i|inside(rect,i.rect[0]+i.rect[2]*0.5,i.rect[1]+i.rect[3]*0.5)).map(|i|i.src.clone());
             let checked=if let Action::ToggleLocal(i)=action{self.catalog.local.get(i).map(|i|i.enabled)}else{switch.map(|(_,on)|*on)};
             controls.push(json!({"id":id,"kind":kind,"label":label,"lines":lines,"rect":rect,"group":group,
                 "value":if kind=="password"{String::new()}else{field.map(|f|f.value.clone()).unwrap_or_default()},

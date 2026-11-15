@@ -45,10 +45,13 @@ jobs:
           cargo fmt --all
           mkdir -p dist
           git diff -- '*.rs' > dist/rustfmt.patch
+          cp "$(rustup which rustfmt)" dist/rustfmt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: nexo-rust-format
-          path: dist/rustfmt.patch
+          path: |
+            dist/rustfmt.patch
+            dist/rustfmt
           retention-days: 3
       - name: Set up Java for Gradle
         uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
