@@ -1,0 +1,18 @@
+Nexo Preview Update 6 audio
+
+Seven UI cues edited from four Adobe Firefly sound-effect variations generated
+on 2026-11-15 through the project owner's signed-in Firefly account.
+
+The exact prompt, original file hashes, variation mapping, output hashes and
+processing are recorded in sources.json. These are generated audio assets;
+they are not the Kenney samples used by earlier Nexo previews. This project
+does not identify the Firefly outputs as CC0 or as an open-source sound pack.
+
+The browser offered one free batch containing four one-second variations.
+Further generation showed the daily quota/upgrade notice. The seven cues are
+edited derivatives of that batch, not seven independent Firefly generations.
+
+Edits: trim, playback-rate adjustment, reverse for Back, mono conversion,
+high/low-pass filtering, fade-in/out, gain matching and Vorbis encoding.
+No synthesized waveforms, new model-generated audio or old pack samples were
+mixed into these derivatives. Raw generated WAVs are preserved separately.

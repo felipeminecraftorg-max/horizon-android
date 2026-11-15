@@ -1,163 +1,214 @@
 {
-  "license": "CC0-1.0",
-  "mirror": "https://github.com/GeorgeQLe/assets-sfx-ui",
-  "sourceCommit": "760afd035e8fc3cd7fb5bc58d49a967649875e3e",
-  "packs": [
-    "https://kenney.nl/assets/interface-sounds"
-  ],
+  "provider": "Adobe Firefly",
+  "sourcePage": "https://firefly.adobe.com/generate/sound-effects",
+  "generationDate": "2026-11-15",
+  "prompt": "Soft futuristic console menu selection tick. Rounded low-mid glass-plastic tap with a tiny smooth airy tail. Gentle attack, warm body, dry and clean, one isolated short sound. No shrill beep, buzz, music or voices.",
+  "generatedDurationSeconds": 1,
+  "generatedVariations": 4,
+  "generationLimit": "Daily free generations exhausted after this batch.",
+  "notice": "Generated assets edited from four Firefly outputs; no CC0 grant is asserted.",
   "samples": [
     {
       "event": "select",
-      "file": "sounds/soft-select.ogg",
-      "author": "Kenney",
-      "pack": "interface-sounds",
-      "sourcePath": "assets/kenney/interface-sounds/Audio/back_001.ogg",
-      "upstreamGitBlob": "06c5e72c4fd2773438de35ce26bd90caad730031",
-      "upstreamSha256": "07db973f79f6ae0f2edc34561e7592e24d0577455919fb602cb8ecc0da991dcf",
-      "sha256": "089e367ae0982285d28dbdec618b63d45f912338bab80c769032970fd836fc67",
-      "modified": true,
+      "file": "sounds/firefly-select.ogg",
+      "sourceVariation": 2,
+      "sourceFile": "select-v2.wav",
+      "sourceSha256": "9d42598fb5563aaf8cbf9a282fb7e1e561ad546ce678389ecee5bd86f69e71ab",
+      "sha256": "2e60b3d24522980cf09193a5b9fed109561434218ebe134244986aad1cf733b7",
       "processing": {
-        "rate": 0.82,
-        "highpassHz": 75,
-        "lowpassHz": 2200,
-        "durationSeconds": 0.09,
+        "trimSeconds": [
+          0.012,
+          0.22
+        ],
+        "rate": 1.12,
+        "reverse": false,
+        "highpassHz": 95,
+        "lowpassHz": 2500,
         "fadeInMs": 6,
-        "fadeOutMs": 25,
-        "targetRmsDbFS": -25,
-        "peakCeilingDbFS": -12,
-        "gainDb": -8.937
+        "fadeOutMs": 45.0,
+        "gainDb": -8.864,
+        "mono": true,
+        "sampleRate": 48000,
+        "vorbisQuality": 5
+      },
+      "decoded": {
+        "rmsDbFS": -26.646,
+        "peakDbFS": -17.239,
+        "durationSeconds": 0.183062
       }
     },
     {
       "event": "open",
-      "file": "sounds/soft-open.ogg",
-      "author": "Kenney",
-      "pack": "interface-sounds",
-      "sourcePath": "assets/kenney/interface-sounds/Audio/open_001.ogg",
-      "upstreamGitBlob": "699b498488d18c97987680c723a7c289a2c9624a",
-      "upstreamSha256": "a27c6bb0df7da1e6af5dd5937593c98bc58b6e513f42fe6a3254cd6a6949c648",
-      "sha256": "77e13143bed908f362f2e4a8cb10bf4908c298020b7903b60bd83c48b389f00f",
-      "modified": true,
+      "file": "sounds/firefly-open.ogg",
+      "sourceVariation": 4,
+      "sourceFile": "select-v4.wav",
+      "sourceSha256": "73119600c882d549b4a4d850e9ccd5c32dd4ad0d59d303a3d11a26b215281ac9",
+      "sha256": "2897314c8af41fc82ee1a59ec4b8dced1c85abf265ed9ceae72e006914c8034b",
       "processing": {
-        "rate": 0.9,
-        "highpassHz": 75,
-        "lowpassHz": 1800,
-        "durationSeconds": 0.19,
+        "trimSeconds": [
+          0.075,
+          0.7
+        ],
+        "rate": 1.25,
+        "reverse": false,
+        "highpassHz": 110,
+        "lowpassHz": 2600,
         "fadeInMs": 6,
-        "fadeOutMs": 25,
-        "targetRmsDbFS": -25,
-        "peakCeilingDbFS": -12,
-        "gainDb": 7.37
+        "fadeOutMs": 45.0,
+        "gainDb": 5.13,
+        "mono": true,
+        "sampleRate": 48000,
+        "vorbisQuality": 5
+      },
+      "decoded": {
+        "rmsDbFS": -27.672,
+        "peakDbFS": -19.696,
+        "durationSeconds": 0.497333
       }
     },
     {
       "event": "back",
-      "file": "sounds/soft-back.ogg",
-      "author": "Kenney",
-      "pack": "interface-sounds",
-      "sourcePath": "assets/kenney/interface-sounds/Audio/close_001.ogg",
-      "upstreamGitBlob": "b2545e717336d5fdb7a6f87d048eb950b7fca212",
-      "upstreamSha256": "44af8249b933e0fd35ec957a638bb1a0b01f85b53fbe9674bf77bd3ca3168ef4",
-      "sha256": "e5e4950da08a5743b37dae1ff9a105488d2d832f7f66c2d7ea86bc737daff170",
-      "modified": true,
+      "file": "sounds/firefly-back.ogg",
+      "sourceVariation": 4,
+      "sourceFile": "select-v4.wav",
+      "sourceSha256": "73119600c882d549b4a4d850e9ccd5c32dd4ad0d59d303a3d11a26b215281ac9",
+      "sha256": "7793cd101304f0af29e73be9f8b24786b17e4f38fdc11e2870377b432bb7adcc",
       "processing": {
-        "rate": 0.9,
-        "highpassHz": 75,
-        "lowpassHz": 1800,
-        "durationSeconds": 0.19,
+        "trimSeconds": [
+          0.075,
+          0.7
+        ],
+        "rate": 1.45,
+        "reverse": true,
+        "highpassHz": 110,
+        "lowpassHz": 2100,
         "fadeInMs": 6,
-        "fadeOutMs": 25,
-        "targetRmsDbFS": -25,
-        "peakCeilingDbFS": -12,
-        "gainDb": 7.637
+        "fadeOutMs": 45.0,
+        "gainDb": 3.059,
+        "mono": true,
+        "sampleRate": 48000,
+        "vorbisQuality": 5
+      },
+      "decoded": {
+        "rmsDbFS": -27.669,
+        "peakDbFS": -19.518,
+        "durationSeconds": 0.428354
       }
     },
     {
       "event": "confirm",
-      "file": "sounds/soft-confirm.ogg",
-      "author": "Kenney",
-      "pack": "interface-sounds",
-      "sourcePath": "assets/kenney/interface-sounds/Audio/switch_005.ogg",
-      "upstreamGitBlob": "799e3277c0c8826589216ec5518801293e13d5d7",
-      "upstreamSha256": "e94dfab6fd6558068ab3ea97e22e4b4f16b83ee440e6abf33ec4c4e9fbe8a70e",
-      "sha256": "e3aa18305216e43c95e3ac57bed92e043c325d44575bde2138d8fa79162da712",
-      "modified": true,
+      "file": "sounds/firefly-confirm.ogg",
+      "sourceVariation": 1,
+      "sourceFile": "select-v1.wav",
+      "sourceSha256": "043a2ad2af09a241c8c4d6b22903a7e42c28396f78439112adbc8d86635a2e2e",
+      "sha256": "43a26823597d9fb627f4b884b95af587837437682c01712d7c4bdee581598494",
       "processing": {
-        "rate": 1.0,
-        "highpassHz": 75,
-        "lowpassHz": 1000,
-        "durationSeconds": 0.2,
+        "trimSeconds": [
+          0.035,
+          0.33
+        ],
+        "rate": 1.15,
+        "reverse": false,
+        "highpassHz": 100,
+        "lowpassHz": 2400,
         "fadeInMs": 6,
-        "fadeOutMs": 25,
-        "targetRmsDbFS": -25,
-        "peakCeilingDbFS": -12,
-        "gainDb": -8.048
+        "fadeOutMs": 45.0,
+        "gainDb": -2.843,
+        "mono": true,
+        "sampleRate": 48000,
+        "vorbisQuality": 5
+      },
+      "decoded": {
+        "rmsDbFS": -25.656,
+        "peakDbFS": -16.256,
+        "durationSeconds": 0.253875
       }
     },
     {
       "event": "error",
-      "file": "sounds/soft-error.ogg",
-      "author": "Kenney",
-      "pack": "interface-sounds",
-      "sourcePath": "assets/kenney/interface-sounds/Audio/back_001.ogg",
-      "upstreamGitBlob": "06c5e72c4fd2773438de35ce26bd90caad730031",
-      "upstreamSha256": "07db973f79f6ae0f2edc34561e7592e24d0577455919fb602cb8ecc0da991dcf",
-      "sha256": "a7aae1ced31b0fdbd2cc3e114e5fa93e9451bdca5d500e1851690fa85077d7be",
-      "modified": true,
+      "file": "sounds/firefly-error.ogg",
+      "sourceVariation": 3,
+      "sourceFile": "select-v3.wav",
+      "sourceSha256": "0a5fb3ff28563ea5466f5b8dd8f64a662a4b50b436f9fcb31db83b67140505cb",
+      "sha256": "078211a9627aaaf2889bfb2d9d8fc32775c40c91321af75e3c597f6f99d0ee14",
       "processing": {
-        "rate": 0.68,
-        "highpassHz": 75,
+        "trimSeconds": [
+          0.004,
+          0.175
+        ],
+        "rate": 0.78,
+        "reverse": false,
+        "highpassHz": 110,
         "lowpassHz": 1500,
-        "durationSeconds": 0.11,
         "fadeInMs": 6,
-        "fadeOutMs": 25,
-        "targetRmsDbFS": -25,
-        "peakCeilingDbFS": -12,
-        "gainDb": -8.113
+        "fadeOutMs": 45.0,
+        "gainDb": -0.809,
+        "mono": true,
+        "sampleRate": 48000,
+        "vorbisQuality": 5
+      },
+      "decoded": {
+        "rmsDbFS": -33.801,
+        "peakDbFS": -17.788,
+        "durationSeconds": 0.216583
       }
     },
     {
       "event": "toggle",
-      "file": "sounds/soft-toggle.ogg",
-      "author": "Kenney",
-      "pack": "interface-sounds",
-      "sourcePath": "assets/kenney/interface-sounds/Audio/click_002.ogg",
-      "upstreamGitBlob": "4564b888c25143eaed79c384a5ce02054813a41c",
-      "upstreamSha256": "adcd1f4adc35f1b41bc1b5bbefeff7aa44f2f3f0d96d3199b544140c7c1e761c",
-      "sha256": "e80b8573cedc7ac7054d54e020f50e8c63bad58780bf8c619a1aa0189e635ca7",
-      "modified": true,
+      "file": "sounds/firefly-toggle.ogg",
+      "sourceVariation": 2,
+      "sourceFile": "select-v2.wav",
+      "sourceSha256": "9d42598fb5563aaf8cbf9a282fb7e1e561ad546ce678389ecee5bd86f69e71ab",
+      "sha256": "d19a72c8e62f5a830ea1be2bc5f6b38072dab124b33315b5f4f55469bfd60901",
       "processing": {
-        "rate": 0.9,
-        "highpassHz": 75,
-        "lowpassHz": 2400,
-        "durationSeconds": 0.045,
+        "trimSeconds": [
+          0.012,
+          0.125
+        ],
+        "rate": 1.05,
+        "reverse": false,
+        "highpassHz": 130,
+        "lowpassHz": 2300,
         "fadeInMs": 6,
-        "fadeOutMs": 25,
-        "targetRmsDbFS": -25,
-        "peakCeilingDbFS": -12,
-        "gainDb": 8.429
+        "fadeOutMs": 32.286,
+        "gainDb": -12.701,
+        "mono": true,
+        "sampleRate": 48000,
+        "vorbisQuality": 5
+      },
+      "decoded": {
+        "rmsDbFS": -29.595,
+        "peakDbFS": -21.277,
+        "durationSeconds": 0.104958
       }
     },
     {
       "event": "click",
-      "file": "sounds/soft-click.ogg",
-      "author": "Kenney",
-      "pack": "interface-sounds",
-      "sourcePath": "assets/kenney/interface-sounds/Audio/click_002.ogg",
-      "upstreamGitBlob": "4564b888c25143eaed79c384a5ce02054813a41c",
-      "upstreamSha256": "adcd1f4adc35f1b41bc1b5bbefeff7aa44f2f3f0d96d3199b544140c7c1e761c",
-      "sha256": "decdca9b05e58a2d07dd063343e6de22702d92fe293489eaa13ebb066e6d6490",
-      "modified": true,
+      "file": "sounds/firefly-click.ogg",
+      "sourceVariation": 1,
+      "sourceFile": "select-v1.wav",
+      "sourceSha256": "043a2ad2af09a241c8c4d6b22903a7e42c28396f78439112adbc8d86635a2e2e",
+      "sha256": "f6e8fe6e5977b077a77bdaa19fd27e53ec3e727e1949fa9f2da8f2727f3d2b3b",
       "processing": {
-        "rate": 0.85,
-        "highpassHz": 75,
-        "lowpassHz": 1800,
-        "durationSeconds": 0.045,
+        "trimSeconds": [
+          0.12,
+          0.188
+        ],
+        "rate": 1.2,
+        "reverse": false,
+        "highpassHz": 150,
+        "lowpassHz": 2200,
         "fadeInMs": 6,
-        "fadeOutMs": 25,
-        "targetRmsDbFS": -25,
-        "peakCeilingDbFS": -12,
-        "gainDb": 7.995
+        "fadeOutMs": 17.0,
+        "gainDb": -11.006,
+        "mono": true,
+        "sampleRate": 48000,
+        "vorbisQuality": 5
+      },
+      "decoded": {
+        "rmsDbFS": -31.974,
+        "peakDbFS": -24.728,
+        "durationSeconds": 0.076
       }
     }
   ]
