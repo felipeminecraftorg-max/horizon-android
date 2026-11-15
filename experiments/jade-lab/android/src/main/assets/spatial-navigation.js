@@ -57,9 +57,27 @@
     if(commit)step(commit);else callbacks.select?.(model.state().page);
     setDrag(0,0);refresh();
   }
+  function pointInQuad(p,x,y){
+    if(p.length!==4)return false;let sign=0;
+    for(let i=0;i<4;i++){const a=p[i],b=p[(i+1)%4],cross=(b[0]-a[0])*(y-a[1])-(b[1]-a[1])*(x-a[0]);if(Math.abs(cross)<.00001)continue;const next=Math.sign(cross);if(sign&&next!==sign)return false;sign=next;}
+    return sign!==0;
+  }
+  function hitTest(x,y){
+    // CSS negative-Z planes can paint behind their parent's native hit plane.
+    // Route input against the same projected corners that the GPU draws.
+    for(const stack of ['front','middle','rear']){
+      const el=document.querySelector('.tile[data-stack="'+stack+'"]');if(!el)continue;
+      const p=Array.from(el.querySelectorAll(':scope > .deck-corner')).slice(0,4).map(m=>{const r=m.getBoundingClientRect();return[r.x,r.y];});
+      if(pointInQuad(p,x,y))return el.dataset.page;
+    }
+    return null;
+  }
   function pointerDown(e){
-    if(model.state().location!=='home'||gesture||!e.isPrimary||e.button!==0||e.target.closest('#deck-picker,.deck-access,.hero,.floating-tools')||!e.target.closest('.cards'))return;
-    gesture={id:e.pointerId,x:e.clientX,y:e.clientY,lastX:e.clientX,lastY:e.clientY,lastAt:performance.now(),velocity:0,axis:null,moved:false,direction:1};
+    if(model.state().location!=='home'||gesture||!e.isPrimary||e.button!==0||e.target.closest('#deck-picker,.deck-access,.hero,.floating-tools'))return;
+    const target=hitTest(e.clientX,e.clientY);if(!target)return;
+    e.preventDefault();
+    gesture={id:e.pointerId,x:e.clientX,y:e.clientY,lastX:e.clientX,lastY:e.clientY,lastAt:performance.now(),velocity:0,axis:null,moved:false,direction:1,target};
+    $('console-scene').setPointerCapture(e.pointerId);
   }
   function pointerMove(e){
     if(!gesture||gesture.id!==e.pointerId)return;
@@ -74,6 +92,7 @@
   }
   function pointerUp(e,cancelled=false){
     if(!gesture||gesture.id!==e.pointerId)return;const g=gesture;gesture=null;
+    if(!g.moved&&!cancelled){select(g.target);suppressUntil=performance.now()+300;}
     if(g.moved){suppressUntil=performance.now()+400;const distance=g.axis==='x'?e.clientX-g.x:e.clientY-g.y;const velocity=performance.now()-g.lastAt<100?g.velocity:0;resetDrag(cancelled?0:releaseStep(distance,velocity));}
     if($('console-scene').hasPointerCapture?.(e.pointerId))$('console-scene').releasePointerCapture(e.pointerId);
   }
@@ -137,7 +156,7 @@
   function init(cb){
     if(initialized)return;initialized=true;callbacks=cb||{};restore();$('profile-name').textContent=profile;document.body.dataset.jacket=jacket;
     const scene=$('console-scene');scene.addEventListener('pointerdown',pointerDown);scene.addEventListener('pointermove',pointerMove,{passive:false});scene.addEventListener('pointerup',e=>pointerUp(e));scene.addEventListener('pointercancel',e=>pointerUp(e,true));scene.addEventListener('lostpointercapture',e=>{if(gesture)pointerUp(e,true);});
-    scene.addEventListener('click',e=>{if(performance.now()<suppressUntil&&(e.target===scene||e.target.closest('.cards'))){e.preventDefault();e.stopImmediatePropagation();return;}const tile=e.target.closest('.tile[data-page]');if(tile)select(tile.dataset.page);},{capture:true});
+    scene.addEventListener('click',e=>{if(performance.now()<suppressUntil&&(e.target===scene||e.target.closest('.cards'))){e.preventDefault();e.stopImmediatePropagation();return;}const tile=e.target.closest('.tile[data-page]'),target=hitTest(e.clientX,e.clientY)||tile?.dataset.page;if(target)select(target);},{capture:true});
     $('hero-action').addEventListener('click',()=>open());$('profile-action').addEventListener('click',()=>open('Play'));
     $('quick-settings').addEventListener('click',()=>open('Settings'));$('account-action').addEventListener('click',()=>open('Skins'));
     $('deck-overview').addEventListener('click',openPicker);$('close-deck-picker').addEventListener('click',closePicker);
@@ -151,5 +170,5 @@
     });
     updateIndicator();
   }
-  window.JadeNavigation={init,select,selected,open,back,environment,createModel,releaseStep,deckOrder,meta:META,refreshModule(){if(model.state().location==='module')renderModule();},state:()=>({...model.state(),phase,dragging:!!gesture?.moved,filter,query,selectedMods:[...selectedMods]})};
+  window.JadeNavigation={init,select,selected,open,back,environment,createModel,releaseStep,deckOrder,pointInQuad,hitTest,meta:META,refreshModule(){if(model.state().location==='module')renderModule();},state:()=>({...model.state(),phase,dragging:!!gesture?.moved,filter,query,selectedMods:[...selectedMods]})};
 })();

@@ -232,8 +232,11 @@
     const scene=el("console-scene");
     if(scene){
       scene.style.setProperty("--deck-depth",Math.round(30+state.sceneDepth*100)+"px");
+      scene.style.setProperty("--spatial-deck-depth",Math.round(30+state.sceneDepth*100)+"px");
       scene.style.setProperty("--deck-gap",Math.round(44+state.sceneSpacing*16)+"px");
+      scene.style.setProperty("--spatial-deck-gap",Math.round(44+state.sceneSpacing*16)+"px");
       scene.style.setProperty("--deck-tilt",String(state.sceneTilt)+"deg");
+      scene.style.setProperty("--spatial-deck-tilt",String(state.sceneTilt)+"deg");
       document.documentElement.style.setProperty("--spatial-yaw",String(-state.sceneTilt)+"deg");
       scene.style.setProperty("--avatar-idle-duration",
         String((7.5-state.avatarMotion*4.5).toFixed(2))+"s");

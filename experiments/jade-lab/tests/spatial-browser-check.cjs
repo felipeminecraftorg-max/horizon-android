@@ -14,7 +14,16 @@ const server=http.createServer((req,res)=>{let name=decodeURIComponent(req.url.s
  async function open(name){await pick(name);assert.equal(await page.evaluate(()=>JadeNavigation.state().location),'home');await page.locator('#hero-action').click();await page.waitForFunction(()=>JadeNavigation.state().phase==='open');assert.equal(await page.locator('#module-screen').getAttribute('data-module'),name);}
  async function close(){await page.getByRole('button',{name:'Voltar ao deck',exact:true}).click();await page.waitForFunction(()=>JadeNavigation.state().phase==='home');}
  async function faceCheck(scope){const faces=await page.locator(scope+' [data-spatial-surface]').evaluateAll(els=>els.filter(el=>el.getClientRects().length&&getComputedStyle(el).visibility!=='hidden').map(el=>{const s=getComputedStyle(el),m=new DOMMatrixReadOnly(s.transform);return {tag:el.tagName,id:el.id||el.textContent.trim().slice(0,35),tilt:Math.abs(m.m13)+Math.abs(m.m23)+Math.abs(m.m31)+Math.abs(m.m32)};}));assert.ok(faces.length>=4);for(const f of faces)assert.ok(f.tilt>.015,'flat interactive face '+f.id);}
- async function exposedPoint(){return page.evaluate(()=>{const tile=document.querySelector('.tile[data-stack="middle"]'),r=tile.getBoundingClientRect();for(let y=r.bottom-7;y>r.top+3;y-=4)for(const part of [.3,.5,.7]){const x=r.left+r.width*part;if(document.elementFromPoint(x,y)?.closest('.tile')===tile)return{x,y,page:tile.dataset.page};}return null;});}
+ async function exposedPoint(){return page.evaluate(()=>{
+   const middle=document.querySelector('.tile[data-stack="middle"]'),front=document.querySelector('.tile[data-stack="front"]');
+   const quad=el=>Array.from(el.querySelectorAll(':scope > .deck-corner')).slice(0,4).map(m=>{const r=m.getBoundingClientRect();return[r.x,r.y];});
+   // Independent even/odd polygon test, based on measured visual corners.
+   const inside=(p,x,y)=>{let on=false;for(let i=0,j=p.length-1;i<p.length;j=i++)if(((p[i][1]>y)!==(p[j][1]>y))&&(x<(p[j][0]-p[i][0])*(y-p[i][1])/(p[j][1]-p[i][1])+p[i][0]))on=!on;return on;};
+   const p=quad(middle),f=quad(front),r=middle.getBoundingClientRect();
+   for(let y=r.bottom-8;y>r.top+4;y-=4)for(const part of [.3,.5,.7]){const x=r.left+r.width*part;if(inside(p,x,y)&&!inside(f,x,y))return{x,y,page:middle.dataset.page};}
+   return null;
+ });}
+
  try{
   await page.goto('http://127.0.0.1:'+server.address().port);
   await page.waitForFunction(()=>JadeDeckFinish.state().ready||JadeDeckFinish.state().error);
@@ -68,6 +77,6 @@ const server=http.createServer((req,res)=>{let name=decodeURIComponent(req.url.s
   }
   assert.deepEqual(errors,[]);
   fs.writeFileSync(path.join(out,'RESULT.json'),JSON.stringify({passed:true,checks,viewports,navigation:await page.evaluate(()=>JadeNavigation.state())},null,2));console.log('Spatial deck and module checks passed');
- }catch(e){await page.screenshot({path:path.join(out,'failure.png'),animations:'disabled'});console.error('JS errors',errors);console.error('navigation',await page.evaluate(()=>window.JadeNavigation?.state()));throw e;}
+ }catch(e){await page.screenshot({path:path.join(out,'failure.png'),animations:'disabled'});console.error('JS errors',errors);console.error('navigation',await page.evaluate(()=>window.JadeNavigation?.state()));fs.writeFileSync(path.join(out,'failure-state.json'),JSON.stringify(await page.evaluate(()=>({navigation:window.JadeNavigation?.state(),coat:window.JadeDeckFinish?.state(),moduleRect:document.getElementById('module-screen').getBoundingClientRect().toJSON()})),null,2));throw e;}
  finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});

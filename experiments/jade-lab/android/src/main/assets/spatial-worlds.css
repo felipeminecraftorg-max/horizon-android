@@ -106,3 +106,6 @@ body[data-reduced-motion="true"] .session-pulse .session-stage{animation:none}
 
 .cards .tile[data-stack="front"]:active{transform:translate3d(var(--gesture-x),var(--gesture-y),48px) rotateY(calc(-1 * var(--deck-tilt) + var(--gesture-turn))) rotateX(4deg) scale(.985)}
 .is-dragging .tile[data-stack="front"]:active{transform:translate3d(var(--gesture-x),var(--gesture-y),54px) rotateY(calc(-1 * var(--deck-tilt) + var(--gesture-turn))) rotateX(4deg)}
+
+.dashboard .cards{--deck-gap:var(--spatial-deck-gap,54px);--deck-depth:var(--spatial-deck-depth,98px);--deck-tilt:var(--spatial-deck-tilt,13deg)}
+#console-scene{touch-action:none}.is-picking #console-scene{touch-action:pan-y}

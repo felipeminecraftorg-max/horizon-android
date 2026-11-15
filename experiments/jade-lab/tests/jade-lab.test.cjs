@@ -321,6 +321,9 @@ test("spatial model separates direct selection, activation and contextual return
   assert.equal(n.step(-1),"Settings");assert.equal(n.step(1),"Play");
   assert.deepEqual(Array.from(api.deckOrder(6)),["Settings","Play","Mods"]);
   assert.deepEqual(Array.from(api.deckOrder(0,-1)),["Play","Settings","Skins"]);
+  assert.equal(api.pointInQuad([[0,0],[10,0],[8,10],[2,10]],5,5),true);
+  assert.equal(api.pointInQuad([[0,0],[10,0],[8,10],[2,10]],1,9),false);
+  assert.equal(api.pointInQuad([],5,5),false);
   assert.equal(api.releaseStep(-90,0),1);assert.equal(api.releaseStep(90,0),-1);
   assert.equal(api.releaseStep(6,5),0);assert.equal(api.releaseStep(-21,-.6),1);assert.equal(api.releaseStep(30,.1),0);
   const controls=sandbox().JadeLab.getSection("Componentes").controls;
