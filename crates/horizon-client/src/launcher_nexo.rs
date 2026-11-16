@@ -221,7 +221,22 @@ pub fn parse(input: &str) -> Result<Command, String> {
     if input.len() > 16384 {
         return Err("Launcher request is too large".into());
     }
-    let cmd: Command = serde_json::from_str(input).map_err(|_| "Unsupported launcher request")?;
+    let value: serde_json::Value = serde_json::from_str(input).map_err(|_| "Unsupported launcher request")?;
+    let object = value.as_object().ok_or("Expected a launcher request")?;
+    let allowed: &[&str] = match object.get("op").and_then(serde_json::Value::as_str) {
+        Some("ready" | "back" | "play" | "fallback") => &["id", "op"],
+        Some("page") => &["id", "op", "page"],
+        Some("press") => &["id", "op", "control"],
+        Some("edit") => &["id", "op", "control", "text", "finish"],
+        Some("range") => &["id", "op", "control", "value"],
+        Some("rotate") => &["id", "op", "dx", "dy"],
+        Some("preset") => &["id", "op", "preset"],
+        _ => return Err("Unsupported launcher action".into()),
+    };
+    if object.keys().any(|key| !allowed.contains(&key.as_str())) {
+        return Err("Unsupported launcher parameter".into());
+    }
+    let cmd: Command = serde_json::from_value(value).map_err(|_| "Unsupported launcher request")?;
     if cmd.id == 0 {
         return Err("Missing request ID".into());
     }
