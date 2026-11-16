@@ -11,7 +11,7 @@ const THEMES=[
 const DEFAULTS={theme:'mare',material:'satin',selected:0,skinTurn:0,preferences:{textScale:1,renderScale:.85,fps:60,warmth:.55,volume:.18,ambientMotion:true,sceneLighting:true,motionBlur:true,reducedMotion:false,introEnabled:true}};
 let model=JSON.parse(JSON.stringify(DEFAULTS));try{const saved=JSON.parse(localStorage.getItem('horizon.nexo.app.v1')||'null');if(saved){model={...model,...saved,preferences:{...model.preferences,...saved.preferences}};}}catch(_){}
 if(!THEMES.some(t=>t.id===model.theme))model.theme='mare';model.selected=Math.max(0,Math.min(4,Number(model.selected)||0));
-for(const [key,min,max] of [['textScale',.85,1.3],['renderScale',.5,1],['fps',24,90],['warmth',0,1],['volume',0,1]])model.preferences[key]=Math.max(min,Math.min(max,Number(model.preferences[key])||DEFAULTS.preferences[key]));
+for(const [key,min,max] of [['textScale',.85,1.3],['renderScale',.5,1],['fps',24,90],['warmth',0,1],['volume',0,1]])model.preferences[key]=Math.max(min,Math.min(max,Number.isFinite(Number(model.preferences[key]))?Number(model.preferences[key]):DEFAULTS.preferences[key]));
 const store={get:()=>model,save(){try{localStorage.setItem('horizon.nexo.app.v1',JSON.stringify(model));}catch(_){} }};
 let state=null,opened=null,category='',pane='explore',localModal=null,stamp='',modalStamp='',statusBefore='',editorSelected=null,editorDirty=false,receiving=false,readySent=false,restored=false;
 const pending=new Set(),scrolls=new Map(),edits=new Map(),fieldCache=new Map();
@@ -108,7 +108,7 @@ function receive(next){if(next.schema!==2||next.product!=='nexo')return;receivin
  if(prev?.busy&&!next.busy&&!next.launching){window.NexoScene?.setLaunching(false);if(next.view?.type==='home'&&opened==='preparing'){opened=null;NexoScene.close(true);}}
  render();receiving=false;
 }
-function open(destination){if(['account','profile','status'].includes(destination)){run('page',{page:destination});return;}opened=destination;category='';run('page',{page:destination});window.NexoScene?.openView();}
+function open(destination){if(state?.view?.type==='editor'&&!['account','status'].includes(destination)&&!beforeClose())return;if(['account','profile','status'].includes(destination)){run('page',{page:destination});return;}opened=destination;category='';run('page',{page:destination});window.NexoScene?.openView();}
 function beforeClose(){if(state?.view?.type==='editor'&&editorDirty){localDialog({type:'leave-editor',title:'Salvar seu layout?'});return false;}if(state?.view?.type==='editor')layout({action:'cancel'});return true;}
 function back(){if(window.NexoIntro?.isActive()){NexoIntro.skip();return;}if($('nexo-modal').open){modalClose();return;}if(state?.view?.type==='editor'){if(beforeClose())layout({action:'cancel'});return;}if(opened==='settings'&&category){category='';stamp='';render();return;}if(window.NexoScene?.getState().open)NexoScene.close();else run('back');}
 function play(){if(state?.busy)return;sound('confirm');window.NexoScene?.setLaunching(true);send('play').then(next=>{if(next.busy&&!next.launching){opened='preparing';window.NexoScene?.setLaunching(false);window.NexoScene?.openView();}}).catch(e=>{notice(e.message);window.NexoScene?.setLaunching(false);});}

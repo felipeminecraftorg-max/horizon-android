@@ -250,6 +250,18 @@ pub fn parse(input: &str) -> Result<Command, String> {
     if object.keys().any(|key| !allowed.contains(&key.as_str())) {
         return Err("Unsupported launcher parameter".into());
     }
+    if object.get("op").and_then(serde_json::Value::as_str)==Some("layout") {
+        let edit=object.get("edit").and_then(serde_json::Value::as_object).ok_or("Missing layout command")?;
+        let allowed:&[&str]=match edit.get("action").and_then(serde_json::Value::as_str) {
+            Some("save"|"cancel"|"reset")=>&["action"],
+            Some("mode")=>&["action","mode"],
+            Some("set")=>&["action","index","custom","placement"],
+            Some("add")=>&["action","binding","label"],
+            Some("remove")=>&["action","index"],
+            _=>return Err("Unsupported layout action".into()),
+        };
+        if edit.keys().any(|key|!allowed.contains(&key.as_str())) {return Err("Unsupported layout parameter".into());}
+    }
     let cmd: Command = serde_json::from_value(value).map_err(|_| "Unsupported launcher request")?;
     if cmd.id == 0 {
         return Err("Missing request ID".into());

@@ -34,3 +34,5 @@ button{cursor:pointer}button svg{width:22px;height:22px;flex:none}button:disable
  #module-content[data-catalog=explore]>.nx-download{grid-column:1/-1;grid-row:4}
  .nx-item-main{min-height:48px}.nx-item-foot{min-height:31px}.nx-item-foot .nx-add{min-height:31px}
 }
+
+@media(max-width:600px) and (max-height:740px){.nx-item-main{padding:8px;gap:6px;min-height:94px}.nx-item-main p{display:none}.nx-item-foot{min-height:44px}.nx-item-foot .nx-add{min-height:42px}.nx-local .nx-item-main{min-height:94px}}
