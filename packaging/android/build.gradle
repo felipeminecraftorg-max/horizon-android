@@ -12,6 +12,7 @@ android {
         ]
         minSdk providers.gradleProperty('minSdk').getOrElse('28').toInteger()
         targetSdk 35
+        testInstrumentationRunner 'dev.horizon.android.NexoBootInstrumentation'
         versionCode providers.gradleProperty('devVersionCode').getOrElse('30').toInteger()
         versionName '0.7.8' + (providers.gradleProperty('devVersionCode').isPresent() ? '-dev.' + providers.gradleProperty('devBuild').get() : '')
         ndk { abiFilters providers.gradleProperty('abi').get() }
@@ -24,6 +25,8 @@ android {
             keyPassword 'android'
         }
     }
+    testBuildType 'release'
+    sourceSets.androidTest.java.srcDirs = ['androidTest/java']
     buildTypes {
         debug {
             signingConfig signingConfigs.development

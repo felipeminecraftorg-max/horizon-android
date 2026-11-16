@@ -351,6 +351,19 @@ impl Launcher {
         self.configure_screen();
         horizon_client::ui_theme::set_android_dpi(crate::platform::display_density());
         horizon_client::ui_theme::set_ui_scale_percent(self.catalog.config.ui_scale_percent);
+        if crate::nexo::standalone() {
+            // The launcher is rendered by its own Android window. Do not create
+            // a Vulkan device, game pipelines or a Minecraft atlas before Play.
+            if self.window.is_none() {
+                self.window = Some(Arc::new(events.create_window(
+                    Window::default_attributes().with_title("Horizon Nexo"),
+                )?));
+            }
+            self.nexo.resumed = true;
+            self.sync_nexo();
+            self.publish_domain();
+            return Ok(());
+        }
         crate::display::set_scale(self.catalog.config.render_scale);
         horizon_client::android_runtime::configure_gpu(false);
         if let (Some(renderer), Some(window)) = (&mut self.renderer, &self.window) {
@@ -741,6 +754,7 @@ impl Launcher {
 
 impl ApplicationHandler for Launcher {
     fn resumed(&mut self, events: &ActiveEventLoop) {
+        self.nexo.resumed = true;
         self.configure_screen();
         if let Some(game) = &mut self.game {
             return game.resumed(events);
@@ -751,6 +765,7 @@ impl ApplicationHandler for Launcher {
         }
     }
     fn suspended(&mut self, events: &ActiveEventLoop) {
+        self.nexo.resumed = false;
         crate::diagnostics::heartbeat("suspended", || serde_json::json!({}));
         if let Some(game) = &mut self.game {
             return game.suspended(events);

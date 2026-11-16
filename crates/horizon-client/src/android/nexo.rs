@@ -103,6 +103,12 @@ pub fn show(value: bool) -> bool {
     activity(|env, object| {
         env.call_method(
             object,
+            "horizonNexoBackendReady",
+            "(Z)V",
+            &[JValue::Bool(u8::from(value))],
+        )?;
+        env.call_method(
+            object,
             "horizonNexo",
             "(Z)V",
             &[JValue::Bool(u8::from(value))],

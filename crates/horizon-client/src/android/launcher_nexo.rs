@@ -20,6 +20,7 @@ pub(super) struct Binding {
 }
 pub(super) struct Host {
     pub presented: bool,
+    pub resumed: bool,
     pub dirty: bool,
     pub captured: Instant,
     pub bindings: Vec<Binding>,
@@ -34,6 +35,7 @@ impl Default for Host {
     fn default() -> Self {
         Self {
             presented: false,
+            resumed: false,
             dirty: true,
             captured: Instant::now(),
             bindings: vec![],
@@ -53,7 +55,11 @@ impl Launcher {
     pub(super) fn sync_nexo(&mut self) -> bool {
         let wanted = self.game.is_none()
             && self.control_editor.is_none()
-            && self.renderer.as_ref().is_some_and(|r| !r.suspended)
+            && if crate::nexo::standalone() {
+                self.nexo.resumed && self.window.is_some()
+            } else {
+                self.renderer.as_ref().is_some_and(|r| !r.suspended)
+            }
             && (crate::nexo::standalone()
                 || self.catalog.config.theme.resolve().experience == ExperiencePreset::OldSchool);
         if wanted != self.nexo.presented {
