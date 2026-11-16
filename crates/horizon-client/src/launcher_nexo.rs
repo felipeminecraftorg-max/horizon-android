@@ -206,7 +206,7 @@ pub enum Operation {
 #[serde(tag="action",rename_all="kebab-case",deny_unknown_fields)]
 pub enum LayoutEdit {
     Set {index:usize, #[serde(default)] custom:bool, placement:serde_json::Value},
-    Add {binding:String,label:String}, Remove {index:usize}, Save, Cancel, Reset,
+    Mode {mode:u8}, Add {binding:String,label:String}, Remove {index:usize}, Save, Cancel, Reset,
 }
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -255,6 +255,10 @@ pub fn parse(input: &str) -> Result<Command, String> {
         return Err("Missing request ID".into());
     }
     match &cmd.op {
+        Operation::Layout {edit:LayoutEdit::Mode {mode}} if *mode>2 => return Err("Invalid control mode".into()),
+        Operation::Layout {edit:LayoutEdit::Set {index,placement,..}} if *index>=128 || !placement.is_object() => return Err("Invalid control placement".into()),
+        Operation::Layout {edit:LayoutEdit::Add {binding,label}} if binding.len()>128 || label.chars().count()>48 || binding.contains('\0') || label.contains('\0') => return Err("Invalid custom control".into()),
+        Operation::Layout {edit:LayoutEdit::Remove {index}} if *index>=64 => return Err("Invalid custom control index".into()),
         Operation::Accent {color} if color.len()!=7 || !color.starts_with('#') || !color[1..].bytes().all(|c|c.is_ascii_hexdigit()) => return Err("Invalid accent color".into()),
         Operation::Edit { text, .. } if text.len() > 4096 || text.contains('\0') => {
             return Err("Text is too long".into());
@@ -297,6 +301,18 @@ mod tests {
             ))
             .is_err()
         );
+    }
+    #[test]
+    fn layout_commands_cannot_write_arbitrary_files_or_unbounded_controls() {
+        assert!(parse(r#"{"id":1,"op":"layout","edit":{"action":"save"}}"#).is_ok());
+        assert!(parse(r#"{"id":1,"op":"layout","edit":{"action":"mode","mode":2}}"#).is_ok());
+        for bad in [
+            r#"{"id":1,"op":"layout","edit":{"action":"save","path":"/data/world"}}"#,
+            r#"{"id":1,"op":"layout","edit":{"action":"mode","mode":3}}"#,
+            r#"{"id":1,"op":"layout","edit":{"action":"set","index":128,"placement":{}}}"#,
+            r#"{"id":1,"op":"layout","edit":{"action":"set","index":0,"placement":"script"}}"#,
+            r#"{"id":1,"op":"layout","edit":{"action":"remove","index":64}}"#,
+        ] { assert!(parse(bad).is_err(),"{bad}"); }
     }
     #[test]
     fn modal_capture_excludes_background_values_and_is_scoped() {

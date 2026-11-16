@@ -22,3 +22,15 @@ button{cursor:pointer}button svg{width:22px;height:22px;flex:none}button:disable
 .nx-explore-tools{display:flex;gap:10px;align-items:center;flex:none;min-width:0}.nx-explore-tools>.nx-search-row{flex:1;min-width:0}.nx-explore-tools .nx-sources{max-width:45%}
 @media(max-width:600px){.nx-explore-tools{flex-direction:column;align-items:stretch;gap:2px}.nx-explore-tools .nx-sources{max-width:100%}}
 @media(max-height:500px) and (orientation:landscape){.nx-item-main{min-height:53px;padding:7px 9px}.nx-item-main p{display:none}.nx-item-main>img,.nx-item-art{width:30px;height:30px}.nx-item-foot{min-height:34px}.nx-item-foot .nx-add{min-height:34px}.nx-item small{font-size:9px}.nx-local>.nx-toggle{min-height:34px}.nx-local .nx-item-main{min-height:53px}}
+
+.nx-toolbar select{min-width:0;max-width:35%;font-size:11px;min-height:42px;padding:7px}.nx-editor~button{flex:none}
+
+@media(max-height:500px) and (orientation:landscape){
+ #module-content[data-catalog=explore]{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:40px 42px minmax(0,1fr);gap:4px 8px}
+ #module-content[data-catalog=explore]>.nx-toolbar{grid-column:1;grid-row:1}
+ #module-content[data-catalog=explore]>.nx-pagination{grid-column:2;grid-row:1}
+ #module-content[data-catalog=explore]>.nx-explore-tools{grid-column:1/-1;grid-row:2}
+ #module-content[data-catalog=explore]>.nx-grid{grid-column:1/-1;grid-row:3}
+ #module-content[data-catalog=explore]>.nx-download{grid-column:1/-1;grid-row:4}
+ .nx-item-main{min-height:48px}.nx-item-foot{min-height:31px}.nx-item-foot .nx-add{min-height:31px}
+}
