@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - feature/nexo-oldschool-integration
+      - feature/nexo-oldschool-integration-qa
   workflow_dispatch:
 
 permissions:
@@ -40,6 +41,7 @@ jobs:
           PY
           cargo test --manifest-path .local/nexo-bridge-check/Cargo.toml
       - name: Check responsive real-host views and console gestures
+        if: always()
         run: |
           npm install --prefix /tmp/nexo-browser --no-audit --no-fund playwright@1.56.1
           NEXO_PLAYWRIGHT_MODULE=/tmp/nexo-browser/node_modules/playwright node experiments/nexo-preview/tests/live-browser-check.cjs
@@ -52,6 +54,7 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
   compile-and-package:
+    if: github.ref == 'refs/heads/feature/nexo-oldschool-integration'
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -172,9 +175,23 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: horizon-nexo-native-arm64
-          path: dist/
+          path: |
+            dist/*.apk
+            dist/BUILD.json
+            dist/SHA256SUMS.txt
+            dist/LICENSE.txt
+            dist/THIRD_PARTY_NOTICES.md
           if-no-files-found: error
           retention-days: 14
+      - name: Preserve the isolated compilation cache
+        if: always()
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .local/ci-target
+          key: nexo-native-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}-checked
       - name: Destroy throwaway signing key
         if: always()
         run: rm -f .local/android/debug.keystore

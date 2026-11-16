@@ -2,7 +2,7 @@
 
 (()=>{
 'use strict';
-const root=document.getElementById('nexo-app'),canvas=root.querySelector('canvas'),backButton=root.querySelector('.nexo-back'),status=root.querySelector('.nexo-state'),buttons=[...root.querySelectorAll('[data-card]')],mediaReduced=matchMedia('(prefers-reduced-motion: reduce)'),reduced={get matches(){return mediaReduced.matches||NexoApp.store.get().preferences.reducedMotion;},addEventListener:(...args)=>mediaReduced.addEventListener(...args)};
+const root=document.getElementById('nexo-app'),canvas=root.querySelector('canvas'),backButton=root.querySelector('.nexo-back'),status=root.querySelector('.nexo-state'),buttons=[...root.querySelectorAll('[data-card]')],mediaReduced=matchMedia('(prefers-reduced-motion: reduce)'),reduced={get matches(){return mediaReduced.matches||NexoApp.store.get().preferences.reducedMotion||!!NexoApp.reducedMotion?.();},addEventListener:(...args)=>mediaReduced.addEventListener(...args)};
 const names=['Jogar','Mods','Pacotes','Shaders','Skins'],sub=['Seu próximo mundo','Sua experiência','Camadas e texturas','Luz e atmosfera','Sua identidade'],N=names.length,TAU=Math.PI*2,STEP=TAU/N,W=3.6,H=2.35;
 const gl=canvas.getContext('webgl',{alpha:false,antialias:true,powerPreference:'low-power'});
 if(!gl){root.querySelector('.nexo-error').textContent='O estudo de movimento precisa de WebGL neste visualizador.';root.querySelector('.nexo-error').hidden=false;return;}
@@ -237,7 +237,7 @@ function render(now){const w=canvas.clientWidth,fullH=canvas.clientHeight,style=
  if(isFront){NexoApp.onHomeFace(points.map(p=>[(p[0]+1)*w/2,(1-p[1])*fullH/2]),i,(1-op)*(1-launching)*sceneReveal,blurAmount);NexoApp.onFrame({opening:op,rect:face});}
  const parent=mul(trans(x,y,z),mul(ry(yaw),rx(-.055*Math.sin(Math.PI*op))));
  const iconDepth=.36+pulse*.30+.30*Math.sin(Math.PI*op),iconDistance=eye-z-iconDepth,pixel=2*iconDistance/(h*f),headerX=((face.left+28)/w*2-1)*iconDistance*aspect/f-x,headerY=(1-(face.top+36-top)/h*2)*iconDistance/f+.08-y,headerScale=Math.min(32,face.width*.15)*pixel/.9;
- const iconM=mul(parent,mul(trans(mix(0,headerX,op),mix(.25,headerY,op),iconDepth),mul(ry(-.2+spin+.18*Math.sin(Math.PI*op)),mul(rx(.10),scale(mix(1,headerScale,op))))));const cool=[.62,.76,.80],warm=[.64,.49,.29];gl.uniform1f(U.uTex,0);
+ const iconM=mul(parent,mul(trans(mix(0,headerX,op),mix(.25,headerY,op),iconDepth),mul(ry(-.2+spin+.18*Math.sin(Math.PI*op)),mul(rx(.10),scale(mix(1,headerScale,op))))));const tint=NexoApp.themeColors?.(),cool=tint?.cool||[.62,.76,.80],warm=tint?.warm||[.64,.49,.29];gl.uniform1f(U.uTex,0);
  minecraftIcon(i,iconM,cool,warm,alpha);
  if(i===4){
  const skinFrame=op>.97?NexoApp.skinRect():null;if(skinFrame){const r=skinFrame,dist=eye-z-.48,unit=2*dist/(h*f),size=Math.max(.01,Math.min(r.height*.88,r.width*.8)*unit/1.8),cx=((r.x+r.width/2)/w*2-1)*dist*aspect/f-x,cy=(1-(r.y+r.height/2-top)/h*2)*dist/f+.08-y,figure=mul(parent,mul(trans(cx,cy,.48),mul(ry(NexoApp.store.get().skinTurn),scale(size))));

@@ -89,6 +89,13 @@ class ReleaseAuditTests(unittest.TestCase):
     def test_androidx_build_profiles_are_allowed(self):
         self.assertEqual(self.inspect(extra={'assets/dexopt/baseline.prof': b'compiled profile'})['findings'], [])
 
+    def test_nexo_assets_are_exact_and_still_checked_for_private_data(self):
+        self.assertEqual(self.inspect(extra={'assets/nexo/host.js': b'/* local typed bridge */'})['findings'], [])
+        unknown = self.inspect(extra={'assets/nexo/extra-user-file.txt': b'private state'})
+        self.assertEqual({f['kind'] for f in unknown['findings']}, {'unexpected_asset'})
+        credential = self.inspect(extra={'assets/nexo/host.js': b'ghp_' + b'X' * 36})
+        self.assertEqual({f['kind'] for f in credential['findings']}, {'github_token'})
+
     def test_nested_player_data_and_unexpected_asset_are_rejected(self):
         report = self.inspect({'profiles/account.json': b'{}'}, {'assets/settings.json': b'{}'})
         self.assertEqual({f['kind'] for f in report['findings']}, {'private_file', 'unexpected_asset'})

@@ -19,6 +19,30 @@ BUILD_ASSETS = {'assets/dexopt/baseline.prof', 'assets/dexopt/baseline.profm'}
 LICENSE_ASSETS = {'assets/LICENSE.txt', 'assets/THIRD_PARTY_NOTICES.md'}
 # Lane 3's Java API slice, compiled from Horizon's own sources (tools/android_lane3_sources.txt).
 CODE_ASSETS = {'assets/lane3-api.jar'}
+# Exact original Nexo UI payload; arbitrary extra files remain rejected.
+NEXO_ASSETS = {
+    'assets/nexo/Michroma-Regular.ttf',
+    'assets/nexo/OFL-Michroma.txt',
+    'assets/nexo/app.js',
+    'assets/nexo/audio.js',
+    'assets/nexo/host.js',
+    'assets/nexo/index.html',
+    'assets/nexo/intro.js',
+    'assets/nexo/live-app.js',
+    'assets/nexo/motion.js',
+    'assets/nexo/nexo.css',
+    'assets/nexo/scene.js',
+    'assets/nexo/sounds/NOTICE-Firefly-Audio.txt',
+    'assets/nexo/sounds/firefly-back.ogg',
+    'assets/nexo/sounds/firefly-click.ogg',
+    'assets/nexo/sounds/firefly-confirm.ogg',
+    'assets/nexo/sounds/firefly-error.ogg',
+    'assets/nexo/sounds/firefly-open.ogg',
+    'assets/nexo/sounds/firefly-select.ogg',
+    'assets/nexo/sounds/firefly-toggle.ogg',
+    'assets/nexo/sounds/sources.json',
+    'assets/nexo/state.js',
+}
 LANE3_SOURCES = Path(__file__).resolve().parent / 'android_lane3_sources.txt'
 LANE3_API = 'packaging/android/lane3-api/'
 
@@ -72,7 +96,7 @@ def inspect_payload(path, public=False):
                 raise ValueError('APK exceeds audit decompression limits')
             if any(part.lower() in PRIVATE_PARTS for part in parts) or PurePosixPath(name).suffix.lower() in PRIVATE_SUFFIXES:
                 findings.append({'path': full, 'kind': 'private_file'})
-            if depth == 0 and name.startswith('assets/') and name not in ASSETS | BUILD_ASSETS | LICENSE_ASSETS | CODE_ASSETS:
+            if depth == 0 and name.startswith('assets/') and name not in ASSETS | BUILD_ASSETS | LICENSE_ASSETS | CODE_ASSETS | NEXO_ASSETS:
                 findings.append({'path': full, 'kind': 'unexpected_asset'})
             data = archive.read(entry)
             if depth == 0 and name in CODE_ASSETS:
@@ -131,7 +155,7 @@ def main():
     parser.add_argument('--aapt2', required=True, type=Path)
     parser.add_argument('--report', type=Path)
     parser.add_argument('--public', action='store_true')
-    parser.add_argument('--app-id', choices=['dev.horizon.android', 'dev.horizon.android.dev'], default='dev.horizon.android')
+    parser.add_argument('--app-id', choices=['dev.horizon.android', 'dev.horizon.android.dev', 'dev.horizon.android.nexo'], default='dev.horizon.android')
     args = parser.parse_args()
     report = audit(args.apk, args.aapt2, args.public, args.app_id)
     if args.report:

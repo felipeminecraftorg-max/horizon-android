@@ -1,4 +1,4 @@
-//! Horizon Jade: original console-inspired colour system for the Android Old School preset.
+//! Horizon Jade: native Nexo console colour system for the Android Old School preset.
 //! The values are Horizon design decisions, not historical Xbox 360 colours.
 //! Unlike Liquid Glass this theme uses opaque surfaces and does not depend on refraction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,22 +49,22 @@ impl Palette {
             }
         } else {
             Self {
-                background: 0x141816,
-                gradient_start: 0x203028,
-                gradient_mid: 0x1B2920,
-                gradient_end: 0x101713,
-                surface: 0x1D2420,
-                surface_dim: 0x19211C,
-                surface_high: 0x28302B,
-                selected: 0x244E32,
-                header: 0x1D2420,
-                sidebar: 0x18211B,
-                border: 0x4C5850,
-                focus: 0x87DB96,
-                accent: 0x66C77A,
-                on_accent: 0x0E2516,
-                text: 0xF4F7F3,
-                muted: 0xBBC6BD,
+                background: 0x090F19,
+                gradient_start: 0x122736,
+                gradient_mid: 0x0D1925,
+                gradient_end: 0x090F19,
+                surface: 0x111D28,
+                surface_dim: 0x101A24,
+                surface_high: 0x26343E,
+                selected: 0x28434D,
+                header: 0x111D28,
+                sidebar: 0x0D1722,
+                border: 0x465C66,
+                focus: 0xD7BA92,
+                accent: 0x87B8C2,
+                on_accent: 0x091A21,
+                text: 0xE2EDEF,
+                muted: 0xB2C3C8,
                 success: 0x70D28A,
                 danger: 0xFF8B82,
             }
@@ -110,8 +110,8 @@ mod tests {
     #[test]
     fn jade_is_not_the_liquid_glass_colour_family() {
         let dark = Palette::for_appearance(false);
-        assert_eq!(dark.background, 0x141816);
-        assert_eq!(dark.surface, 0x1D2420);
-        assert_eq!(dark.accent, 0x66C77A);
+        assert_eq!(dark.background, 0x090F19);
+        assert_eq!(dark.surface, 0x111D28);
+        assert_eq!(dark.accent, 0x87B8C2);
     }
 }

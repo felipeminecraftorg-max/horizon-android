@@ -12,6 +12,7 @@ pub struct Frame {
     pub switches: Vec<([f32; 4], bool)>,
     pub ranges: Vec<([f32; 4], f32)>,
     pub images: Vec<Picture>,
+    pub icons: Vec<Glyph>,
 }
 #[derive(Clone, Serialize)]
 pub struct Text {
@@ -33,6 +34,9 @@ pub struct Button {
     pub label: String,
     pub selected: bool,
 }
+#[derive(Clone)]
+pub struct Glyph { pub rect: [f32; 4], pub name: &'static str }
+pub fn icon(rect: [f32;4], name: &'static str) { edit(|f|f.icons.push(Glyph{rect,name})); }
 #[derive(Clone, Serialize)]
 pub struct Picture {
     pub rect: [f32; 4],
@@ -221,7 +225,22 @@ pub fn parse(input: &str) -> Result<Command, String> {
     if input.len() > 16384 {
         return Err("Launcher request is too large".into());
     }
-    let cmd: Command = serde_json::from_str(input).map_err(|_| "Unsupported launcher request")?;
+    let value: serde_json::Value = serde_json::from_str(input).map_err(|_| "Unsupported launcher request")?;
+    let object = value.as_object().ok_or("Expected a launcher request")?;
+    let allowed: &[&str] = match object.get("op").and_then(serde_json::Value::as_str) {
+        Some("ready" | "back" | "play" | "fallback") => &["id", "op"],
+        Some("page") => &["id", "op", "page"],
+        Some("press") => &["id", "op", "control"],
+        Some("edit") => &["id", "op", "control", "text", "finish"],
+        Some("range") => &["id", "op", "control", "value"],
+        Some("rotate") => &["id", "op", "dx", "dy"],
+        Some("preset") => &["id", "op", "preset"],
+        _ => return Err("Unsupported launcher action".into()),
+    };
+    if object.keys().any(|key| !allowed.contains(&key.as_str())) {
+        return Err("Unsupported launcher parameter".into());
+    }
+    let cmd: Command = serde_json::from_value(value).map_err(|_| "Unsupported launcher request")?;
     if cmd.id == 0 {
         return Err("Missing request ID".into());
     }

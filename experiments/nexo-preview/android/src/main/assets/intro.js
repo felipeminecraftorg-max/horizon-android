@@ -11,7 +11,7 @@
  }
  function animate(node,frames,options){const a=node.animate(frames,{fill:'both',...options});animations.push(a);return a;}
  async function start({replay=false}={}){
-  const prefs=window.NexoApp?.store.get().preferences,reduced=matchMedia('(prefers-reduced-motion: reduce)').matches||prefs?.reducedMotion;
+  const prefs=window.NexoApp?.store.get().preferences,reduced=matchMedia('(prefers-reduced-motion: reduce)').matches||prefs?.reducedMotion||!!window.NexoApp?.reducedMotion?.();
   if(reduced||(!replay&&(prefs?.introEnabled===false||window.HorizonNative?.skipIntro?.()))){finish();return;}
   for(const a of animations)a.cancel();animations=[];const token=++generation;active=true;waiting=true;completed=false;pausedAt=0;pausedTotal=0;inModule=!!window.NexoScene?.getState().open;
   document.body.classList.add('intro-active');root.setAttribute('aria-busy','true');root.dataset.intro='playing';if(!dialog.open)dialog.showModal();dialog.setAttribute('tabindex','-1');dialog.focus({preventScroll:true});

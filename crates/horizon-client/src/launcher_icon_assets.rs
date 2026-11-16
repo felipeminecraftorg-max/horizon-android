@@ -1,9 +1,9 @@
-//! Original pre-rendered 96x96 Jade console icon images.
+//! Original voxel-shaped 96x96 Nexo console icon images.
 //! Unlike the old procedural `icon_hit` outlines, these are PNG resources,
 //! decoded once on first use, then uploaded to Horizon's GPU UI texture atlas.
 //! Their alpha is preserved so per-frame materials may light/tint them.
 //!
-//! All source images are authored for Horizon; no Xbox trademark or asset is used.
+//! Rebuild with tools/generate_nexo_icons.py. All meshes are authored for Horizon; no Xbox trademark or asset is used.
 use super::Icon;
 use std::{io::Cursor, sync::OnceLock};
 

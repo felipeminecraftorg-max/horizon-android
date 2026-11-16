@@ -5,6 +5,7 @@ android {
     compileSdk 35
     defaultConfig {
         applicationId providers.gradleProperty('appId').getOrElse('dev.horizon.android')
+        resValue 'string', 'app_name', providers.gradleProperty('appId').getOrElse('').endsWith('.nexo') ? 'Horizon Nexo' : 'Horizon Android'
         minSdk providers.gradleProperty('minSdk').getOrElse('28').toInteger()
         targetSdk 35
         versionCode providers.gradleProperty('devVersionCode').getOrElse('30').toInteger()

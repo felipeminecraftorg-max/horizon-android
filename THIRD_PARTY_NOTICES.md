@@ -107,3 +107,19 @@ Only one batch was generated; the next request reached the free daily quota.
 The seven cues use trims, rate adjustment, one reversal, filtering, fades,
 mono conversion and level matching. Earlier Nexo previews used edited Kenney
 CC0 sounds; those files and their pack notice are replaced in this preview.
+
+## AndroidX WebKit
+
+The Android Old School view uses `androidx.webkit:webkit:1.14.0` and its AndroidX
+support dependencies, Copyright The Android Open Source Project, under
+[Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0). The same full
+license text is included at `third_party/winit/LICENSE`. The view serves only
+Horizon's original packaged UI through `WebViewAssetLoader`.
+
+## Nexo fonts and interface audio
+
+The packaged Nexo display font is Michroma, under the SIL Open Font License 1.1;
+its copyright and complete license are packaged in `assets/nexo/OFL-Michroma.txt`.
+The existing Nexo audio provenance and notice are packaged alongside the original
+Firefly-derived interface cues. Minecraft-shaped icons use Horizon's own meshes;
+no Minecraft textures or console manufacturers' sound samples are included.

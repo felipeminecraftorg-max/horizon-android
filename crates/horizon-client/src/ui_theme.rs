@@ -1280,6 +1280,22 @@ impl<'a> Ui<'a> {
         if color >> 24 == 0 || size <= 0.0 {
             return;
         }
+        if crate::launcher_nexo::active() {
+            let name = match icon {
+                Icon::ConsolePlay | Icon::Play => "play",
+                Icon::ConsoleMods | Icon::Mods => "mods",
+                Icon::ConsolePacks | Icon::Packs => "packs",
+                Icon::ConsoleShaders | Icon::Shaders => "shaders",
+                Icon::ConsoleSkins | Icon::Person => "account",
+                Icon::ConsoleFiles | Icon::Installed | Icon::Folder => "files",
+                Icon::ConsoleSettings | Icon::Settings | Icon::Gear => "settings",
+                Icon::Search => "search", Icon::ArrowLeft => "back",
+                Icon::Close => "close", Icon::Plus => "plus", Icon::Check => "check",
+                Icon::Trash => "trash", _ => "",
+            };
+            if !name.is_empty() { crate::launcher_nexo::icon([x,y,size,size],name); }
+            return;
+        }
         let (x0, y0) = (self.px_x(x), self.px_y(y));
         let px = (size * self.density).round().clamp(8.0, 128.0) as u16;
         let atlas = self.atlas;
@@ -2533,7 +2549,7 @@ impl ThemePreset {
             Self::Custom => "Personalized colors & gradients",
             Self::LiquidGlass => "Optical lenses and calm modern navigation",
             Self::DarkAero => "Black glass and polished silver",
-            Self::OldSchool => "Horizon Jade: layered console navigation, graphite and quiet green",
+            Self::OldSchool => "Nexo: abas 3D, metal escuro e luz complementar",
         }
     }
 
@@ -2547,7 +2563,7 @@ impl ThemePreset {
                 0x050607, 0x191B1F, 0xE2E5EC, 0x17191D, 0x090A0D, 0x030405, false,
             ),
             Self::OldSchool => (
-                0x141816, 0x1D2420, 0x66C77A, 0x203028, 0x1B2920, 0x101713, false,
+                0x090F19, 0x111D28, 0x87B8C2, 0x122736, 0x0D1925, 0x090F19, false,
             ),
             Self::ObsidianViolet | Self::Custom => (
                 0x13111C, 0x1D192B, 0x9A7BFF, 0x161129, 0x1E1638, 0x0E0C16, false,
