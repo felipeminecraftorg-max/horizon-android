@@ -147,7 +147,7 @@ function prism(points,depth){
  }
  return mesh(data);
 }
-const rim=rounded(W+.045,H+.045,.15,.25,.035),panel=rounded(W,H,.16,.24,.035),block=rounded(.53,.53,.34,.10,.03),plate=rounded(.88,.63,.10,.12,.025),head=rounded(.40,.43,.35,.11,.03),shoulders=rounded(.83,.28,.34,.12,.03),triangle=prism([[-.34,-.44],[.48,0],[-.34,.44]],.24),diamond=prism([[0,.50],[-.37,0],[0,-.50],[.37,0]],.28);
+const rim=rounded(W+.045,H+.045,.15,.075,.018),panel=rounded(W,H,.16,.065,.018),block=rounded(.53,.53,.34,.10,.03),plate=rounded(.88,.63,.10,.12,.025),head=rounded(.40,.43,.35,.11,.03),shoulders=rounded(.83,.28,.34,.12,.03),triangle=prism([[-.34,-.44],[.48,0],[-.34,.44]],.24),diamond=prism([[0,.50],[-.37,0],[0,-.50],[.37,0]],.28);
 // Original voxel silhouettes, with the existing real-time console materials.
 const voxelMesh=rounded(1,1,1,.018,.012),crystalMesh=prism([[0,.62],[-.22,.25],[-.16,-.38],[.16,-.38],[.22,.25]],.25);
 function voxel(parent,x,y,z,w,h,d,color,alpha,metal=.7){object(voxelMesh,mul(parent,mul(trans(x,y,z),scale(w,h,d))),color,alpha,metal);}
@@ -176,7 +176,7 @@ function updateUI(){const ix=mod(Math.round(target),N),busy=!!openTarget||!!laun
 function ambientEnabled(){return NexoApp.store.get().preferences.ambientMotion&&!reduced.matches;}
 function wake(){if(!visible)return;if(idleTimer){clearTimeout(idleTimer);idleTimer=0;}if(!raf)raf=requestAnimationFrame(frame);}
 function choose(index){if(openTarget||launchTarget||opening>.001)return;const current=mod(Math.round(target),N);let d=mod(index-current+N/2,N)-N/2;target=Math.round(target)+d;pulsePending=true;pulseStart=-10000;settled=false;updateUI();wake();}
-function activate(index){if(openTarget||launchTarget||opening>.001)return;const current=mod(Math.round(target),N);if(index!==current||Math.abs(position-target)>.10){choose(index);return;}pulseStart=-10000;pulsePending=false;if(index===0){NexoApp.play();return;}openTarget=1;NexoApp.sound('open');updateUI();wake();}
+function activate(index){if(root.classList.contains('nx-compatible'))return;if(NexoApp.beforeOpen?.()===false)return;if(openTarget||launchTarget||opening>.001)return;const current=mod(Math.round(target),N);if(index!==current||Math.abs(position-target)>.10){choose(index);return;}pulseStart=-10000;pulsePending=false;if(index===0){NexoApp.play();return;}openTarget=1;NexoApp.sound('open');updateUI();wake();}
 function closeSection(force=false){if(!openTarget||launchTarget)return;if(force!==true&&NexoApp.beforeClose?.()===false)return;NexoApp.sound('back');openTarget=0;launchTarget=0;forcePaint=true;updateUI();buttons[mod(Math.round(target),N)].focus({preventScroll:true});wake();}
 function drawMesh(m,model,color,alpha,tex=0,metal=.1,surface=0){if(collecting){const key=drawInfo.page+':'+drawInfo.counter++ +':'+m.id;drawQueue.push({m,model,color,alpha,tex,metal,surface,...drawInfo,key});return;}gl.uniform1f(U.uSurface,surface);gl.uniformMatrix4fv(U.uModel,false,model);gl.uniformMatrix3fv(U.uNormal,false,normal(model));gl.uniform3fv(U.uColor,color);gl.uniform1f(U.uAlpha,alpha);gl.uniform1f(U.uTex,tex);gl.uniform1f(U.uMetal,metal);gl.bindBuffer(gl.ARRAY_BUFFER,m.buffer);gl.enableVertexAttribArray(A.p);gl.vertexAttribPointer(A.p,3,gl.FLOAT,false,32,0);gl.enableVertexAttribArray(A.n);gl.vertexAttribPointer(A.n,3,gl.FLOAT,false,32,12);gl.enableVertexAttribArray(A.uv);gl.vertexAttribPointer(A.uv,2,gl.FLOAT,false,32,24);gl.drawArrays(gl.TRIANGLES,0,m.count);}
 function object(m,model,color,alpha=1,metal=.1){drawMesh(m.body,model,color,alpha,0,metal);drawMesh(m.front,model,color,alpha,0,metal);}
@@ -228,6 +228,12 @@ function paintScene(commands,selected,viewport,width,height){
  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(...viewport);gl.useProgram(p);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.uniformMatrix4fv(U.uMirror,false,I());gl.uniform1f(U.uReflectPass,0);gl.uniform3f(U.uEye,0,.08,eye);gl.uniform3fv(U.uCool,atmosphere.cool);gl.uniform3fv(U.uWarm,atmosphere.warm);gl.uniform1f(U.uMaterial,NexoApp.material?.()==='polished'?-.09:NexoApp.material?.()==='soft'?.25:0);
  for(const c of commands)issue(c,ready&&c.page===selected&&c.surface>.5?.3:0);
 }
+function inspectLayout(){
+ const selected=mod(Math.round(target),N),c=canvas.getBoundingClientRect(),rect=NexoApp.headerIconBox?.(),style=getComputedStyle(root),safeTop=parseFloat(style.getPropertyValue('--safe-top'))||0,safeBottom=parseFloat(style.getPropertyValue('--safe-bottom'))||0;
+ const homeTop=Math.max(0,root.querySelector('.app-header').getBoundingClientRect().bottom-c.top+8),homeBottom=root.querySelector('.app-footer').getBoundingClientRect().top-c.top-8,expanded=1-Math.pow(1-opening,2),top=mix(homeTop,safeTop+8,expanded),bottom=mix(homeBottom,c.height-safeBottom-8,expanded),h=Math.max(100,bottom-top),points=[];
+ for(const item of drawQueue)if(item.page===selected&&item.headerIcon)for(const x of[item.m.bounds[0],item.m.bounds[3]])for(const y of[item.m.bounds[1],item.m.bounds[4]])for(const z of[item.m.bounds[2],item.m.bounds[5]]){const p=project(item.model,x,y,z);points.push([(p[0]+1)*c.width/2,top+(1-p[1])*h/2]);}
+ const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);return {slot:rect,icon:points.length?{left:Math.min(...xs),top:Math.min(...ys),right:Math.max(...xs),bottom:Math.max(...ys)}:null};
+}
 function inspectLighting(){
  const counts={...lightingStats};for(const [name,t] of [['shadow',shadowTarget],['reflection',reflectionTarget]]){if(!t?.ready){counts[name+'Pixels']=0;continue;}gl.bindFramebuffer(gl.FRAMEBUFFER,t.buffer);const pixels=new Uint8Array(t.width*t.height*4);gl.readPixels(0,0,t.width,t.height,gl.RGBA,gl.UNSIGNED_BYTE,pixels);let count=0;for(let i=0;i<pixels.length;i+=4)if(name==='shadow'?pixels[i]<250:pixels[i+3]>0)count++;counts[name+'Pixels']=count;}gl.bindFramebuffer(gl.FRAMEBUFFER,null);counts.glError=gl.getError();return counts;
 }
@@ -243,9 +249,10 @@ function render(now){const w=canvas.clientWidth,fullH=canvas.clientHeight,style=
  NexoApp.onTabFace(points.map(p=>[(p[0]+1)*w/2,(1-p[1])*fullH/2]),i);
  if(isFront){NexoApp.onHomeFace(points.map(p=>[(p[0]+1)*w/2,(1-p[1])*fullH/2]),i,(1-op)*(1-launching)*sceneReveal,blurAmount);NexoApp.onFrame({opening:op,rect:face});}
  const parent=mul(trans(x,y,z),mul(ry(yaw),rx(-.055*Math.sin(Math.PI*op))));
- const iconDepth=.36+pulse*.30+.30*Math.sin(Math.PI*op),iconDistance=eye-z-iconDepth,pixel=2*iconDistance/(h*f),headerX=((face.left+28)/w*2-1)*iconDistance*aspect/f-x,headerY=(1-(face.top+36-top)/h*2)*iconDistance/f+.08-y,headerScale=Math.min(32,face.width*.15)*pixel/.9;
- const iconM=mul(parent,mul(trans(mix(0,headerX,op),mix(.25,headerY,op),iconDepth),mul(ry(-.2+spin+.18*Math.sin(Math.PI*op)),mul(rx(.10),scale(mix(1,headerScale,op))))));const tint=NexoApp.themeColors?.(),cool=tint?.cool||[.62,.76,.80],warm=tint?.warm||[.64,.49,.29];gl.uniform1f(U.uTex,0);
+ const iconDepth=.36+pulse*.30+.30*Math.sin(Math.PI*op),iconDistance=eye-z-iconDepth,pixel=2*iconDistance/(h*f),anchor=isFront&&op>.01?NexoApp.headerIconBox?.():null,anchorX=anchor?.width?anchor.left+anchor.width/2:face.left+32,anchorY=anchor?.height?anchor.top+anchor.height/2:face.top+36,headerX=(anchorX/w*2-1)*iconDistance*aspect/f-x,headerY=(1-(anchorY-top)/h*2)*iconDistance/f+.08-y,headerScale=Math.min(anchor?.width||32,32)*pixel/1.28;
+ const iconM=mul(parent,mul(trans(mix(0,headerX,op),mix(.25,headerY,op),iconDepth),mul(ry(-.2+spin+.18*Math.sin(Math.PI*op)),mul(rx(.10),scale(mix(1,headerScale,op))))));const tint=NexoApp.themeColors?.(),cool=tint?.cool||[.62,.76,.80],warm=tint?.warm||[.64,.49,.29];gl.uniform1f(U.uTex,0);drawInfo.headerIcon=isFront&&op>.97;
  const context=isFront?NexoApp.contextIcon?.():null,contextBlend=context?clamp((op-.35)/.45,0,1):0;if(contextBlend<.999)minecraftIcon(i,iconM,cool,warm,alpha*(1-contextBlend));if(contextBlend>0)utilityIcon(context,iconM,cool,warm,alpha*contextBlend);
+ drawInfo.headerIcon=false;
  if(i===4){
  const skinFrame=op>.97?NexoApp.skinRect():null;if(skinFrame){const r=skinFrame,dist=eye-z-.48,unit=2*dist/(h*f),size=Math.max(.01,Math.min(r.height*.88,r.width*.8)*unit/1.8),cx=((r.x+r.width/2)/w*2-1)*dist*aspect/f-x,cy=(1-(r.y+r.height/2-top)/h*2)*dist/f+.08-y,figure=mul(parent,mul(trans(cx,cy,.48),mul(ry(NexoApp.store.get().skinTurn),scale(size))));
  object(head,mul(figure,trans(0,.57,0)),[.73,.61,.45],1,.05);object(torso,mul(figure,trans(0,-.01,0)),cool,1,.12);
@@ -274,14 +281,14 @@ function release(e,cancelled=false){if(outsidePress?.id===e.pointerId){const d=o
 root.addEventListener('click',e=>{if(tapGuard&&e.detail>0&&performance.now()-tapGuard.at<250&&Math.hypot(e.clientX-tapGuard.x,e.clientY-tapGuard.y)<8){tapGuard=null;e.preventDefault();e.stopImmediatePropagation();}},{capture:true});
 canvas.addEventListener('pointerup',e=>release(e));canvas.addEventListener('pointercancel',e=>release(e,true));canvas.addEventListener('lostpointercapture',e=>{if(drag||outsidePress)release(e,true);});
 buttons.forEach((b,i)=>b.addEventListener('click',()=>activate(i)));
-backButton.addEventListener('click',closeSection);
+if(!NexoApp.productOnly)backButton.addEventListener('click',closeSection);
 
-new ResizeObserver(()=>{forcePaint=true;wake();}).observe(canvas);reduced.addEventListener('change',()=>{forcePaint=true;wake();});canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();root.querySelector('.nexo-error').hidden=false;root.querySelector('.nexo-error').textContent='A visualização 3D foi interrompida.';if(raf)cancelAnimationFrame(raf);clearTimeout(idleTimer);idleTimer=0;raf=0;});
+new ResizeObserver(()=>{forcePaint=true;wake();}).observe(canvas);reduced.addEventListener('change',()=>{forcePaint=true;wake();});canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();root.querySelector('.nexo-error').hidden=false;root.querySelector('.nexo-error').textContent='A visualização 3D foi interrompida.';if(raf)cancelAnimationFrame(raf);clearTimeout(idleTimer);idleTimer=0;raf=0;NexoApp.sceneFailed?.();});
 window.NexoScene={select:choose,activate,close:closeSection,openView(){openTarget=1;updateUI();forcePaint=true;wake();},updateLabels(all=false){for(let i=0;i<(all?N:1);i++){gl.deleteTexture(posters[i]);posters[i]=texture(i,false);}updateUI();forcePaint=true;wake();},
  getState:()=>({selected:mod(Math.round(target),N),position,target,velocity,open:!!openTarget,opening,launching:!!launchTarget,dragging:!!drag?.moved,visible,ready:true,ambientTime,renderCount,ambientActive:visible&&ambientEnabled(),blur:blurAmount,motion:motion.getState(),lighting:lightingStats,faces:hitFaces.map(p=>({index:p.i,points:p.points,z:p.z}))}),
  resetMotionHistory(){motion.reset();},refresh(){forcePaint=true;wake();},setLaunching(value){launchTarget=value?1:0;updateUI();wake();},
  setVisible(value){visible=!!value;if(!visible){motion.reset();if(raf)cancelAnimationFrame(raf);raf=0;clearTimeout(idleTimer);idleTimer=0;}if(visible){last=0;forcePaint=true;wake();}},
- inspectLighting,inspectMotion:motion.inspect,sources:{vertex:vs,fragment:fs,backgroundVertex:bgvs,backgroundFragment:bgfs,shadowVertex:shadowVS,shadowFragment:shadowFS}};
+ inspectLayout,inspectLighting,inspectMotion:motion.inspect,sources:{vertex:vs,fragment:fs,backgroundVertex:bgvs,backgroundFragment:bgfs,shadowVertex:shadowVS,shadowFragment:shadowFS}};
 canvas.addEventListener('webglcontextrestored',()=>location.reload());
 document.fonts.load('86px Michroma').then(()=>{for(let i=0;i<N;i++){gl.deleteTexture(posters[i]);posters[i]=texture(i,false);}forcePaint=true;wake();});
 updateUI();NexoApp.ready();NexoIntro.start();wake();

@@ -47,6 +47,7 @@ jobs:
         run: |
           npm install --prefix /tmp/nexo-browser --no-audit --no-fund playwright@1.56.1
           NEXO_PLAYWRIGHT_MODULE=/tmp/nexo-browser/node_modules/playwright node experiments/nexo-preview/tests/standalone-browser-check.cjs
+          NEXO_PLAYWRIGHT_MODULE=/tmp/nexo-browser/node_modules/playwright node experiments/nexo-preview/tests/standalone-audit.cjs
       - name: Upload actual interface captures and test results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

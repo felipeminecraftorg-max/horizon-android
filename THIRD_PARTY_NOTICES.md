@@ -123,3 +123,7 @@ its copyright and complete license are packaged in `assets/nexo/OFL-Michroma.txt
 The existing Nexo audio provenance and notice are packaged alongside the original
 Firefly-derived interface cues. Minecraft-shaped icons use Horizon's own meshes;
 no Minecraft textures or console manufacturers' sound samples are included.
+
+## Nexo Read interface font
+
+Derived Latin subset of Rajdhani Medium by Indian Type Foundry (2014), under the SIL Open Font License 1.1. Source: `google/fonts/ofl/rajdhani/Rajdhani-Medium.ttf`, Git blob `a6960c6d7f50f57de0bb117158626f3c31edad9a`. The subset is renamed Nexo Read; no external source code is used. The full original font notice and license are in `experiments/nexo-preview/android/src/main/assets/OFL-NexoRead.txt`.
