@@ -21,6 +21,18 @@ LICENSE_ASSETS = {'assets/LICENSE.txt', 'assets/THIRD_PARTY_NOTICES.md'}
 CODE_ASSETS = {'assets/lane3-api.jar'}
 # Exact original Nexo UI payload; arbitrary extra files remain rejected.
 NEXO_ASSETS = {
+    'assets/nexo/nexo.html',
+    'assets/nexo/nexo-core.css',
+    'assets/nexo/nexo-shell.css',
+    'assets/nexo/nexo-shell.js',
+    'assets/nexo/icons/play.png',
+    'assets/nexo/icons/mods.png',
+    'assets/nexo/icons/packs.png',
+    'assets/nexo/icons/shaders.png',
+    'assets/nexo/icons/skins.png',
+    'assets/nexo/icons/account.png',
+    'assets/nexo/icons/files.png',
+    'assets/nexo/icons/settings.png',
     'assets/nexo/Michroma-Regular.ttf',
     'assets/nexo/OFL-Michroma.txt',
     'assets/nexo/app.js',

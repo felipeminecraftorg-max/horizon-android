@@ -24,7 +24,8 @@ void main(){vec4 p=uModel*vec4(aP,1.);vP=p.xyz;vN=normalize(uNormal*aN);vUV=aUV;
 // lobe, microtexture, actual scene shadow map and planar reflected geometry.
 const fs=`precision highp float;
 varying vec3 vN,vP;varying vec2 vUV;varying vec4 vShadow,vView;
-uniform vec3 uColor,uEye;
+uniform vec3 uColor,uEye,uCool,uWarm;
+uniform float uMaterial;
 uniform float uAlpha,uTex,uBlend,uMetal,uWarmth,uTime,uSurface;
 uniform sampler2D uPoster,uModule,uGrain,uShadowMap,uReflection;
 uniform vec2 uShadowTexel,uReflectionTexel;
@@ -46,8 +47,8 @@ vec3 environment(vec3 r,float rough){
   float strip=exp(-pow((r.y-.07-bend)/(.045+rough*.22),2.));
   float high=exp(-pow((r.y-.79)/(.09+rough*.12),2.));
   float warm=exp(-pow((r.x-.64)/(.16+rough*.2),2.))*exp(-pow((r.y+.12)/.7,2.));
-  return vec3(.055,.085,.12)+vec3(.49,.69,.78)*strip+vec3(.44,.50,.54)*high
-    +vec3(.48,.24,.075)*warm*(.18+uWarmth*.95);
+  return mix(vec3(.055,.085,.12),uCool*.14,.65)+uCool*.95*strip+vec3(.44,.50,.54)*high
+    +uWarm*.68*warm*(.18+uWarmth*.95);
 }
 void main(){
   if(uReflectPass>.5&&dot(vec4(vP,1.),uClipPlane)<.005)discard;
@@ -56,7 +57,7 @@ void main(){
   vec3 v=normalize(uEye-vP),l=normalize(vec3(-.7,.9,1.6)),h=normalize(l+v);
   float nv=max(dot(n,v),0.),ndl=max(dot(n,l),0.);
   float visibility=visibleLight(n,l);
-  float rough=mix(.28,.13,uMetal)+(micro.b-.5)*.035;
+  float rough=clamp(mix(.28,.13,uMetal)+(micro.b-.5)*.035+uMaterial,.045,.75);
   vec3 base=uColor*(.98+micro.b*.04);
   // A shallow convex polish makes the broad front face catch the same room
   // reflection as its bevel, without changing the approved card geometry.
@@ -64,7 +65,7 @@ void main(){
   vec3 reflection=environment(reflect(-v,coatN),rough);
   float f=pow(1.-nv,5.);
   vec3 f0=mix(vec3(.055),base*.76,uMetal),fresnel=f0+(1.-f0)*f;
-  float spec=pow(max(dot(n,h),0.),mix(48.,130.,uMetal));
+  float spec=pow(max(dot(n,h),0.),mix(150.,24.,rough));
   vec3 color=base*(.34+.64*ndl*visibility)*(1.-uMetal*.47)+reflection*fresnel*(.72+uMetal*.65);
   color+=vec3(.68,.84,.91)*spec*(.12+.30*uMetal)*visibility;
   color+=environment(reflect(-v,coatN),.07)*(.025+.23*f)*(1.-uMetal*.5);
@@ -92,14 +93,14 @@ void main(){
   gl_FragColor=vec4(color,uAlpha);
 }`;
 let p;try{p=program(vs,fs);}catch(e){root.querySelector('.nexo-error').textContent='Não foi possível iniciar o estudo de movimento.';root.querySelector('.nexo-error').hidden=false;return;}
-const U={};for(const n of ['uModel','uVP','uMirror','uLightVP','uNormal','uColor','uEye','uAlpha','uTex','uBlend','uMetal','uWarmth','uTime','uSurface','uPoster','uModule','uGrain','uShadowMap','uReflection','uShadowTexel','uReflectionTexel','uLighting','uReflectPass','uReflectGain','uClipPlane'])U[n]=gl.getUniformLocation(p,n);
+const U={};for(const n of ['uModel','uVP','uMirror','uLightVP','uNormal','uColor','uEye','uAlpha','uTex','uBlend','uMetal','uWarmth','uTime','uSurface','uPoster','uModule','uGrain','uShadowMap','uReflection','uShadowTexel','uReflectionTexel','uLighting','uReflectPass','uReflectGain','uClipPlane','uCool','uWarm','uMaterial'])U[n]=gl.getUniformLocation(p,n);
 const A={p:gl.getAttribLocation(p,'aP'),n:gl.getAttribLocation(p,'aN'),uv:gl.getAttribLocation(p,'aUV')};
 const bgvs='attribute vec2 aP;varying vec2 vUV;void main(){vUV=(aP+1.)*.5;gl_Position=vec4(aP,.999,1.);}',bgfs=`precision mediump float;
-varying vec2 vUV;uniform float uOpen,uTime,uAspect,uWarmth;
+varying vec2 vUV;uniform float uOpen,uTime,uAspect,uWarmth;uniform vec3 uColdTint,uWarmTint,uBase;
 void main(){
   vec2 uv=vUV,p=(uv-vec2(.44,.46))*vec2(min(uAspect,1.6),.8);
   float haze=exp(-dot(p,p)*5.);
-  vec3 c=vec3(.035,.059,.098)+vec3(.026,.047,.063)*haze;
+  vec3 c=uBase+uColdTint*.06*haze;
   float drift=uTime*.16;
   for(int k=0;k<3;k++){
     float layer=float(k),phase=layer*.59;
@@ -109,18 +110,18 @@ void main(){
     float veil=exp(-pow((d-.014)/(.032+layer*.018),2.));
     float lip=exp(-pow(d/(.0035+layer*.001),2.));
     float fold=exp(-pow((d+.009)/.014,2.));
-    vec3 cold=vec3(.15,.37,.42),warm=vec3(.39,.21,.085);
+    vec3 cold=uColdTint*.52,warm=uWarmTint*.42;
     vec3 tint=mix(cold,warm,smoothstep(.48,.98,uv.x)*uWarmth*.8);
     float fade=(.55+.45*sin(uv.x*2.7+phase))*(1.-layer*.19);
     c+=tint*(veil*.29+lip*.44+fold*.09)*fade*(1.-uOpen*.45);
   }
   float glow=exp(-dot((uv-vec2(.81,.66))*vec2(1.5,2.),(uv-vec2(.81,.66))*vec2(1.5,2.))*5.);
-  c+=vec3(.05,.027,.009)*glow*uWarmth;
+  c+=uWarmTint*.055*glow*uWarmth;
   c*=.80+.20*smoothstep(0.,.16,uv.y)*(1.-smoothstep(.80,1.,uv.y));
   gl_FragColor=vec4(c,1.);
 }`;
 const bgp=program(bgvs,bgfs);
-const bgb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,bgb);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);const bgA=gl.getAttribLocation(bgp,'aP'),bgU={};for(const n of ['uOpen','uTime','uAspect','uWarmth'])bgU[n]=gl.getUniformLocation(bgp,n);
+const bgb=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,bgb);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);const bgA=gl.getAttribLocation(bgp,'aP'),bgU={};for(const n of ['uOpen','uTime','uAspect','uWarmth','uColdTint','uWarmTint','uBase'])bgU[n]=gl.getUniformLocation(bgp,n);
 const grain=gl.createTexture(),grainData=new Uint8Array(128*128*4);let grainSeed=198;
 for(let i=0;i<grainData.length;i+=4){grainSeed=(Math.imul(grainSeed,1664525)+1013904223)>>>0;grainData[i]=grainSeed>>>24;grainData[i+1]=(grainSeed>>>16)&255;grainData[i+2]=112+((grainSeed>>>8)&31);grainData[i+3]=255;}
 gl.bindTexture(gl.TEXTURE_2D,grain);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,128,128,0,gl.RGBA,gl.UNSIGNED_BYTE,grainData);gl.generateMipmap(gl.TEXTURE_2D);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
@@ -159,7 +160,7 @@ function minecraftIcon(i,m,cool,warm,alpha){
  if(i===4){voxel(m,0,.18,0,.64,.64,.57,cool,alpha,.8);voxel(m,0,-.35,-.01,.9,.28,.43,warm,alpha,.65);voxel(m,0,.43,.30,.64,.14,.035,edge,alpha,.6);for(const x of[-.16,.16]){voxel(m,x,.18,.302,.11,.09,.025,dark,alpha,.7);voxel(m,x-.02,.19,.322,.035,.04,.012,light,alpha,.8);}voxel(m,0,-.02,.304,.18,.055,.03,edge,alpha,.6);}
 }
 function texture(i,internal){const c=document.createElement('canvas');c.width=1024;c.height=668;const x=c.getContext('2d');x.clearRect(0,0,c.width,c.height);
- if(!internal){x.fillStyle='#9ebbd4';x.font='500 30px system-ui';x.fillText(String(i+1).padStart(2,'0')+' / HORIZON',65,85);x.fillStyle='#e3ebf2';const textScale=NexoApp.store.get().preferences.textScale;x.font='400 '+(86*textScale)+'px Michroma, system-ui';x.fillText(names[i],65,462+86*textScale*.86);x.font='400 '+(35*textScale)+'px system-ui';x.fillStyle='#b7cbdc';const p=NexoApp.profile();x.fillText(i===0?p.name+' · '+p.version:sub[i],65,564+(textScale-1)*80+35*textScale*.82);}
+ if(!internal){x.fillStyle='#9ebbd4';x.font='500 30px system-ui';x.fillText(String(i+1).padStart(2,'0')+(NexoApp.productOnly?' / NEXO':' / HORIZON'),65,85);x.fillStyle='#e3ebf2';const textScale=NexoApp.store.get().preferences.textScale;x.font='400 '+(86*textScale)+'px Michroma, system-ui';x.fillText(names[i],65,462+86*textScale*.86);x.font='400 '+(35*textScale)+'px system-ui';x.fillStyle='#b7cbdc';const p=NexoApp.profile();x.fillText(i===0?p.name+' · '+p.version:sub[i],65,564+(textScale-1)*80+35*textScale*.82);}
  const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);return t;}
 const torso=rounded(.56,.72,.30,.08,.025),limb=rounded(.18,.68,.24,.07,.025),leg=rounded(.23,.58,.25,.06,.02);
 const posters=names.map((_,i)=>texture(i,false)),internals=names.map((_,i)=>texture(i,true));
@@ -218,14 +219,14 @@ function paintScene(commands,selected,viewport,width,height){
  if(ready){
   gl.activeTexture(gl.TEXTURE4);gl.bindTexture(gl.TEXTURE_2D,reflectionTarget.texture);gl.uniform2f(U.uReflectionTexel,1/reflectionTarget.width,1/reflectionTarget.height);lightingStats.enabled=true;
  }
- gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(...viewport);gl.useProgram(p);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.uniformMatrix4fv(U.uMirror,false,I());gl.uniform1f(U.uReflectPass,0);gl.uniform3f(U.uEye,0,.08,eye);
+ gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(...viewport);gl.useProgram(p);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.uniformMatrix4fv(U.uMirror,false,I());gl.uniform1f(U.uReflectPass,0);gl.uniform3f(U.uEye,0,.08,eye);gl.uniform3fv(U.uCool,atmosphere.cool);gl.uniform3fv(U.uWarm,atmosphere.warm);gl.uniform1f(U.uMaterial,NexoApp.material?.()==='polished'?-.09:NexoApp.material?.()==='soft'?.25:0);
  for(const c of commands)issue(c,ready&&c.page===selected&&c.surface>.5?.3:0);
 }
 function inspectLighting(){
  const counts={...lightingStats};for(const [name,t] of [['shadow',shadowTarget],['reflection',reflectionTarget]]){if(!t?.ready){counts[name+'Pixels']=0;continue;}gl.bindFramebuffer(gl.FRAMEBUFFER,t.buffer);const pixels=new Uint8Array(t.width*t.height*4);gl.readPixels(0,0,t.width,t.height,gl.RGBA,gl.UNSIGNED_BYTE,pixels);let count=0;for(let i=0;i<pixels.length;i+=4)if(name==='shadow'?pixels[i]<250:pixels[i+3]>0)count++;counts[name+'Pixels']=count;}gl.bindFramebuffer(gl.FRAMEBUFFER,null);counts.glError=gl.getError();return counts;
 }
 const motion=NexoMotion.create(gl,program,mul);
-function render(now){const w=canvas.clientWidth,fullH=canvas.clientHeight,style=getComputedStyle(root),safeTop=parseFloat(style.getPropertyValue('--safe-top'))||0,safeBottom=parseFloat(style.getPropertyValue('--safe-bottom'))||0,safeLeft=parseFloat(style.getPropertyValue('--safe-left'))||0,safeRight=parseFloat(style.getPropertyValue('--safe-right'))||0,homeTop=Math.max(0,root.querySelector('.app-header').getBoundingClientRect().bottom-canvas.getBoundingClientRect().top+8),homeBottom=root.querySelector('.app-footer').getBoundingClientRect().top-canvas.getBoundingClientRect().top-8,expanded=1-Math.pow(1-opening,2),top=mix(homeTop,safeTop+8,expanded),bottom=mix(homeBottom,fullH-safeBottom-8,expanded),h=Math.max(100,bottom-top),intro=NexoIntro.getState(now),sceneReveal=intro.sceneReveal,ratio=Math.min(devicePixelRatio||1,1.6)*NexoApp.store.get().preferences.renderScale;if(canvas.width!==Math.round(w*ratio)||canvas.height!==Math.round(fullH*ratio)){canvas.width=Math.round(w*ratio);canvas.height=Math.round(fullH*ratio);}const aspect=w/h,f=1/Math.tan(42*Math.PI/360);eye=2+Math.max(W*f/(2*aspect*.60),H*f/(2*.74));vp=perspective(aspect,eye);gl.viewport(0,0,canvas.width,canvas.height);gl.disable(gl.DEPTH_TEST);gl.disable(gl.BLEND);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(bgp);gl.bindBuffer(gl.ARRAY_BUFFER,bgb);gl.enableVertexAttribArray(bgA);gl.vertexAttribPointer(bgA,2,gl.FLOAT,false,8,0);gl.uniform1f(bgU.uOpen,opening);gl.uniform1f(bgU.uTime,ambientTime);gl.uniform1f(bgU.uAspect,w/fullH);gl.uniform1f(bgU.uWarmth,NexoApp.store.get().preferences.warmth);gl.drawArrays(gl.TRIANGLES,0,3);gl.viewport(0,Math.round((fullH-top-h)*ratio),canvas.width,Math.round(h*ratio));gl.useProgram(p);gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.uniformMatrix4fv(U.uVP,false,vp);gl.uniform3f(U.uEye,0,.08,eye);gl.uniform1i(U.uPoster,0);gl.uniform1i(U.uModule,1);gl.uniform1i(U.uGrain,2);gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,grain);gl.uniform1f(U.uTime,ambientTime);renderCount++;gl.uniform1f(U.uWarmth,NexoApp.store.get().preferences.warmth);hitFaces=[];
+function render(now){const w=canvas.clientWidth,fullH=canvas.clientHeight,style=getComputedStyle(root),safeTop=parseFloat(style.getPropertyValue('--safe-top'))||0,safeBottom=parseFloat(style.getPropertyValue('--safe-bottom'))||0,safeLeft=parseFloat(style.getPropertyValue('--safe-left'))||0,safeRight=parseFloat(style.getPropertyValue('--safe-right'))||0,homeTop=Math.max(0,root.querySelector('.app-header').getBoundingClientRect().bottom-canvas.getBoundingClientRect().top+8),homeBottom=root.querySelector('.app-footer').getBoundingClientRect().top-canvas.getBoundingClientRect().top-8,expanded=1-Math.pow(1-opening,2),top=mix(homeTop,safeTop+8,expanded),bottom=mix(homeBottom,fullH-safeBottom-8,expanded),h=Math.max(100,bottom-top),intro=NexoIntro.getState(now),sceneReveal=intro.sceneReveal,ratio=Math.min(devicePixelRatio||1,1.6)*NexoApp.store.get().preferences.renderScale;if(canvas.width!==Math.round(w*ratio)||canvas.height!==Math.round(fullH*ratio)){canvas.width=Math.round(w*ratio);canvas.height=Math.round(fullH*ratio);}const aspect=w/h,f=1/Math.tan(42*Math.PI/360);eye=2+Math.max(W*f/(2*aspect*.60),H*f/(2*.74));vp=perspective(aspect,eye);gl.viewport(0,0,canvas.width,canvas.height);gl.disable(gl.DEPTH_TEST);gl.disable(gl.BLEND);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(bgp);gl.bindBuffer(gl.ARRAY_BUFFER,bgb);gl.enableVertexAttribArray(bgA);gl.vertexAttribPointer(bgA,2,gl.FLOAT,false,8,0);const atmosphere=NexoApp.atmosphere?.()||{cool:[.29,.71,.81],warm:[.92,.53,.2],bg:[.035,.059,.098]};gl.uniform3fv(bgU.uColdTint,atmosphere.cool);gl.uniform3fv(bgU.uWarmTint,atmosphere.warm);gl.uniform3fv(bgU.uBase,atmosphere.bg);gl.uniform1f(bgU.uOpen,opening);gl.uniform1f(bgU.uTime,ambientTime);gl.uniform1f(bgU.uAspect,w/fullH);gl.uniform1f(bgU.uWarmth,NexoApp.store.get().preferences.warmth);gl.drawArrays(gl.TRIANGLES,0,3);gl.viewport(0,Math.round((fullH-top-h)*ratio),canvas.width,Math.round(h*ratio));gl.useProgram(p);gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.uniformMatrix4fv(U.uVP,false,vp);gl.uniform3f(U.uEye,0,.08,eye);gl.uniform1i(U.uPoster,0);gl.uniform1i(U.uModule,1);gl.uniform1i(U.uGrain,2);gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,grain);gl.uniform1f(U.uTime,ambientTime);renderCount++;gl.uniform1f(U.uWarmth,NexoApp.store.get().preferences.warmth);hitFaces=[];
  collecting=true;drawQueue=[];frontModel=null;
  const selected=mod(Math.round(target),N),poses=names.map((_,i)=>{const a=(i-position)*STEP,frontness=(Math.cos(a)+1)/2;return {i,a,z:Math.cos(a)*2,frontness};}).sort((a,b)=>a.z-b.z);
  for(const pose of poses){const {i,a}=pose,isFront=i===selected,op=isFront?opening:0,alpha=(isFront?1:Math.pow(1-opening,1.5))*(1-launching)*sceneReveal;if(alpha<.008)continue;let x=Math.sin(a)*3.05,y=.10*(1-Math.cos(a)),z=pose.z,yaw=-Math.sin(a)*.35;const closeDistance=eye-2-.30,maxHeightScale=.95*2*closeDistance/(H*f),sx=mix(1,Math.max(180,w-safeLeft-safeRight-24)/w*2*(closeDistance-.10)*aspect/(W*f),1-Math.pow(1-op,2)),sy=mix(1,maxHeightScale,clamp((op-.08)/.92,0,1));x=mix(x,(safeLeft-safeRight)/2*2*(eye-2.3)*aspect/(w*f),op);y*=1-op;z=mix(z,2.30,op)-.10*Math.sin(Math.PI*clamp(op*4,0,1));if(!isFront)z-=opening*.8;z+=isFront?launching*.9:0;yaw*=1-op;z-=2.2*(1-sceneReveal);y-=.14*(1-sceneReveal);yaw+=.12*(1-sceneReveal);
