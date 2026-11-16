@@ -26,6 +26,7 @@ pub(super) struct Host {
     pub next: u64,
     pub last: String,
     pub replies: Vec<Value>,
+    pub queries: std::collections::HashMap<&'static str,String>,
 }
 impl Default for Host {
     fn default() -> Self {
@@ -37,6 +38,7 @@ impl Default for Host {
             next: 1,
             last: String::new(),
             replies: vec![],
+            queries: std::collections::HashMap::new(),
         }
     }
 }
@@ -51,6 +53,7 @@ impl Launcher {
             && self.catalog.config.theme.resolve().experience == ExperiencePreset::OldSchool;
         if wanted != self.nexo.presented {
             self.nexo.presented = wanted;
+            if wanted { self.theme_advanced=false; }
             self.nexo.dirty = true;
             self.nexo.last.clear();
             if !crate::nexo::show(wanted) && wanted {
@@ -109,6 +112,9 @@ impl Launcher {
         match op {
             Operation::Ready => {}
             Operation::Page { page } => {
+                if self.catalog.page.is_catalog() {
+                    self.nexo.queries.insert(self.catalog.page.name(),self.catalog.query.clone());
+                }
                 self.clear_nexo_overlays();
                 let action = match page {
                     Destination::Play => Action::Page(Page::Play),
@@ -122,6 +128,9 @@ impl Launcher {
                     Destination::Profile => Action::Profile,
                     Destination::Status => Action::StatusDetails(true),
                 };
+                if let Action::Page(target)=action && target.is_catalog() {
+                    self.catalog.query=self.nexo.queries.get(target.name()).cloned().unwrap_or_default();
+                }
                 self.dispatch_action(events, Some(action))
                     .map_err(|e| e.to_string())?;
             }
@@ -149,7 +158,7 @@ impl Launcher {
                     return Err("This control is not an editable field".into());
                 };
                 self.catalog.editing = Some(key);
-                let value = match key {
+                let value: &mut String = match key {
                     "ely_username" => &mut self.login.username,
                     "ely_password" => &mut self.login.password,
                     "ely_otp" => &mut self.login.otp,
@@ -216,6 +225,11 @@ impl Launcher {
                 self.dispatch_action(events, Some(Action::SelectThemePreset(preset)))
                     .map_err(|e| e.to_string())?;
             }
+            Operation::Accent {color} => {
+                self.catalog.config.theme.custom_accent_hex=color;
+                self.catalog.config.save(&self.home).map_err(|e|e.to_string())?;
+                horizon_client::ui_theme::set_active_theme(self.catalog.config.theme.resolve());
+            }
             Operation::Fallback => {
                 self.catalog
                     .config
@@ -243,8 +257,11 @@ impl Launcher {
             self.catalog.fm_current_dir
         )
     }
-    fn nexo_field_value(&self, key: &str) -> &str {
-        match key {
+    fn nexo_field_value(&self, key: &str) -> String {
+        if key=="render_scale" && self.catalog.editing!=Some("render_scale") {
+            return self.catalog.config.render_scale.percent().to_string();
+        }
+        let value: &str = match key {
             "name" => &self.catalog.config.name,
             "profile_name" => &self.catalog.config.custom_profile_name,
             "profile_desc" => &self.catalog.config.custom_profile_desc,
@@ -263,7 +280,8 @@ impl Launcher {
             "ely_username" => &self.login.username,
             // Password/OTP are entered in the active form, never reflected in snapshots.
             _ => "",
-        }
+        };
+        value.to_owned()
     }
     pub(super) fn publish_nexo(&mut self, frame: view::Frame) {
         let modal = self.login.visible
@@ -287,6 +305,15 @@ impl Launcher {
             }
             if (action == Action::Play && self.catalog.page != Page::Play)
                 || (rect[1] < 70. && matches!(action,Action::Account | Action::Profile)) { continue; }
+            // Nexo has a moving 3D backdrop and its own motion/effects controls;
+            // image wallpapers and lens calibration belong to Liquid Glass.
+            if matches!(action,Action::Appearance(
+                horizon_client::ui_theme::launcher_visual::AppearanceAction::Wallpaper(_)
+                | horizon_client::ui_theme::launcher_visual::AppearanceAction::Transparency
+                | horizon_client::ui_theme::launcher_visual::AppearanceAction::Blur
+                | horizon_client::ui_theme::launcher_visual::AppearanceAction::Refraction
+                | horizon_client::ui_theme::launcher_visual::AppearanceAction::Advanced
+            )) { continue; }
             let field = frame.fields.iter().find(|f| view::same_rect(f.rect, rect));
             let button = frame
                 .buttons
@@ -325,6 +352,7 @@ impl Launcher {
             let mut group = String::new();
             let mut identity = label.clone();
             match action {
+                Action::ToggleSection(_) => { kind="section"; }
                 Action::Field(key) => {
                     identity = key.into();
                     kind = if key == "ely_password" {
@@ -429,14 +457,14 @@ impl Launcher {
             };
             if let Some(color)=&color { label=color.clone(); }
             controls.push(json!({"id":id,"kind":kind,"label":label,"lines":lines,"rect":rect,"group":group,
-                "value":if let Action::Field(key)=action{self.nexo_field_value(key).to_owned()}else{String::new()},
+                "value":if let Action::Field(key)=action{self.nexo_field_value(key)}else{String::new()},
                 "field":if let Action::Field(key)=action{Some(key)}else{None},"icon":frame.icons.iter().find(|g|inside(rect,g.rect[0]+g.rect[2]*0.5,g.rect[1]+g.rect[3]*0.5)).map(|g|g.name),"color":color,"hint":field.map(|f|f.hint.clone()),"checked":checked,"selected":button.is_some_and(|b|b.selected),"fraction":fraction,"image":image}));
         }
         let texts: Vec<_> = frame
             .texts
             .iter()
             .filter(|t| {
-                (modal || t.y >= 120.)
+                (modal || t.y >= 120.) && t.text != "Wallpaper"
                     && !self.targets.iter().any(|(r, _)| inside(*r, t.x, t.y))
             })
             .collect();
@@ -461,7 +489,7 @@ impl Launcher {
             "launching":self.launching,"ready":horizon_client::official_install::ready(&self.home),"busy":self.worker.is_some()||self.catalog.busy()||self.launching||self.session_worker.is_some(),
             "status":self.error.as_deref().unwrap_or(&self.catalog.status),"texts":texts,"controls":controls,
             "skin":if self.catalog.page==Page::Skins{self.wardrobe.nexo_image()}else{None},
-            "sounds":self.catalog.config.theme.interface_sounds,"reducedMotion":self.catalog.config.disable_launcher_animations,
+            "effects":self.catalog.config.theme.glass_effects,"sounds":self.catalog.config.theme.interface_sounds,"reducedMotion":self.catalog.config.disable_launcher_animations,
             "accent":format!("#{:02x}{:02x}{:02x}",theme.accent&255,(theme.accent>>8)&255,(theme.accent>>16)&255),
             "replies":self.nexo.replies});
         let Ok(payload) = serde_json::to_string(&snapshot) else {

@@ -199,7 +199,7 @@ function planeMirror(model){
 }
 function issue(c,gain=0){gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,c.poster);gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,c.internal);gl.uniform1f(U.uBlend,c.blend);gl.uniform1f(U.uReflectGain,gain);drawMesh(c.m,c.model,c.color,c.alpha,c.tex,c.metal,c.surface);}
 function paintScene(commands,selected,viewport,width,height){
- const enabled=NexoApp.store.get().preferences.sceneLighting&&frontModel;
+ const enabled=NexoApp.store.get().preferences.sceneLighting&&NexoApp.nativeLighting?.()!==false&&frontModel;
  lightingStats={enabled:false,shadowDraws:0,reflectionDraws:0};
  if(enabled){const size=NexoApp.store.get().preferences.renderScale>.8?768:384;shadowTarget=resizeTarget(shadowTarget,size,size,false);const ratio=Math.min(.42,512/width,512/height);reflectionTarget=resizeTarget(reflectionTarget,Math.max(64,Math.ceil(width*ratio/16)*16),Math.max(64,Math.ceil(height*ratio/16)*16),true);}
  const ready=!!enabled&&shadowTarget.ready&&reflectionTarget.ready;

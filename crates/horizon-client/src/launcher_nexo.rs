@@ -198,6 +198,7 @@ pub enum Operation {
     Preset {
         preset: Preset,
     },
+    Accent { color: String },
     Fallback,
 }
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -235,6 +236,7 @@ pub fn parse(input: &str) -> Result<Command, String> {
         Some("range") => &["id", "op", "control", "value"],
         Some("rotate") => &["id", "op", "dx", "dy"],
         Some("preset") => &["id", "op", "preset"],
+        Some("accent") => &["id", "op", "color"],
         _ => return Err("Unsupported launcher action".into()),
     };
     if object.keys().any(|key| !allowed.contains(&key.as_str())) {
@@ -245,6 +247,7 @@ pub fn parse(input: &str) -> Result<Command, String> {
         return Err("Missing request ID".into());
     }
     match &cmd.op {
+        Operation::Accent {color} if color.len()!=7 || !color.starts_with('#') || !color[1..].bytes().all(|c|c.is_ascii_hexdigit()) => return Err("Invalid accent color".into()),
         Operation::Edit { text, .. } if text.len() > 4096 || text.contains('\0') => {
             return Err("Text is too long".into());
         }
@@ -268,6 +271,8 @@ mod tests {
     fn only_typed_actions_and_bounded_values_cross_the_bridge() {
         assert!(parse(r#"{"id":1,"op":"page","page":"mods"}"#).is_ok());
         assert!(parse(r#"{"id":2,"op":"press","control":19}"#).is_ok());
+        assert!(parse(r#"{"id":3,"op":"accent","color":"#7f50d0"}"#).is_ok());
+        assert!(parse(r#"{"id":3,"op":"accent","color":"javascript:script"}"#).is_err());
         for bad in [
             r#"{"id":0,"op":"play"}"#,
             r#"{"id":1,"op":"delete","path":"/data/worlds"}"#,
