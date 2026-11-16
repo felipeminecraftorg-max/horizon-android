@@ -198,8 +198,15 @@ pub enum Operation {
     Preset {
         preset: Preset,
     },
+    Layout { edit: LayoutEdit },
     Accent { color: String },
     Fallback,
+}
+#[derive(Debug, Deserialize)]
+#[serde(tag="action",rename_all="kebab-case",deny_unknown_fields)]
+pub enum LayoutEdit {
+    Set {index:usize, #[serde(default)] custom:bool, placement:serde_json::Value},
+    Add {binding:String,label:String}, Remove {index:usize}, Save, Cancel, Reset,
 }
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -236,6 +243,7 @@ pub fn parse(input: &str) -> Result<Command, String> {
         Some("range") => &["id", "op", "control", "value"],
         Some("rotate") => &["id", "op", "dx", "dy"],
         Some("preset") => &["id", "op", "preset"],
+        Some("layout") => &["id", "op", "edit"],
         Some("accent") => &["id", "op", "color"],
         _ => return Err("Unsupported launcher action".into()),
     };

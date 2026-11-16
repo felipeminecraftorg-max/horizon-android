@@ -14,6 +14,8 @@ use std::{
 };
 
 static COMMANDS: Mutex<VecDeque<Command>> = Mutex::new(VecDeque::new());
+static STANDALONE: AtomicBool = AtomicBool::new(false);
+pub fn standalone()->bool { STANDALONE.load(Ordering::Acquire) }
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 pub fn active() -> bool {
     ACTIVE.load(Ordering::Acquire)
@@ -76,6 +78,8 @@ fn activity(f: impl FnOnce(&mut JNIEnv<'_>, &JObject<'_>) -> jni::errors::Result
 }
 pub fn initialize() -> bool {
     activity(|env, object| {
+        let only=env.call_method(object,"horizonNexoOnly","()Z",&[])?.z()?;
+        STANDALONE.store(only,Ordering::Release);
         let class = env.get_object_class(object)?;
         env.register_native_methods(
             class,

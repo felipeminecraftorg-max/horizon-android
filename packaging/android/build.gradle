@@ -60,7 +60,10 @@ dependencies {
 layout.buildDirectory = file('../../.local/android/gradle-build')
 def nexoAssets = layout.buildDirectory.dir('generated/nexo-assets')
 tasks.register('syncNexoAssets', Sync) {
-    from('../../experiments/nexo-preview/android/src/main/assets')
+    from('../../experiments/nexo-preview/android/src/main/assets') {
+        if(providers.gradleProperty('appId').getOrElse('') == 'dev.horizon.nexo') { exclude 'index.html','app.js','live-app.js','nexo.css' }
+    }
+    from('../../crates/horizon-client/src/launcher_icons/jade') { into 'icons' }
     into(nexoAssets.map { it.dir('nexo') })
 }
 android.sourceSets.main.assets.srcDir(nexoAssets)

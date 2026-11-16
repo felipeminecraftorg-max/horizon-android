@@ -50,6 +50,12 @@ pub(super) struct Wardrobe {
     pub selection_changed_at: Option<std::time::Instant>,
 }
 impl Wardrobe {
+    pub(super) fn nexo_state(&self)->serde_json::Value {
+        let selected=self.library.selections.get(&self.key).cloned().unwrap_or_default();
+        serde_json::json!({"capes":self.capes,"note":self.note,"preview":self.nexo_image(),"model":if selected.model==Model::Slim{"slim"}else{"classic"},"hideCape":selected.hide_cape,
+            "items":self.library.entries.iter().enumerate().filter(|(_,e)|e.kind==self.kind()).map(|(i,e)|serde_json::json!({"index":i,"id":e.id,"title":e.title,"active":if self.capes{selected.cape.as_ref()==Some(&e.id)}else{selected.skin.as_ref()==Some(&e.id)}})).collect::<Vec<_>>(),
+            "cloudCapes":self.cache.snapshot.capes.iter().enumerate().map(|(i,c)|serde_json::json!({"index":i,"title":c.title,"active":c.active})).collect::<Vec<_>>()})
+    }
     pub fn new(home: &Path) -> Self {
         let root = home.join("wardrobe");
         let loaded = Library::load(&root);

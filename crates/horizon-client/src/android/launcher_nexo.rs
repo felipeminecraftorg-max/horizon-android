@@ -26,6 +26,8 @@ pub(super) struct Host {
     pub next: u64,
     pub last: String,
     pub replies: Vec<Value>,
+    pub domain_ranges: std::collections::BTreeSet<u64>,
+    pub editor: Option<horizon_client::touch::Settings>,
     pub queries: std::collections::HashMap<&'static str,String>,
 }
 impl Default for Host {
@@ -38,6 +40,8 @@ impl Default for Host {
             next: 1,
             last: String::new(),
             replies: vec![],
+            domain_ranges: Default::default(),
+            editor: None,
             queries: std::collections::HashMap::new(),
         }
     }
@@ -50,10 +54,10 @@ impl Launcher {
         let wanted = self.game.is_none()
             && self.control_editor.is_none()
             && self.renderer.as_ref().is_some_and(|r| !r.suspended)
-            && self.catalog.config.theme.resolve().experience == ExperiencePreset::OldSchool;
+            && (crate::nexo::standalone() || self.catalog.config.theme.resolve().experience == ExperiencePreset::OldSchool);
         if wanted != self.nexo.presented {
             self.nexo.presented = wanted;
-            if wanted { self.theme_advanced=false; }
+            if wanted { self.theme_advanced=false; if crate::nexo::standalone(){self.anim.intro_done=true;} }
             self.nexo.dirty = true;
             self.nexo.last.clear();
             if !crate::nexo::show(wanted) && wanted {
@@ -96,7 +100,7 @@ impl Launcher {
             window.request_redraw();
         }
     }
-    fn clear_nexo_overlays(&mut self) {
+    pub(super) fn clear_nexo_overlays(&mut self) {
         self.chooser = None;
         self.login.hide();
         self.catalog.project_modal = None;
@@ -108,7 +112,7 @@ impl Launcher {
         self.exit_confirmation = false;
         self.catalog.editing = None;
     }
-    fn nexo_operation(&mut self, op: Operation, events: &ActiveEventLoop) -> Result<(), String> {
+    pub(super) fn nexo_operation(&mut self, op: Operation, events: &ActiveEventLoop) -> Result<(), String> {
         match op {
             Operation::Ready => {}
             Operation::Page { page } => {
@@ -123,7 +127,7 @@ impl Launcher {
                     Destination::Shaders => Action::Page(Page::Shaders),
                     Destination::Skins => Action::Page(Page::Skins),
                     Destination::Files => Action::Page(Page::Installed),
-                    Destination::Settings => Action::SettingsCat(SettingsCategory::Overview),
+                    Destination::Settings => Action::Page(Page::Settings),
                     Destination::Account => Action::Account,
                     Destination::Profile => Action::Profile,
                     Destination::Status => Action::StatusDetails(true),
@@ -131,8 +135,9 @@ impl Launcher {
                 if let Action::Page(target)=action && target.is_catalog() {
                     self.catalog.query=self.nexo.queries.get(target.name()).cloned().unwrap_or_default();
                 }
-                self.dispatch_action(events, Some(action))
-                    .map_err(|e| e.to_string())?;
+                self.dispatch_action(events, Some(action)).map_err(|e|e.to_string())?;
+                if matches!(page,Destination::Settings) { self.catalog.settings_category=SettingsCategory::Overview; }
+                if matches!(page,Destination::Files) { self.catalog.installed_sub_tab=crate::catalog::InstalledSubTab::FileManager;self.catalog.refresh_fm(&self.home); }
             }
             Operation::Press { control } => {
                 let index=self.nexo.bindings.iter().position(|b| b.id==control)
@@ -140,6 +145,10 @@ impl Launcher {
                 // Consume a press before dispatch: repeated taps cannot delete
                 // the next row after a removal shifts native list indices.
                 let binding=self.nexo.bindings.remove(index);
+                if crate::nexo::standalone() && binding.action==Action::OpenControlEditor {
+                    self.nexo.editor=Some(horizon_client::touch::Settings::load_from(&self.catalog.config.game_home(&self.home).join("horizon-touch.json")));
+                    return Ok(());
+                }
                 self.dispatch_action(events, Some(binding.action)).map_err(|e|e.to_string())?;
             }
             Operation::Edit {
@@ -196,7 +205,8 @@ impl Launcher {
                     .find(|b| b.id == control)
                     .map(|b| b.action)
                     .ok_or("This setting changed")?;
-                if !pages::nexo_slider_actions()
+                if crate::nexo::standalone() && !self.nexo.domain_ranges.contains(&control) { return Err("Este controle não é um ajuste contínuo".into()); }
+                if !crate::nexo::standalone() && !pages::nexo_slider_actions()
                     .iter()
                     .any(|(_, a, _, _)| *a == action)
                 {
@@ -210,13 +220,14 @@ impl Launcher {
                     self.wardrobe.preview();
                 }
             }
-            Operation::Back => self.request_back(),
+            Operation::Back => { if self.nexo.editor.is_some() {self.nexo.editor=None;} else {self.request_back();} },
             Operation::Play => {
                 self.clear_nexo_overlays();
                 self.catalog.page = Page::Play;
                 self.action(events).map_err(|e| e.to_string())?;
             }
             Operation::Preset { preset } => {
+                if crate::nexo::standalone() { return Err("Este aplicativo usa somente a interface Nexo".into()); }
                 let preset = match preset {
                     Preset::Standard => ThemePreset::ObsidianViolet,
                     Preset::OldSchool => ThemePreset::OldSchool,
@@ -230,7 +241,9 @@ impl Launcher {
                 self.catalog.config.save(&self.home).map_err(|e|e.to_string())?;
                 horizon_client::ui_theme::set_active_theme(self.catalog.config.theme.resolve());
             }
+            Operation::Layout { edit } => { self.nexo_edit_layout(edit)?; }
             Operation::Fallback => {
+                if crate::nexo::standalone() { return Err("Reabra o Nexo para reiniciar a interface".into()); }
                 self.catalog
                     .config
                     .theme

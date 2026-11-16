@@ -1,0 +1,136 @@
+# Isolated artifact-only build for the original Horizon Jade console remake.
+# Never use the main app signing secret for a draft PR or development branch.
+name: Horizon Nexo standalone
+run-name: Nexo standalone · ${{ github.sha }}
+
+on:
+  push:
+    branches:
+      - feature/horizon-nexo-standalone
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexo-standalone-arm64-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  interface-and-protocol:
+    if: false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify local state and native transport
+        run: |
+          for file in experiments/nexo-preview/android/src/main/assets/*.js; do node --check "$file"; done
+          node --test experiments/nexo-preview/tests/host.test.cjs experiments/nexo-preview/tests/state.test.cjs
+          python3 -m unittest tests.test_nexo_public_tree tests.test_android_source_export tests.test_android_release_audit
+      - name: Run the actual Rust bridge tests without Android or the game engine
+        run: |
+          mkdir -p .local/nexo-bridge-check/src
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path.cwd()
+          Path('.local/nexo-bridge-check/Cargo.toml').write_text('[package]\nname="nexo-bridge-check"\nversion="0.0.0"\nedition="2024"\n[workspace]\n[dependencies]\nserde={version="1",features=["derive"]}\nserde_json="1"\npng="0.18"\n')
+          Path('.local/nexo-bridge-check/src/lib.rs').write_text(f'#[path="{root}/crates/horizon-client/src/launcher_nexo.rs"]\npub mod nexo;\n')
+          PY
+          cargo test --manifest-path .local/nexo-bridge-check/Cargo.toml
+      - name: Check responsive real-host views and console gestures
+        if: always()
+        run: |
+          npm install --prefix /tmp/nexo-browser --no-audit --no-fund playwright@1.56.1
+          NEXO_PLAYWRIGHT_MODULE=/tmp/nexo-browser/node_modules/playwright node experiments/nexo-preview/tests/standalone-browser-check.cjs
+      - name: Upload actual interface captures and test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: nexo-native-interface-qa
+          path: dist/nexo-native-qa/
+          retention-days: 14
+          if-no-files-found: warn
+  compile-and-package:
+    if: github.ref == 'refs/heads/feature/horizon-nexo-standalone'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_TARGET_DIR: ${{ github.workspace }}/.local/ci-target
+      HORIZON_TELEMETRY_URL: 'off'
+    steps:
+      - name: Check out exactly this source revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .local/ci-target
+          key: nexo-native-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
+          restore-keys: |
+            nexo-native-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+            android-dev-${{ runner.os }}-arm64-v8a-
+      - name: Format Rust sources for inspection
+        run: |
+          cargo fmt --all
+          mkdir -p dist
+          git diff -- '*.rs' > dist/rustfmt.patch
+          cp "$(rustup which rustfmt)" dist/rustfmt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: nexo-rust-format
+          path: |
+            dist/rustfmt.patch
+            dist/rustfmt
+          retention-days: 3
+      - name: Set up Java for Gradle
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Set up verified Gradle toolchain
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        with:
+          gradle-version: '8.14'
+      - name: Install Android ARM64 toolchain
+        run: |
+          set -euo pipefail
+          sudo apt-get update -q
+          sudo apt-get install -yq libasound2-dev libudev-dev
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$sdkmanager" ]]; then
+            sdkmanager=$(find "$ANDROID_HOME/cmdline-tools" -type f -path '*/bin/sdkmanager' | sort -V | tail -n 1)
+          fi
+          test -x "$sdkmanager"
+          "$sdkmanager" --sdk_root="$ANDROID_HOME" 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358'
+          rustup target add aarch64-linux-android
+      - name: Audit public source and Android package rules
+        run: |
+          set -euo pipefail
+          git diff --check
+          python3 tools/check_public_tree.py --ref HEAD
+          python3 -m unittest discover -s tests -p 'test_android_release_audit.py'
+      - name: Type-check actual Android ARM64 Rust target before packaging
+        run: |
+          python3 tools/android_build.py --abi arm64-v8a --check --public \
+            --sdk "$ANDROID_HOME" --java-home "$JAVA_HOME_17_X64" \
+            --ndk-version 28.2.13676358 --build-tools-version 35.0.0
+      - name: Preserve the isolated compilation cache
+        if: always()
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .local/ci-target
+          key: nexo-native-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}-checked
+      - name: Destroy throwaway signing key
+        if: always()
+        run: rm -f .local/android/debug.keystore

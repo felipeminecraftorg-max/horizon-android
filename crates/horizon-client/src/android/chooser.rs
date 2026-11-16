@@ -20,10 +20,10 @@ pub(super) enum Kind {
     ControlProfile,
 }
 pub(super) struct Chooser {
-    title: &'static str,
-    help: &'static str,
+    pub(super) title: &'static str,
+    pub(super) help: &'static str,
     device: Option<String>,
-    choices: Vec<(String, String, Action, bool)>,
+    pub(super) choices: Vec<(String, String, Action, bool)>,
     pub scroll: f32,
 }
 impl Launcher {

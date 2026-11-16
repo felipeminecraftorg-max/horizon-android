@@ -9,7 +9,8 @@ public final class HorizonActivity extends android.app.NativeActivity {
     private boolean nexoReady, nexoSeen, nexoSkipIntro;
     private String nexoState;
     private Object nexoBack;
-    private static final String NEXO_URL = "https://appassets.androidplatform.net/assets/nexo/index.html";
+    private String nexoUrl() { return "https://appassets.androidplatform.net/assets/nexo/"+(horizonNexoOnly()?"nexo.html":"index.html"); }
+    public boolean horizonNexoOnly() { return "dev.horizon.nexo".equals(getPackageName()); }
 
     /** Only the selected Old School preset constructs this local visual view. */
     public void horizonNexo(final boolean show) {
@@ -50,10 +51,10 @@ public final class HorizonActivity extends android.app.NativeActivity {
                         return new android.webkit.WebResourceResponse("text/plain","UTF-8",403,"Local assets only",java.util.Collections.emptyMap(),new java.io.ByteArrayInputStream(new byte[0]));
                     }
                     @Override public boolean shouldOverrideUrlLoading(android.webkit.WebView v,android.webkit.WebResourceRequest request) {
-                        return !NEXO_URL.equals(request.getUrl().toString());
+                        return !nexoUrl().equals(request.getUrl().toString());
                     }
                     @Override public void onPageFinished(android.webkit.WebView v,String url) {
-                        if (v != nexo || !NEXO_URL.equals(url)) return;
+                        if (v != nexo || !nexoUrl().equals(url)) return;
                         nexoReady = true;
                         sendNexoState();
                     }
@@ -71,7 +72,7 @@ public final class HorizonActivity extends android.app.NativeActivity {
                     nexoBack = callback;
                     getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,callback);
                 }
-                view.loadUrl(NEXO_URL);
+                view.loadUrl(nexoUrl());
             } catch (Throwable error) { failNexo(); }
         });
     }
@@ -92,6 +93,15 @@ public final class HorizonActivity extends android.app.NativeActivity {
         if (nexo != null) nexo.evaluateJavascript("window.HorizonHost&&HorizonHost.back()",null);
     }
     private void failNexo() {
+        if(horizonNexoOnly()) {
+            destroyNexo();
+            android.widget.LinearLayout recovery=new android.widget.LinearLayout(this);
+            recovery.setOrientation(android.widget.LinearLayout.VERTICAL);recovery.setGravity(android.view.Gravity.CENTER);recovery.setPadding(32,32,32,32);recovery.setBackgroundColor(0xff090f19);
+            android.widget.TextView title=new android.widget.TextView(this);title.setText("NEXO");title.setTextSize(30);title.setTextColor(0xffdeedef);recovery.addView(title);
+            android.widget.TextView message=new android.widget.TextView(this);message.setText("Vamos reabrir sua interface. Seus arquivos continuam salvos.");message.setTextColor(0xffb2c3c8);message.setPadding(0,20,0,20);recovery.addView(message);
+            android.widget.Button retry=new android.widget.Button(this);retry.setText("Reabrir Nexo");retry.setOnClickListener(v->{((android.view.ViewGroup)recovery.getParent()).removeView(recovery);horizonNexo(true);});recovery.addView(retry);addContentView(recovery,new android.view.ViewGroup.LayoutParams(-1,-1));return;
+        }
+
         try { nativeNexoRequest("{\"id\":"+Math.max(1,System.nanoTime())+",\"op\":\"fallback\"}"); } catch(Throwable ignored) { }
         destroyNexo();
         android.widget.Toast.makeText(this,"Old School indisponível. Retornando à interface original.",android.widget.Toast.LENGTH_LONG).show();

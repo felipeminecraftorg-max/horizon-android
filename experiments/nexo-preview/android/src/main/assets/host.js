@@ -18,7 +18,7 @@
     subscribe(fn){listeners.add(fn);if(snapshot)fn(snapshot);return()=>listeners.delete(fn);},
     receive(json){
       let value;try{value=JSON.parse(json);}catch(_){return;}
-      if(value.schema!==1||value.live!==true||!Array.isArray(value.controls))return;
+      if((value.schema!==1&&value.schema!==2)||value.live!==true||(value.schema===1&&!Array.isArray(value.controls)))return;
       snapshot=value;
       for(const reply of value.replies||[]){const p=pending.get(reply.id);if(!p)continue;clearTimeout(p.timer);pending.delete(reply.id);reply.error?p.reject(Error(reply.error)):p.resolve(value);}
       for(const listener of listeners)listener(value);

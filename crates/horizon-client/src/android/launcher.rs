@@ -9,6 +9,8 @@ mod gesture;
 mod login;
 #[path = "launcher_nexo.rs"]
 mod nexo_ui;
+#[path="nexo_domain.rs"]
+mod nexo_domain;
 #[path = "launcher_pages.rs"]
 mod pages;
 #[path = "wardrobe.rs"]
@@ -221,6 +223,11 @@ impl Launcher {
         // the account pill must have the real face instantly, not after a page visit.
         let mut wardrobe = wardrobe::Wardrobe::new(&home);
         wardrobe.open(&catalog.config.name, &catalog.config.microsoft_client_id);
+        if crate::nexo::standalone() && catalog.config.theme.preset!=horizon_client::ui_theme::ThemePreset::OldSchool {
+            catalog.config.theme.apply_preset(horizon_client::ui_theme::ThemePreset::OldSchool);
+            if !home.join("android-launcher.json").exists() {catalog.config.orientation=crate::catalog::Orientation::Auto;}
+            horizon_client::ui_theme::set_active_theme(catalog.config.theme.resolve());
+        }
         Self {
             nexo: nexo_ui::Host::default(),
             wardrobe,
@@ -830,7 +837,9 @@ impl ApplicationHandler for Launcher {
                 }
                 Ok(())
             }
-            WindowEvent::RedrawRequested => self.draw_pages(),
+            WindowEvent::RedrawRequested => {
+                if crate::nexo::standalone() { self.publish_domain(); Ok(()) } else { self.draw_pages() }
+            },
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 if event.physical_key
                     == winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::Escape)
