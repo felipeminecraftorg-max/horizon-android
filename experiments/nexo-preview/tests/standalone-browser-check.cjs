@@ -21,7 +21,7 @@ const server=http.createServer((req,res)=>{const p=path.resolve(root,'.'+(req.ur
    s.replies=[{id:r.id,error:null}];HorizonHost.receive(JSON.stringify(s));
   },16);return true;}};
  });
- const page=await ctx.newPage(),errors=[],checks=[],layouts=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(14000);
+ const page=await ctx.newPage(),errors=[],checks=[],layouts=[];page.on('pageerror',e=>{errors.push(e.message);console.log('NEXO_PAGE_ERROR '+e.stack);});page.on('console',m=>{if(m.type()==='error')console.log('BROWSER '+m.text());});page.setDefaultTimeout(14000);
  await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.NexoScene?.getState().ready&&Nexo.state().native?.name==='Felipe'&&!NexoIntro.isActive());
  await page.screenshot({path:path.join(out,'nexo-home.png')});console.log('NEXO_CAPTURE_HOME '+(await page.screenshot({type:'jpeg',quality:55})).toString('base64'));
  const close=async()=>{await page.evaluate(()=>{if(document.querySelector('#nexo-modal').open)Nexo.back();else NexoScene.close(true);});await page.waitForTimeout(900);};

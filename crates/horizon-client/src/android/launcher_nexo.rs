@@ -62,12 +62,16 @@ impl Launcher {
             self.nexo.last.clear();
             if !crate::nexo::show(wanted) && wanted {
                 self.nexo.presented = false;
+                if crate::nexo::standalone() {
+                    self.catalog.status="Não foi possível abrir o Nexo. Reabra o aplicativo.".into();
+                } else {
                 self.catalog
                     .config
                     .theme
                     .apply_preset(ThemePreset::ObsidianViolet);
                 let _ = self.catalog.config.save(&self.home);
                 horizon_client::ui_theme::set_active_theme(self.catalog.config.theme.resolve());
+                }
             }
             if let Some(window) = &self.window {
                 window.request_redraw();
