@@ -7,6 +7,11 @@ from tools import check_public_tree as guard
 
 
 class NexoPublicationTests(unittest.TestCase):
+    def test_boot_instrumentation_exception_does_not_admit_other_java(self):
+        self.assertFalse(guard.prohibited(guard.ANDROID_BOOT_TEST))
+        self.assertTrue(guard.prohibited(guard.ANDROID_BOOT_TEST.replace('NexoBootInstrumentation', 'OtherTest')))
+        self.assertTrue(guard.prohibited('.local/' + guard.ANDROID_BOOT_TEST))
+
     def test_exception_is_one_exact_source_not_a_preview_directory(self):
         self.assertFalse(guard.prohibited(guard.ANDROID_PREVIEW_BRIDGE))
         for path in [

@@ -12,6 +12,9 @@ ORIGINAL_JDK_TOOLS = {"tools/JfrSummary.java", "tests/java/JfrFixture.java"}
 # Owner-approved, original NativeActivity result callback; not recovered game code.
 ANDROID_RESULT_BRIDGE = "packaging/android/java/dev/horizon/android/HorizonActivity.java"
 ANDROID_DOCUMENTS_BRIDGE = "packaging/android/java/dev/horizon/android/HorizonDocumentsProvider.java"
+# Original release-app instrumentation, not a game class or a player-facing module.
+ANDROID_BOOT_TEST = "packaging/android/androidTest/java/dev/horizon/android/NexoBootInstrumentation.java"
+ANDROID_BOOT_HEADER = "// Horizon Nexo: original Android release-boot instrumentation."
 # Original owner-requested offline UI test harness, shared by the Jade and Nexo previews.
 # Only this exact source is admitted; the current tree must retain its origin header.
 ANDROID_PREVIEW_BRIDGE = "experiments/jade-lab/android/src/main/java/dev/horizon/jadelab/JadeLabActivity.java"
@@ -52,7 +55,7 @@ def prohibited(path):
     if any(part in {".local", ".gradle", "node_modules", "__pycache__"} for part in parsed.parts):
         return True
     # Original JDK-only tools are an exact allowlist; recovered game Java stays private.
-    if path in ORIGINAL_JDK_TOOLS or path in {ANDROID_RESULT_BRIDGE, ANDROID_DOCUMENTS_BRIDGE, ANDROID_PREVIEW_BRIDGE}:
+    if path in ORIGINAL_JDK_TOOLS or path in {ANDROID_RESULT_BRIDGE, ANDROID_DOCUMENTS_BRIDGE, ANDROID_PREVIEW_BRIDGE, ANDROID_BOOT_TEST}:
         return False
     if lane3_source(path):
         return False
@@ -107,13 +110,15 @@ def main():
     if not history:
         # A lane 3 file in the tree must say it is Horizon's own; any other is rejected.
         for path in paths_in_repository(False):
-            if path and (lane3_source(path) or path == ANDROID_PREVIEW_BRIDGE):
+            if path and (lane3_source(path) or path in {ANDROID_PREVIEW_BRIDGE, ANDROID_BOOT_TEST}):
                 try:
                     with open(path, encoding="utf-8") as source:
                         first = source.readline()
                 except OSError:
                     continue
-                expected_header = ANDROID_PREVIEW_HEADER if path == ANDROID_PREVIEW_BRIDGE else LANE3_HEADER
+                expected_header = (ANDROID_BOOT_HEADER if path == ANDROID_BOOT_TEST
+                                   else ANDROID_PREVIEW_HEADER if path == ANDROID_PREVIEW_BRIDGE
+                                   else LANE3_HEADER)
                 if not first.startswith(expected_header):
                     rejected.append(path)
         rejected.sort()
