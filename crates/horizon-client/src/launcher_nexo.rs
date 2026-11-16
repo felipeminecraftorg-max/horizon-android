@@ -35,8 +35,13 @@ pub struct Button {
     pub selected: bool,
 }
 #[derive(Clone)]
-pub struct Glyph { pub rect: [f32; 4], pub name: &'static str }
-pub fn icon(rect: [f32;4], name: &'static str) { edit(|f|f.icons.push(Glyph{rect,name})); }
+pub struct Glyph {
+    pub rect: [f32; 4],
+    pub name: &'static str,
+}
+pub fn icon(rect: [f32; 4], name: &'static str) {
+    edit(|f| f.icons.push(Glyph { rect, name }));
+}
 #[derive(Clone, Serialize)]
 pub struct Picture {
     pub rect: [f32; 4],
@@ -198,8 +203,36 @@ pub enum Operation {
     Preset {
         preset: Preset,
     },
-    Accent { color: String },
+    Layout {
+        edit: LayoutEdit,
+    },
+    Accent {
+        color: String,
+    },
     Fallback,
+}
+#[derive(Debug, Deserialize)]
+#[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
+pub enum LayoutEdit {
+    Set {
+        index: usize,
+        #[serde(default)]
+        custom: bool,
+        placement: serde_json::Value,
+    },
+    Mode {
+        mode: u8,
+    },
+    Add {
+        binding: String,
+        label: String,
+    },
+    Remove {
+        index: usize,
+    },
+    Save,
+    Cancel,
+    Reset,
 }
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -226,7 +259,8 @@ pub fn parse(input: &str) -> Result<Command, String> {
     if input.len() > 16384 {
         return Err("Launcher request is too large".into());
     }
-    let value: serde_json::Value = serde_json::from_str(input).map_err(|_| "Unsupported launcher request")?;
+    let value: serde_json::Value =
+        serde_json::from_str(input).map_err(|_| "Unsupported launcher request")?;
     let object = value.as_object().ok_or("Expected a launcher request")?;
     let allowed: &[&str] = match object.get("op").and_then(serde_json::Value::as_str) {
         Some("ready" | "back" | "play" | "fallback") => &["id", "op"],
@@ -236,18 +270,64 @@ pub fn parse(input: &str) -> Result<Command, String> {
         Some("range") => &["id", "op", "control", "value"],
         Some("rotate") => &["id", "op", "dx", "dy"],
         Some("preset") => &["id", "op", "preset"],
+        Some("layout") => &["id", "op", "edit"],
         Some("accent") => &["id", "op", "color"],
         _ => return Err("Unsupported launcher action".into()),
     };
     if object.keys().any(|key| !allowed.contains(&key.as_str())) {
         return Err("Unsupported launcher parameter".into());
     }
+    if object.get("op").and_then(serde_json::Value::as_str) == Some("layout") {
+        let edit = object
+            .get("edit")
+            .and_then(serde_json::Value::as_object)
+            .ok_or("Missing layout command")?;
+        let allowed: &[&str] = match edit.get("action").and_then(serde_json::Value::as_str) {
+            Some("save" | "cancel" | "reset") => &["action"],
+            Some("mode") => &["action", "mode"],
+            Some("set") => &["action", "index", "custom", "placement"],
+            Some("add") => &["action", "binding", "label"],
+            Some("remove") => &["action", "index"],
+            _ => return Err("Unsupported layout action".into()),
+        };
+        if edit.keys().any(|key| !allowed.contains(&key.as_str())) {
+            return Err("Unsupported layout parameter".into());
+        }
+    }
     let cmd: Command = serde_json::from_value(value).map_err(|_| "Unsupported launcher request")?;
     if cmd.id == 0 {
         return Err("Missing request ID".into());
     }
     match &cmd.op {
-        Operation::Accent {color} if color.len()!=7 || !color.starts_with('#') || !color[1..].bytes().all(|c|c.is_ascii_hexdigit()) => return Err("Invalid accent color".into()),
+        Operation::Layout {
+            edit: LayoutEdit::Mode { mode },
+        } if *mode > 2 => return Err("Invalid control mode".into()),
+        Operation::Layout {
+            edit: LayoutEdit::Set {
+                index, placement, ..
+            },
+        } if *index >= 128 || !placement.is_object() => {
+            return Err("Invalid control placement".into());
+        }
+        Operation::Layout {
+            edit: LayoutEdit::Add { binding, label },
+        } if binding.len() > 128
+            || label.chars().count() > 48
+            || binding.contains('\0')
+            || label.contains('\0') =>
+        {
+            return Err("Invalid custom control".into());
+        }
+        Operation::Layout {
+            edit: LayoutEdit::Remove { index },
+        } if *index >= 64 => return Err("Invalid custom control index".into()),
+        Operation::Accent { color }
+            if color.len() != 7
+                || !color.starts_with('#')
+                || !color[1..].bytes().all(|c| c.is_ascii_hexdigit()) =>
+        {
+            return Err("Invalid accent color".into());
+        }
         Operation::Edit { text, .. } if text.len() > 4096 || text.contains('\0') => {
             return Err("Text is too long".into());
         }
@@ -289,6 +369,20 @@ mod tests {
             ))
             .is_err()
         );
+    }
+    #[test]
+    fn layout_commands_cannot_write_arbitrary_files_or_unbounded_controls() {
+        assert!(parse(r#"{"id":1,"op":"layout","edit":{"action":"save"}}"#).is_ok());
+        assert!(parse(r#"{"id":1,"op":"layout","edit":{"action":"mode","mode":2}}"#).is_ok());
+        for bad in [
+            r#"{"id":1,"op":"layout","edit":{"action":"save","path":"/data/world"}}"#,
+            r#"{"id":1,"op":"layout","edit":{"action":"mode","mode":3}}"#,
+            r#"{"id":1,"op":"layout","edit":{"action":"set","index":128,"placement":{}}}"#,
+            r#"{"id":1,"op":"layout","edit":{"action":"set","index":0,"placement":"script"}}"#,
+            r#"{"id":1,"op":"layout","edit":{"action":"remove","index":64}}"#,
+        ] {
+            assert!(parse(bad).is_err(), "{bad}");
+        }
     }
     #[test]
     fn modal_capture_excludes_background_values_and_is_scoped() {

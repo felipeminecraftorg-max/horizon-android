@@ -6,8 +6,13 @@ android {
     defaultConfig {
         applicationId providers.gradleProperty('appId').getOrElse('dev.horizon.android')
         resValue 'string', 'app_name', providers.gradleProperty('appId').getOrElse('').endsWith('.nexo') ? 'Horizon Nexo' : 'Horizon Android'
+        manifestPlaceholders = [
+            launcherIcon: providers.gradleProperty('appId').getOrElse('') == 'dev.horizon.nexo' ? '@drawable/nexo_launcher' : '@drawable/launcher_icon',
+            launcherBanner: providers.gradleProperty('appId').getOrElse('') == 'dev.horizon.nexo' ? '@drawable/nexo_banner' : '@drawable/tv_banner'
+        ]
         minSdk providers.gradleProperty('minSdk').getOrElse('28').toInteger()
         targetSdk 35
+        testInstrumentationRunner 'dev.horizon.android.NexoBootInstrumentation'
         versionCode providers.gradleProperty('devVersionCode').getOrElse('30').toInteger()
         versionName '0.7.8' + (providers.gradleProperty('devVersionCode').isPresent() ? '-dev.' + providers.gradleProperty('devBuild').get() : '')
         ndk { abiFilters providers.gradleProperty('abi').get() }
@@ -20,6 +25,8 @@ android {
             keyPassword 'android'
         }
     }
+    testBuildType 'release'
+    sourceSets.androidTest.java.srcDirs = ['androidTest/java']
     buildTypes {
         debug {
             signingConfig signingConfigs.development
@@ -60,7 +67,10 @@ dependencies {
 layout.buildDirectory = file('../../.local/android/gradle-build')
 def nexoAssets = layout.buildDirectory.dir('generated/nexo-assets')
 tasks.register('syncNexoAssets', Sync) {
-    from('../../experiments/nexo-preview/android/src/main/assets')
+    from('../../experiments/nexo-preview/android/src/main/assets') {
+        if(providers.gradleProperty('appId').getOrElse('') == 'dev.horizon.nexo') { exclude 'index.html','app.js','live-app.js','nexo.css','state.js' }
+    }
+    from('../../crates/horizon-client/src/launcher_icons/jade') { into 'icons' }
     into(nexoAssets.map { it.dir('nexo') })
 }
 android.sourceSets.main.assets.srcDir(nexoAssets)

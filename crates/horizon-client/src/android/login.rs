@@ -46,6 +46,13 @@ pub(super) struct Login {
     message: String,
 }
 impl Login {
+    pub(super) fn nexo_state(&self) -> serde_json::Value {
+        let (code, url) = match &self.state {
+            Some(SignInState::Code(c)) => (c.user_code.as_str(), c.verification_uri.as_str()),
+            _ => ("", ""),
+        };
+        serde_json::json!({"visible":self.visible,"signedIn":self.signed_in,"pending":self.pending(),"mode":if self.ely{"ely"}else if self.offline{"offline"}else if self.choosing{"accounts"}else if self.providers{"providers"}else{"signin"},"message":self.message,"code":code,"url":url,"username":self.username,"accounts":self.saved_accounts.iter().enumerate().map(|(i,a)|serde_json::json!({"index":i,"name":a.name,"provider":if a.provider==account::Provider::Microsoft{"Microsoft"}else{"Ely.by"}})).collect::<Vec<_>>()})
+    }
     pub fn new() -> Self {
         let mut login = Self {
             choosing: false,

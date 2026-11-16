@@ -21,6 +21,20 @@ LICENSE_ASSETS = {'assets/LICENSE.txt', 'assets/THIRD_PARTY_NOTICES.md'}
 CODE_ASSETS = {'assets/lane3-api.jar'}
 # Exact original Nexo UI payload; arbitrary extra files remain rejected.
 NEXO_ASSETS = {
+    'assets/nexo/NexoRead-Medium.ttf',
+    'assets/nexo/OFL-NexoRead.txt',
+    'assets/nexo/nexo.html',
+    'assets/nexo/nexo-core.css',
+    'assets/nexo/nexo-shell.css',
+    'assets/nexo/nexo-shell.js',
+    'assets/nexo/icons/play.png',
+    'assets/nexo/icons/mods.png',
+    'assets/nexo/icons/packs.png',
+    'assets/nexo/icons/shaders.png',
+    'assets/nexo/icons/skins.png',
+    'assets/nexo/icons/account.png',
+    'assets/nexo/icons/files.png',
+    'assets/nexo/icons/settings.png',
     'assets/nexo/Michroma-Regular.ttf',
     'assets/nexo/OFL-Michroma.txt',
     'assets/nexo/app.js',
@@ -155,7 +169,7 @@ def main():
     parser.add_argument('--aapt2', required=True, type=Path)
     parser.add_argument('--report', type=Path)
     parser.add_argument('--public', action='store_true')
-    parser.add_argument('--app-id', choices=['dev.horizon.android', 'dev.horizon.android.dev', 'dev.horizon.android.nexo'], default='dev.horizon.android')
+    parser.add_argument('--app-id', choices=['dev.horizon.android', 'dev.horizon.android.dev', 'dev.horizon.android.nexo', 'dev.horizon.nexo'], default='dev.horizon.android')
     args = parser.parse_args()
     report = audit(args.apk, args.aapt2, args.public, args.app_id)
     if args.report:

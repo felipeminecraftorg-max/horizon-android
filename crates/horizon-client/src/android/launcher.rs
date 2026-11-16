@@ -7,6 +7,8 @@ mod chooser;
 mod gesture;
 #[path = "login.rs"]
 mod login;
+#[path = "nexo_domain.rs"]
+mod nexo_domain;
 #[path = "launcher_nexo.rs"]
 mod nexo_ui;
 #[path = "launcher_pages.rs"]
@@ -221,6 +223,18 @@ impl Launcher {
         // the account pill must have the real face instantly, not after a page visit.
         let mut wardrobe = wardrobe::Wardrobe::new(&home);
         wardrobe.open(&catalog.config.name, &catalog.config.microsoft_client_id);
+        if crate::nexo::standalone()
+            && catalog.config.theme.preset != horizon_client::ui_theme::ThemePreset::OldSchool
+        {
+            catalog
+                .config
+                .theme
+                .apply_preset(horizon_client::ui_theme::ThemePreset::OldSchool);
+            if !home.join("android-launcher.json").exists() {
+                catalog.config.orientation = crate::catalog::Orientation::Auto;
+            }
+            horizon_client::ui_theme::set_active_theme(catalog.config.theme.resolve());
+        }
         Self {
             nexo: nexo_ui::Host::default(),
             wardrobe,
@@ -337,6 +351,19 @@ impl Launcher {
         self.configure_screen();
         horizon_client::ui_theme::set_android_dpi(crate::platform::display_density());
         horizon_client::ui_theme::set_ui_scale_percent(self.catalog.config.ui_scale_percent);
+        if crate::nexo::standalone() {
+            // The launcher is rendered by its own Android window. Do not create
+            // a Vulkan device, game pipelines or a Minecraft atlas before Play.
+            if self.window.is_none() {
+                self.window = Some(Arc::new(events.create_window(
+                    Window::default_attributes().with_title("Horizon Nexo"),
+                )?));
+            }
+            self.nexo.resumed = true;
+            self.sync_nexo();
+            self.publish_domain();
+            return Ok(());
+        }
         crate::display::set_scale(self.catalog.config.render_scale);
         horizon_client::android_runtime::configure_gpu(false);
         if let (Some(renderer), Some(window)) = (&mut self.renderer, &self.window) {
@@ -727,6 +754,7 @@ impl Launcher {
 
 impl ApplicationHandler for Launcher {
     fn resumed(&mut self, events: &ActiveEventLoop) {
+        self.nexo.resumed = true;
         self.configure_screen();
         if let Some(game) = &mut self.game {
             return game.resumed(events);
@@ -737,6 +765,7 @@ impl ApplicationHandler for Launcher {
         }
     }
     fn suspended(&mut self, events: &ActiveEventLoop) {
+        self.nexo.resumed = false;
         crate::diagnostics::heartbeat("suspended", || serde_json::json!({}));
         if let Some(game) = &mut self.game {
             return game.suspended(events);
@@ -830,7 +859,14 @@ impl ApplicationHandler for Launcher {
                 }
                 Ok(())
             }
-            WindowEvent::RedrawRequested => self.draw_pages(),
+            WindowEvent::RedrawRequested => {
+                if crate::nexo::standalone() {
+                    self.publish_domain();
+                    Ok(())
+                } else {
+                    self.draw_pages()
+                }
+            }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 if event.physical_key
                     == winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::Escape)

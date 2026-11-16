@@ -20,24 +20,30 @@ pub(super) struct Binding {
 }
 pub(super) struct Host {
     pub presented: bool,
+    pub resumed: bool,
     pub dirty: bool,
     pub captured: Instant,
     pub bindings: Vec<Binding>,
     pub next: u64,
     pub last: String,
     pub replies: Vec<Value>,
-    pub queries: std::collections::HashMap<&'static str,String>,
+    pub domain_ranges: std::collections::BTreeSet<u64>,
+    pub editor: Option<horizon_client::touch::Settings>,
+    pub queries: std::collections::HashMap<&'static str, String>,
 }
 impl Default for Host {
     fn default() -> Self {
         Self {
             presented: false,
+            resumed: false,
             dirty: true,
             captured: Instant::now(),
             bindings: vec![],
             next: 1,
             last: String::new(),
             replies: vec![],
+            domain_ranges: Default::default(),
+            editor: None,
             queries: std::collections::HashMap::new(),
         }
     }
@@ -49,21 +55,36 @@ impl Launcher {
     pub(super) fn sync_nexo(&mut self) -> bool {
         let wanted = self.game.is_none()
             && self.control_editor.is_none()
-            && self.renderer.as_ref().is_some_and(|r| !r.suspended)
-            && self.catalog.config.theme.resolve().experience == ExperiencePreset::OldSchool;
+            && if crate::nexo::standalone() {
+                self.nexo.resumed && self.window.is_some()
+            } else {
+                self.renderer.as_ref().is_some_and(|r| !r.suspended)
+            }
+            && (crate::nexo::standalone()
+                || self.catalog.config.theme.resolve().experience == ExperiencePreset::OldSchool);
         if wanted != self.nexo.presented {
             self.nexo.presented = wanted;
-            if wanted { self.theme_advanced=false; }
+            if wanted {
+                self.theme_advanced = false;
+                if crate::nexo::standalone() {
+                    self.anim.intro_done = true;
+                }
+            }
             self.nexo.dirty = true;
             self.nexo.last.clear();
             if !crate::nexo::show(wanted) && wanted {
                 self.nexo.presented = false;
-                self.catalog
-                    .config
-                    .theme
-                    .apply_preset(ThemePreset::ObsidianViolet);
-                let _ = self.catalog.config.save(&self.home);
-                horizon_client::ui_theme::set_active_theme(self.catalog.config.theme.resolve());
+                if crate::nexo::standalone() {
+                    self.catalog.status =
+                        "Não foi possível abrir o Nexo. Reabra o aplicativo.".into();
+                } else {
+                    self.catalog
+                        .config
+                        .theme
+                        .apply_preset(ThemePreset::ObsidianViolet);
+                    let _ = self.catalog.config.save(&self.home);
+                    horizon_client::ui_theme::set_active_theme(self.catalog.config.theme.resolve());
+                }
             }
             if let Some(window) = &self.window {
                 window.request_redraw();
@@ -78,7 +99,9 @@ impl Launcher {
         for command in crate::nexo::take() {
             let scope = self.nexo_scope();
             let result = self.nexo_operation(command.op, events);
-            if scope != self.nexo_scope() { self.nexo.bindings.clear(); }
+            if scope != self.nexo_scope() {
+                self.nexo.bindings.clear();
+            }
             if let Err(error) = &result {
                 self.catalog.status = error.clone();
             }
@@ -96,7 +119,7 @@ impl Launcher {
             window.request_redraw();
         }
     }
-    fn clear_nexo_overlays(&mut self) {
+    pub(super) fn clear_nexo_overlays(&mut self) {
         self.chooser = None;
         self.login.hide();
         self.catalog.project_modal = None;
@@ -108,12 +131,18 @@ impl Launcher {
         self.exit_confirmation = false;
         self.catalog.editing = None;
     }
-    fn nexo_operation(&mut self, op: Operation, events: &ActiveEventLoop) -> Result<(), String> {
+    pub(super) fn nexo_operation(
+        &mut self,
+        op: Operation,
+        events: &ActiveEventLoop,
+    ) -> Result<(), String> {
         match op {
             Operation::Ready => {}
             Operation::Page { page } => {
                 if self.catalog.page.is_catalog() {
-                    self.nexo.queries.insert(self.catalog.page.name(),self.catalog.query.clone());
+                    self.nexo
+                        .queries
+                        .insert(self.catalog.page.name(), self.catalog.query.clone());
                 }
                 self.clear_nexo_overlays();
                 let action = match page {
@@ -123,24 +152,53 @@ impl Launcher {
                     Destination::Shaders => Action::Page(Page::Shaders),
                     Destination::Skins => Action::Page(Page::Skins),
                     Destination::Files => Action::Page(Page::Installed),
-                    Destination::Settings => Action::SettingsCat(SettingsCategory::Overview),
+                    Destination::Settings => Action::Page(Page::Settings),
                     Destination::Account => Action::Account,
                     Destination::Profile => Action::Profile,
                     Destination::Status => Action::StatusDetails(true),
                 };
-                if let Action::Page(target)=action && target.is_catalog() {
-                    self.catalog.query=self.nexo.queries.get(target.name()).cloned().unwrap_or_default();
+                if let Action::Page(target) = action
+                    && target.is_catalog()
+                {
+                    self.catalog.query = self
+                        .nexo
+                        .queries
+                        .get(target.name())
+                        .cloned()
+                        .unwrap_or_default();
                 }
                 self.dispatch_action(events, Some(action))
                     .map_err(|e| e.to_string())?;
+                if matches!(page, Destination::Settings) {
+                    self.catalog.settings_category = SettingsCategory::Overview;
+                }
+                if matches!(page, Destination::Files) {
+                    self.catalog.installed_sub_tab = crate::catalog::InstalledSubTab::FileManager;
+                    self.catalog.refresh_fm(&self.home);
+                }
             }
             Operation::Press { control } => {
-                let index=self.nexo.bindings.iter().position(|b| b.id==control)
+                let index = self
+                    .nexo
+                    .bindings
+                    .iter()
+                    .position(|b| b.id == control)
                     .ok_or("This view changed. Please choose the item again.")?;
                 // Consume a press before dispatch: repeated taps cannot delete
                 // the next row after a removal shifts native list indices.
-                let binding=self.nexo.bindings.remove(index);
-                self.dispatch_action(events, Some(binding.action)).map_err(|e|e.to_string())?;
+                let binding = self.nexo.bindings.remove(index);
+                if crate::nexo::standalone() && binding.action == Action::OpenControlEditor {
+                    self.nexo.editor = Some(horizon_client::touch::Settings::load_from(
+                        &self
+                            .catalog
+                            .config
+                            .game_home(&self.home)
+                            .join("horizon-touch.json"),
+                    ));
+                    return Ok(());
+                }
+                self.dispatch_action(events, Some(binding.action))
+                    .map_err(|e| e.to_string())?;
             }
             Operation::Edit {
                 control,
@@ -196,9 +254,13 @@ impl Launcher {
                     .find(|b| b.id == control)
                     .map(|b| b.action)
                     .ok_or("This setting changed")?;
-                if !pages::nexo_slider_actions()
-                    .iter()
-                    .any(|(_, a, _, _)| *a == action)
+                if crate::nexo::standalone() && !self.nexo.domain_ranges.contains(&control) {
+                    return Err("Este controle não é um ajuste contínuo".into());
+                }
+                if !crate::nexo::standalone()
+                    && !pages::nexo_slider_actions()
+                        .iter()
+                        .any(|(_, a, _, _)| *a == action)
                 {
                     return Err("Not a slider".into());
                 }
@@ -210,13 +272,22 @@ impl Launcher {
                     self.wardrobe.preview();
                 }
             }
-            Operation::Back => self.request_back(),
+            Operation::Back => {
+                if self.nexo.editor.is_some() {
+                    self.nexo.editor = None;
+                } else {
+                    self.request_back();
+                }
+            }
             Operation::Play => {
                 self.clear_nexo_overlays();
                 self.catalog.page = Page::Play;
                 self.action(events).map_err(|e| e.to_string())?;
             }
             Operation::Preset { preset } => {
+                if crate::nexo::standalone() {
+                    return Err("Este aplicativo usa somente a interface Nexo".into());
+                }
                 let preset = match preset {
                     Preset::Standard => ThemePreset::ObsidianViolet,
                     Preset::OldSchool => ThemePreset::OldSchool,
@@ -225,12 +296,21 @@ impl Launcher {
                 self.dispatch_action(events, Some(Action::SelectThemePreset(preset)))
                     .map_err(|e| e.to_string())?;
             }
-            Operation::Accent {color} => {
-                self.catalog.config.theme.custom_accent_hex=color;
-                self.catalog.config.save(&self.home).map_err(|e|e.to_string())?;
+            Operation::Accent { color } => {
+                self.catalog.config.theme.custom_accent_hex = color;
+                self.catalog
+                    .config
+                    .save(&self.home)
+                    .map_err(|e| e.to_string())?;
                 horizon_client::ui_theme::set_active_theme(self.catalog.config.theme.resolve());
             }
+            Operation::Layout { edit } => {
+                self.nexo_edit_layout(edit)?;
+            }
             Operation::Fallback => {
+                if crate::nexo::standalone() {
+                    return Err("Reabra o Nexo para reiniciar a interface".into());
+                }
                 self.catalog
                     .config
                     .theme
@@ -245,8 +325,13 @@ impl Launcher {
         Ok(())
     }
     fn nexo_scope(&self) -> String {
-        let modal = self.login.visible || self.chooser.is_some() || self.catalog.project_modal.is_some()
-            || self.catalog.fm_modal.is_some() || self.status_details || self.diagnostics_modal_open || self.exit_confirmation;
+        let modal = self.login.visible
+            || self.chooser.is_some()
+            || self.catalog.project_modal.is_some()
+            || self.catalog.fm_modal.is_some()
+            || self.status_details
+            || self.diagnostics_modal_open
+            || self.exit_confirmation;
         format!(
             "{}:{}:{}:{}:{}:{}",
             self.catalog.page.name(),
@@ -258,7 +343,7 @@ impl Launcher {
         )
     }
     fn nexo_field_value(&self, key: &str) -> String {
-        if key=="render_scale" && self.catalog.editing!=Some("render_scale") {
+        if key == "render_scale" && self.catalog.editing != Some("render_scale") {
             return self.catalog.config.render_scale.percent().to_string();
         }
         let value: &str = match key {
@@ -304,16 +389,24 @@ impl Launcher {
                 continue;
             }
             if (action == Action::Play && self.catalog.page != Page::Play)
-                || (rect[1] < 70. && matches!(action,Action::Account | Action::Profile)) { continue; }
+                || (rect[1] < 70. && matches!(action, Action::Account | Action::Profile))
+            {
+                continue;
+            }
             // Nexo has a moving 3D backdrop and its own motion/effects controls;
             // image wallpapers and lens calibration belong to Liquid Glass.
-            if matches!(action,Action::Appearance(
-                horizon_client::ui_theme::launcher_visual::AppearanceAction::Wallpaper(_)
-                | horizon_client::ui_theme::launcher_visual::AppearanceAction::Transparency
-                | horizon_client::ui_theme::launcher_visual::AppearanceAction::Blur
-                | horizon_client::ui_theme::launcher_visual::AppearanceAction::Refraction
-                | horizon_client::ui_theme::launcher_visual::AppearanceAction::Advanced
-            )) { continue; }
+            if matches!(
+                action,
+                Action::Appearance(
+                    horizon_client::ui_theme::launcher_visual::AppearanceAction::Wallpaper(_)
+                        | horizon_client::ui_theme::launcher_visual::AppearanceAction::Transparency
+                        | horizon_client::ui_theme::launcher_visual::AppearanceAction::Blur
+                        | horizon_client::ui_theme::launcher_visual::AppearanceAction::Refraction
+                        | horizon_client::ui_theme::launcher_visual::AppearanceAction::Advanced
+                )
+            ) {
+                continue;
+            }
             let field = frame.fields.iter().find(|f| view::same_rect(f.rect, rect));
             let button = frame
                 .buttons
@@ -352,7 +445,9 @@ impl Launcher {
             let mut group = String::new();
             let mut identity = label.clone();
             match action {
-                Action::ToggleSection(_) => { kind="section"; }
+                Action::ToggleSection(_) => {
+                    kind = "section";
+                }
                 Action::Field(key) => {
                     identity = key.into();
                     kind = if key == "ely_password" {
@@ -426,7 +521,12 @@ impl Launcher {
                     self.nexo.next += 1;
                     n
                 });
-            if self.nexo.bindings.iter().any(|b| b.action == action && b.identity == identity) {
+            if self
+                .nexo
+                .bindings
+                .iter()
+                .any(|b| b.action == action && b.identity == identity)
+            {
                 continue;
             }
             self.nexo.bindings.push(Binding {
@@ -451,11 +551,15 @@ impl Launcher {
                 switch.map(|(_, on)| *on)
             };
             let color = match action {
-                Action::SelectAccentSwatch(rgb) | Action::SelectBgSwatch(rgb)
-                | Action::SelectGradStartSwatch(rgb) | Action::SelectGradEndSwatch(rgb) => Some(format!("#{rgb:06x}")),
+                Action::SelectAccentSwatch(rgb)
+                | Action::SelectBgSwatch(rgb)
+                | Action::SelectGradStartSwatch(rgb)
+                | Action::SelectGradEndSwatch(rgb) => Some(format!("#{rgb:06x}")),
                 _ => None,
             };
-            if let Some(color)=&color { label=color.clone(); }
+            if let Some(color) = &color {
+                label = color.clone();
+            }
             controls.push(json!({"id":id,"kind":kind,"label":label,"lines":lines,"rect":rect,"group":group,
                 "value":if let Action::Field(key)=action{self.nexo_field_value(key)}else{String::new()},
                 "field":if let Action::Field(key)=action{Some(key)}else{None},"icon":frame.icons.iter().find(|g|inside(rect,g.rect[0]+g.rect[2]*0.5,g.rect[1]+g.rect[3]*0.5)).map(|g|g.name),"color":color,"hint":field.map(|f|f.hint.clone()),"checked":checked,"selected":button.is_some_and(|b|b.selected),"fraction":fraction,"image":image}));
@@ -464,14 +568,18 @@ impl Launcher {
             .texts
             .iter()
             .filter(|t| {
-                (modal || t.y >= 120.) && t.text != "Wallpaper"
+                (modal || t.y >= 120.)
+                    && t.text != "Wallpaper"
                     && !self.targets.iter().any(|(r, _)| inside(*r, t.x, t.y))
             })
             .collect();
-        let title = if self.exit_confirmation { "Fechar o Horizon?" }
-        else if self.diagnostics_modal_open { "Diagnóstico" }
-        else if self.status_details { "Status" }
-        else if self.login.visible {
+        let title = if self.exit_confirmation {
+            "Fechar o Horizon?"
+        } else if self.diagnostics_modal_open {
+            "Diagnóstico"
+        } else if self.status_details {
+            "Status"
+        } else if self.login.visible {
             "Sua conta"
         } else if self.chooser.is_some() {
             "Selecionar"

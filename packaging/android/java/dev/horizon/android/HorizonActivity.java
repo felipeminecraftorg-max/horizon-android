@@ -6,12 +6,47 @@ public final class HorizonActivity extends android.app.NativeActivity {
     private native void nativeDocumentResult(int request, int result, String uri);
     private native boolean nativeNexoRequest(String command);
     private android.webkit.WebView nexo;
+    private android.app.Dialog nexoWindow;
+    private volatile boolean nexoBackendReady;
+    private final android.os.Handler nexoHandler = new android.os.Handler(android.os.Looper.getMainLooper());
     private boolean nexoReady, nexoSeen, nexoSkipIntro;
     private String nexoState;
     private Object nexoBack;
-    private static final String NEXO_URL = "https://appassets.androidplatform.net/assets/nexo/index.html";
+    private String nexoUrl() { return "https://appassets.androidplatform.net/assets/nexo/"+(horizonNexoOnly()?"nexo.html":"index.html"); }
+    public boolean horizonNexoOnly() { return "dev.horizon.nexo".equals(getPackageName()); }
 
-    /** Only the selected Old School preset constructs this local visual view. */
+    @Override protected void onCreate(android.os.Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        // NativeActivity owns the Activity surface (Window.takeSurface). A normal
+        // Dialog window supplies an independent, Android-rendered WebView surface.
+        if (horizonNexoOnly()) horizonNexo(true);
+    }
+    public void horizonNexoBackendReady(boolean ready) { nexoBackendReady = ready; }
+    private void attachNexoWindow(android.view.View content) {
+        if (nexoWindow != null) nexoWindow.dismiss();
+        android.app.Dialog window = new android.app.Dialog(this, R.style.HorizonGameTheme);
+        nexoWindow = window;
+        window.setCancelable(false);
+        window.setOnKeyListener((dialog,key,event) -> {
+            if (key != android.view.KeyEvent.KEYCODE_BACK) return false;
+            if (event.getAction() == android.view.KeyEvent.ACTION_UP) nexoBack();
+            return true;
+        });
+        window.setContentView(content);
+        android.view.Window w = window.getWindow();
+        w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0xff090f19));
+        w.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+        w.addFlags(android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED);
+        w.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        window.show();
+        w.setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT,android.view.ViewGroup.LayoutParams.MATCH_PARENT);
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            android.window.OnBackInvokedCallback callback = this::nexoBack;
+            nexoBack = callback;
+            w.getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,callback);
+        }
+    }
+    /** The independent Nexo product and the integrated Old School host use this local view. */
     public void horizonNexo(final boolean show) {
         runOnUiThread(() -> {
             if (!show) { destroyNexo(); return; }
@@ -30,7 +65,9 @@ public final class HorizonActivity extends android.app.NativeActivity {
                 settings.setAllowContentAccess(false);
                 settings.setAllowFileAccessFromFileURLs(false);
                 settings.setAllowUniversalAccessFromFileURLs(false);
-                settings.setBlockNetworkLoads(true);
+                // Requests are fenced by shouldInterceptRequest below. Blocking the
+                // virtual HTTPS origin here can prevent the asset loader from running.
+                settings.setBlockNetworkLoads(false);
                 settings.setGeolocationEnabled(false);
                 settings.setJavaScriptCanOpenWindowsAutomatically(false);
                 settings.setSupportMultipleWindows(false);
@@ -50,28 +87,40 @@ public final class HorizonActivity extends android.app.NativeActivity {
                         return new android.webkit.WebResourceResponse("text/plain","UTF-8",403,"Local assets only",java.util.Collections.emptyMap(),new java.io.ByteArrayInputStream(new byte[0]));
                     }
                     @Override public boolean shouldOverrideUrlLoading(android.webkit.WebView v,android.webkit.WebResourceRequest request) {
-                        return !NEXO_URL.equals(request.getUrl().toString());
+                        return !nexoUrl().equals(request.getUrl().toString());
                     }
                     @Override public void onPageFinished(android.webkit.WebView v,String url) {
-                        if (v != nexo || !NEXO_URL.equals(url)) return;
+                        if (v != nexo || !nexoUrl().equals(url)) return;
                         nexoReady = true;
+                        nexoHandler.postDelayed(() -> {
+                            if(v!=nexo)return;
+                            v.evaluateJavascript("!!(window.NexoScene?.getState().ready&&window.Nexo?.state().native?.schema===2)",ready->{if(v==nexo&&!"true".equals(ready))failNexo();});
+                        },25000);
                         sendNexoState();
+                    }
+                    @Override public void onReceivedError(android.webkit.WebView v,android.webkit.WebResourceRequest request,android.webkit.WebResourceError error) {
+                        if(v==nexo&&request.isForMainFrame())failNexo();
+                    }
+                    @Override public void onReceivedHttpError(android.webkit.WebView v,android.webkit.WebResourceRequest request,android.webkit.WebResourceResponse response) {
+                        if(v==nexo&&request.isForMainFrame()&&response.getStatusCode()>=400)failNexo();
                     }
                     @Override public boolean onRenderProcessGone(android.webkit.WebView v, android.webkit.RenderProcessGoneDetail detail) {
                         failNexo(); return true;
                     }
                 });
+                view.setWebChromeClient(new android.webkit.WebChromeClient(){
+                    @Override public boolean onConsoleMessage(android.webkit.ConsoleMessage message){
+                        if(message.messageLevel()==android.webkit.ConsoleMessage.MessageLevel.ERROR)
+                            android.util.Log.e("NexoUI",message.message()+" @"+message.lineNumber());
+                        return false;
+                    }
+                });
                 view.addJavascriptInterface(new NexoBridge(),"HorizonNative");
                 view.setOverScrollMode(android.view.View.OVER_SCROLL_NEVER);
                 view.setFocusableInTouchMode(true);
-                addContentView(view,new android.view.ViewGroup.LayoutParams(-1,-1));
+                attachNexoWindow(view);
                 view.requestFocus();
-                if (android.os.Build.VERSION.SDK_INT >= 33) {
-                    android.window.OnBackInvokedCallback callback = this::nexoBack;
-                    nexoBack = callback;
-                    getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,callback);
-                }
-                view.loadUrl(NEXO_URL);
+                view.loadUrl(nexoUrl());
             } catch (Throwable error) { failNexo(); }
         });
     }
@@ -79,6 +128,7 @@ public final class HorizonActivity extends android.app.NativeActivity {
         @android.webkit.JavascriptInterface public boolean request(String command) {
             return command != null && command.length() <= 16384 && nativeNexoRequest(command);
         }
+        @android.webkit.JavascriptInterface public boolean isReady() { return nexoBackendReady; }
         @android.webkit.JavascriptInterface public boolean skipIntro() { return nexoSkipIntro; }
     }
     public void horizonNexoState(final String json) {
@@ -92,16 +142,33 @@ public final class HorizonActivity extends android.app.NativeActivity {
         if (nexo != null) nexo.evaluateJavascript("window.HorizonHost&&HorizonHost.back()",null);
     }
     private void failNexo() {
+        if(horizonNexoOnly()) {
+            destroyNexo();
+            int unit=Math.max(1,Math.round(getResources().getDisplayMetrics().density));
+            android.widget.FrameLayout screen=new android.widget.FrameLayout(this);screen.setBackgroundColor(0xff090f19);
+            android.widget.LinearLayout recovery=new android.widget.LinearLayout(this);
+            recovery.setOrientation(android.widget.LinearLayout.VERTICAL);recovery.setGravity(android.view.Gravity.CENTER_HORIZONTAL);recovery.setPadding(24*unit,24*unit,24*unit,24*unit);
+            android.graphics.drawable.GradientDrawable frame=new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,new int[]{0xff1c303a,0xff101b24});frame.setCornerRadius(8*unit);frame.setStroke(unit,0xff617c85);recovery.setBackground(frame);
+            android.widget.FrameLayout.LayoutParams card=new android.widget.FrameLayout.LayoutParams(Math.min(480*unit,getResources().getDisplayMetrics().widthPixels-40*unit),android.view.ViewGroup.LayoutParams.WRAP_CONTENT,android.view.Gravity.CENTER);screen.addView(recovery,card);
+            android.graphics.Typeface body=null,display=null;try{body=android.graphics.Typeface.createFromAsset(getAssets(),"nexo/NexoRead-Medium.ttf");display=android.graphics.Typeface.createFromAsset(getAssets(),"nexo/Michroma-Regular.ttf");}catch(RuntimeException ignored){}
+            android.widget.TextView title=new android.widget.TextView(this);title.setText("NEXO");title.setTextSize(26);title.setTextColor(0xffdeedef);if(display!=null)title.setTypeface(display);recovery.addView(title);
+            android.widget.TextView message=new android.widget.TextView(this);message.setText("Não foi possível concluir a abertura. Toque abaixo para tentar novamente.");message.setTextSize(20);message.setGravity(android.view.Gravity.CENTER);message.setTextColor(0xffb2c3c8);message.setPadding(0,20*unit,0,20*unit);if(body!=null)message.setTypeface(body);recovery.addView(message);
+            android.widget.Button retry=new android.widget.Button(this);retry.setText("Reabrir Nexo");retry.setAllCaps(false);retry.setTextSize(20);retry.setTextColor(0xffdeedef);retry.setMinHeight(48*unit);retry.setPadding(20*unit,8*unit,20*unit,8*unit);if(body!=null)retry.setTypeface(body);
+            android.graphics.drawable.StateListDrawable button=new android.graphics.drawable.StateListDrawable();for(boolean pressed:new boolean[]{true,false}){android.graphics.drawable.GradientDrawable fill=new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,pressed?new int[]{0xff3b5b64,0xff253f48}:new int[]{0xff2c454f,0xff192b34});fill.setCornerRadius(6*unit);fill.setStroke(unit,0xff78969d);button.addState(pressed?new int[]{android.R.attr.state_pressed}:new int[]{},fill);}retry.setBackground(button);
+            retry.setOnClickListener(v->{if(nexoWindow!=null){nexoWindow.dismiss();nexoWindow=null;}horizonNexo(true);});recovery.addView(retry);attachNexoWindow(screen);return;
+        }
+
         try { nativeNexoRequest("{\"id\":"+Math.max(1,System.nanoTime())+",\"op\":\"fallback\"}"); } catch(Throwable ignored) { }
         destroyNexo();
         android.widget.Toast.makeText(this,"Old School indisponível. Retornando à interface original.",android.widget.Toast.LENGTH_LONG).show();
     }
     private void destroyNexo() {
         if (android.os.Build.VERSION.SDK_INT >= 33 && nexoBack != null) {
-            getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback((android.window.OnBackInvokedCallback)nexoBack);
+            if(nexoWindow!=null)nexoWindow.getWindow().getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback((android.window.OnBackInvokedCallback)nexoBack);
             nexoBack=null;
         }
         android.webkit.WebView view=nexo;nexo=null;nexoReady=false;
+        if(nexoWindow!=null){nexoWindow.dismiss();nexoWindow=null;}
         if (view != null) {
             try { view.evaluateJavascript("window.Nexo&&Nexo.setVisible(false)",null); view.stopLoading(); } catch (Throwable ignored) { }
             android.view.ViewParent parent=view.getParent();
