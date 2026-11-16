@@ -22,6 +22,7 @@ import org.json.JSONTokener;
 public final class NexoBootInstrumentation extends Instrumentation {
     private Activity activity;
     private File proof;
+    private int touchFailures;
     private final StringBuilder checks = new StringBuilder();
     @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); start(); }
     private WebView view() throws Exception {
@@ -73,11 +74,18 @@ public final class NexoBootInstrumentation extends Instrumentation {
         waitFor("NexoScene.getState().selected==="+index+"&&Math.abs(NexoScene.getState().position-NexoScene.getState().target)<.001&&Math.abs(Number(document.querySelector('#nexo-app').dataset.position)-NexoScene.getState().target)<.001");
         int[] position=new int[2],size=new int[2];
         runOnMainSync(()->{try{WebView web=view();web.getLocationOnScreen(position);size[0]=web.getWidth();size[1]=web.getHeight();}catch(Exception e){throw new RuntimeException(e);}});
+        js("window.__nexoTouchTrace=[];if(!window.__nexoTraceInstalled){window.__nexoTraceInstalled=true;for(const kind of ['pointerdown','pointerup','touchstart','touchend','click'])document.addEventListener(kind,e=>{if(window.__nexoTouchTrace.length<20)window.__nexoTouchTrace.push({kind:e.type,target:e.target.id||e.target.tagName,x:e.clientX,y:e.clientY,button:e.button,primary:e.isPrimary,pointer:e.pointerType});},{capture:true,passive:true});}return true;");
         long time=SystemClock.uptimeMillis();float x=position[0]+size[0]/2f,y=position[1]+size[1]/2f;
+        android.view.MotionEvent.PointerProperties pointer=new android.view.MotionEvent.PointerProperties();pointer.id=0;pointer.toolType=android.view.MotionEvent.TOOL_TYPE_FINGER;
         for(int action:new int[]{android.view.MotionEvent.ACTION_DOWN,android.view.MotionEvent.ACTION_UP}){
-            android.view.MotionEvent event=android.view.MotionEvent.obtain(time,SystemClock.uptimeMillis(),action,x,y,0);event.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+            android.view.MotionEvent.PointerCoords point=new android.view.MotionEvent.PointerCoords();point.x=x;point.y=y;point.pressure=action==android.view.MotionEvent.ACTION_UP?0:1;point.size=.1f;point.touchMajor=12;point.touchMinor=12;
+            android.view.MotionEvent event=android.view.MotionEvent.obtain(time,SystemClock.uptimeMillis(),action,1,new android.view.MotionEvent.PointerProperties[]{pointer},new android.view.MotionEvent.PointerCoords[]{point},0,0,1,1,0,0,android.view.InputDevice.SOURCE_TOUCHSCREEN,0);
             try{if(!getUiAutomation().injectInputEvent(event,true))throw new AssertionError("Android rejected the tab touch");}finally{event.recycle();}
+            if(action==android.view.MotionEvent.ACTION_DOWN)SystemClock.sleep(80);
         }
+        long deadline=SystemClock.uptimeMillis()+12000;while(SystemClock.uptimeMillis()<deadline&&!"true".equals(js("return NexoScene.getState().open;")))SystemClock.sleep(100);
+        checked("touch tab "+index+" at "+x+","+y+"; "+js("return {events:window.__nexoTouchTrace,scene:NexoScene.getState(),target:document.elementFromPoint(innerWidth/2,innerHeight/2)?.id,viewport:[innerWidth,innerHeight,devicePixelRatio]};"));
+        if(!"true".equals(js("return NexoScene.getState().open;"))){touchFailures++;js("NexoScene.activate("+index+");return true;");}
         waitFor("NexoScene.getState().open");
     }
     private void close() throws Exception {
@@ -127,6 +135,7 @@ public final class NexoBootInstrumentation extends Instrumentation {
             getTargetContext().startActivity(restore);
             waitFor("window.Nexo?.state().native?.schema===2&&NexoScene.getState().ready");js("NexoIntro.skip();return true;");capture("08-resume");checked("Android background/resume restores a visible native-backed launcher");
             try(FileOutputStream stream=new FileOutputStream(new File(proof,"RESULTS.txt"))){stream.write(checks.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));}
+            if(touchFailures>0)throw new AssertionError("Native touch failed in "+touchFailures+" tabs; backend checks continued only to preserve diagnostics");
             result.putString("stream","NEXO_ANDROID_RESULT PASS\n"+checks);finish(Activity.RESULT_OK,result);
         } catch(Throwable error) {
             try{if(proof!=null&&activity!=null)capture("FAILURE");}catch(Throwable ignored){}
