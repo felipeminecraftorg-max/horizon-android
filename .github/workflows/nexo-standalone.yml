@@ -342,11 +342,18 @@ jobs:
           sudo chmod 666 /dev/kvm
           sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           "$sdkmanager" --sdk_root="$ANDROID_HOME" 'emulator' 'system-images;android-34;google_apis;x86_64'
-          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd --force -n nexo-qa -k 'system-images;android-34;google_apis;x86_64' --device pixel_2
+          export ANDROID_AVD_HOME="$GITHUB_WORKSPACE/.local/nexo-avd"
+          export ANDROID_USER_HOME="$GITHUB_WORKSPACE/.local/nexo-android-user"
+          export ANDROID_EMULATOR_HOME="$ANDROID_USER_HOME"
+          mkdir -p "$ANDROID_AVD_HOME" "$ANDROID_USER_HOME"
+          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd --force -n nexo-qa -p "$ANDROID_AVD_HOME/nexo-qa.avd" -k 'system-images;android-34;google_apis;x86_64' --device pixel_2
+          printf 'avd.ini.encoding=UTF-8\npath=%s\n' "$ANDROID_AVD_HOME/nexo-qa.avd" > "$ANDROID_AVD_HOME/nexo-qa.ini"
+          "$ANDROID_HOME/emulator/emulator" -list-avds | tee dist/nexo-android-boot/avds.txt
+          grep -qx nexo-qa dist/nexo-android-boot/avds.txt
           "$ANDROID_HOME/emulator/emulator" -avd nexo-qa -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -no-snapshot -memory 2048 -cores 2 >dist/nexo-android-boot/emulator.txt 2>&1 &
           adb="$ANDROID_HOME/platform-tools/adb"
           trap '"$adb" logcat -d > dist/nexo-android-boot/logcat.txt 2>&1 || true; "$adb" shell dumpsys activity activities > dist/nexo-android-boot/activities.txt 2>&1 || true; "$adb" exec-out screencap -p > dist/nexo-android-boot/last-screen.png 2>/dev/null || true' EXIT
-          "$adb" wait-for-device
+          timeout 90 "$adb" wait-for-device
           timeout 180 bash -c 'until [ "$("$ANDROID_HOME/platform-tools/adb" shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
           "$adb" shell settings put global window_animation_scale 0
           "$adb" shell settings put global transition_animation_scale 0

@@ -28,6 +28,8 @@ A interface recebe dados de domínio e identificadores de ações pela ponte nat
 
 O contexto WebGL é destruído antes de entregar a tela à partida, liberando os recursos da interface. A cena pausa quando o aplicativo deixa de estar visível. Há uma apresentação Nexo de compatibilidade quando WebGL não inicia.
 
+O launcher abre numa janela Android própria, sem esperar o renderizador Vulkan ou o atlas do jogo. A vistoria de tipografia, margens, recuperação e navegação está descrita em [Abertura e vistoria do launcher](android-nexo-startup-audit.md).
+
 ## Verificação
 
 Os testes automatizados da interface usam dados de domínio simulados, sem contas reais. Eles exercitam busca, detalhes, temas, ajustes, arraste e salvamento do layout, renomeação, campos de autenticação e uma única chamada direta de Jogar. Não substituem um teste de partida no celular.
