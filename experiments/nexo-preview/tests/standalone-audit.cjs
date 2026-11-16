@@ -29,18 +29,22 @@ async function receive(view,modal=null){await page.evaluate(({view,modal})=>{nat
  const context=await browser.newContext({viewport:{width:852,height:393},hasTouch:true,deviceScaleFactor:1});await context.addInitScript(require('./standalone-fixture.cjs'));page=await context.newPage();page.on('pageerror',e=>{errors.push(e.message);console.log('NEXO_AUDIT_ERROR '+e.stack);});page.setDefaultTimeout(15000);await page.goto('http://127.0.0.1:'+server.address().port);await page.waitForFunction(()=>window.Nexo?.state().native&&window.NexoScene?.getState().ready&&!NexoIntro.isActive());
  await page.evaluate(()=>{NexoApp.store.get().preferences.reducedMotion=true;NexoScene.refresh();document.querySelector('#settings-button').click();});await page.waitForFunction(()=>Nexo.state().native.view.type==='settings'&&!document.querySelector('#module').inert);
  const nativeSettings=await page.evaluate(()=>structuredClone(Nexo.state().native.view));
+ await page.evaluate(()=>HorizonHost.request('page',{page:'mods'}));const nativeCatalog=await page.evaluate(()=>structuredClone(Nexo.state().native.view));
  const controls=[{id:301,kind:'toggle',label:'Iluminação e atmosfera de longa duração',value:true},{id:302,kind:'option',label:'Perfil do dispositivo',caption:'Nome bastante comprido do dispositivo'},{id:303,kind:'range',label:'Distância de visão e simulação',value:.65,caption:'24 chunks'},{id:304,kind:'field',key:'name',label:'Nome do jogador',value:'Nome extenso com acentuação'},{id:305,kind:'button',label:'Compartilhar relatório de diagnóstico'}];
  const settings={...nativeSettings,groups:nativeSettings.groups.map(g=>({...g,controls}))};
  const fields=[{id:411,key:'ely_username',label:'Usuário ou e-mail',kind:'field',value:'nome@example.invalid'},{id:412,key:'ely_password',label:'Senha',kind:'password',value:''},{id:413,key:'ely_otp',label:'Código de verificação',kind:'password',value:''},{id:414,key:'name',label:'Nome do jogador',kind:'field',value:'Nexo QA'}];
  const actions={microsoft:401,ely:402,offline:403,start:404,elySubmit:405,saved:406,add:407,close:408,copy:409,link:410,cancel:415,signout:416,selectOffline:417};
  for(const viewport of[{width:852,height:393},{width:393,height:852},{width:360,height:640},{width:568,height:320}]){
   await page.setViewportSize(viewport);await page.waitForTimeout(200);await receive(settings);await inspect('settings-hub');
+  await page.locator('#module-options').click();await inspect('session-shortcuts');await page.locator('#portal-close').click();
   for(const group of ['appearance',...settings.groups.map(g=>g.id)]){
    await page.evaluate(id=>{const title=id==='appearance'?'Atmosfera Nexo':nativeState.view.groups.find(g=>g.id===id).title;[...document.querySelectorAll('.nx-settings-tile')].find(b=>b.textContent.includes(title)).click();},group);
    await inspect('settings-'+group);await page.getByRole('button',{name:'Todas as configurações'}).click();
   }
   await receive({type:'files',path:'profiles/profile-2/resourcepacks/Uma pasta com nome comprido',selected:1,canPaste:true,roots:[{id:501,label:'Jogo'},{id:502,label:'Pacotes'},{id:503,label:'Capturas'}],entries:Array.from({length:12},(_,n)=>({name:'Arquivo com título bastante extenso '+n+'.hmod',key:'file'+n,directory:false,size:'125 KiB',kind:'H-mod',selected:n===0,open:510+n*6,select:511+n*6,details:512+n*6,rename:513+n*6,export:514+n*6,remove:515+n*6})),tools:['Pasta anterior','Importar','Nova pasta','Selecionar tudo','Limpar seleção','Copiar','Mover','Colar','Compartilhar seleção','Excluir seleção'].map((label,n)=>({label,id:600+n}))});await inspect('files');
   await page.getByRole('button',{name:'Organizar arquivos'}).click();await inspect('file-tools');await page.locator('#portal-close').click();
+  await page.getByRole('button',{name:'Ações de Arquivo com título bastante extenso 0.hmod',exact:true}).click();await inspect('file-actions');await page.locator('#portal-close').click();
+  await page.evaluate(()=>{nativeState.download={title:'Pacote de recursos com um nome bastante extenso',progress:.6};});await receive(nativeCatalog);await inspect('download-controls');await page.evaluate(()=>nativeState.download=null);
   const wardrobe={type:'wardrobe',capes:false,model:'slim',hideCape:false,preview:null,note:'Sua aparência local',items:[{id:'one',title:'Personagem de nome comprido para a coleção',active:true,choose:701}],cloudCapes:[],tools:{skins:702,capes:703,import:704,cloud:705,upload:706,model:707,hideCape:708}};await receive(wardrobe);await inspect('wardrobe');
   for(const mode of ['providers','offline','ely','signin','accounts']){await receive(settings,{type:'account',mode,pending:false,code:'ABCD1234',fields,actions,accounts:[{name:'Conta de personagem com nome comprido',provider:'Microsoft',choose:418}]});await inspect('account-'+mode);}
   for(const modal of[
@@ -51,6 +55,7 @@ async function receive(view,modal=null){await page.evaluate(({view,modal})=>{nat
    {type:'details',title:'Informações da sessão',description:'Estado atual do aplicativo.',preview:['Uma linha longa de informações que pode quebrar em várias linhas sem invadir o botão.'],close:811}
   ]){await receive(settings,modal);await inspect('modal-'+modal.type);}
   const placement={center:[.2,.65],size:.16,opacity:.8,width_ratio:1,height_ratio:1,roundness:6,visible_in_game:true};await receive({type:'editor',name:'Meu layout',mode:0,controls:[{index:0,title:'Movimento',custom:false,visible:true,placement}]});await inspect('editor');
+  await page.locator('.nx-placed').click();await inspect('editor-inspector');
   await page.getByRole('button',{name:'Modo do layout'}).click();await inspect('editor-mode');await page.locator('#portal-close').click();await page.getByRole('button',{name:'Adicionar atalho'}).click();await inspect('editor-add');await page.locator('#portal-close').click();await page.getByRole('button',{name:'Restaurar',exact:true}).click();await inspect('editor-reset');await page.locator('#portal-close').click();
   await receive(settings);await page.screenshot({path:path.join(out,'audit-settings-'+viewport.width+'x'+viewport.height+'.png')});
  }

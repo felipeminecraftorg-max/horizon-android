@@ -115,3 +115,4 @@ button>span,button>div,button>strong,button>small{min-width:0;max-width:100%}
 
 @media(max-width:600px){.nx-pagination .nx-page-button{width:44px;min-width:44px}.module-actions button{width:44px;min-width:44px}}
 .nx-skin-card strong{overflow-wrap:anywhere}
+.nx-download{font-size:calc(13px * var(--scale));min-height:44px;padding:4px 0;gap:8px}.nx-download button{min-height:44px;font-size:calc(13px * var(--scale));padding:8px}.nx-download progress{appearance:none;-webkit-appearance:none;height:6px;border:1px solid #6a87916b;border-radius:2px;overflow:hidden;background:#07111c}.nx-download progress::-webkit-progress-bar{background:#07111c}.nx-download progress::-webkit-progress-value{background:linear-gradient(90deg,#637f8a,var(--accent))}.nx-download progress::-moz-progress-bar{background:var(--accent)}
