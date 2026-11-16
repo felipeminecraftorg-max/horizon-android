@@ -57,8 +57,10 @@ public final class NexoBootInstrumentation extends Instrumentation {
         SystemClock.sleep(250);Bitmap shot=getUiAutomation().takeScreenshot();
         if(shot==null)throw new AssertionError("No Android screenshot");
         int varied=0;java.util.Set<Integer> colors=new java.util.HashSet<>();
-        for(int y=30;y<shot.getHeight()-20;y+=8)for(int x=12;x<shot.getWidth()-12;x+=8){int c=shot.getPixel(x,y);colors.add(c);if((c&0xffffff)>0x181818)varied++;}
-        if(colors.size()<24||varied<30)throw new AssertionError("Android screenshot is blank/black: "+colors.size()+" colors");
+        // Sample application content, excluding system bars and their antialiased
+        // clock/battery glyphs, which must not make a black window pass.
+        for(int y=shot.getHeight()/8;y<shot.getHeight()*7/8;y+=8)for(int x=shot.getWidth()/10;x<shot.getWidth()*9/10;x+=8){int c=shot.getPixel(x,y);colors.add(c);if(android.graphics.Color.red(c)+android.graphics.Color.green(c)+android.graphics.Color.blue(c)>96)varied++;}
+        if(colors.size()<40||varied<100)throw new AssertionError("Android application content is blank/black: "+colors.size()+" colors, "+varied+" lit samples");
         try(FileOutputStream stream=new FileOutputStream(new File(proof,name+".png"))){shot.compress(Bitmap.CompressFormat.PNG,100,stream);}shot.recycle();
     }
     private void checked(String text) {checks.append(text).append('\n');Bundle b=new Bundle();b.putString("stream","NEXO_ANDROID_OK "+text+"\n");sendStatus(0,b);}
@@ -73,7 +75,7 @@ public final class NexoBootInstrumentation extends Instrumentation {
             proof=new File(getTargetContext().getExternalFilesDir(null),"nexo-android-proof");proof.mkdirs();
             long start=SystemClock.uptimeMillis();
             Intent launch=new Intent();launch.setClassName(getTargetContext().getPackageName(),"dev.horizon.android.HorizonActivity");launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            activity=startActivitySync(launch);
+            checked("starting actual Android release activity");activity=startActivitySync(launch);
             waitFor("window.Nexo?.state().native?.schema===2&&window.NexoScene?.getState().ready");
             js("NexoIntro.skip();NexoApp.store.get().preferences.reducedMotion=true;NexoScene.refresh();return true;");
             runOnMainSync(()->activity.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE));
@@ -81,6 +83,7 @@ public final class NexoBootInstrumentation extends Instrumentation {
             Field window=activity.getClass().getDeclaredField("nexoWindow");window.setAccessible(true);
             if(!((android.app.Dialog)window.get(activity)).isShowing())throw new AssertionError("No independent launcher window");
             capture("01-cold-boot");checked("real release app cold boot, independent Android window and Rust snapshot in "+(SystemClock.uptimeMillis()-start)+" ms");
+            checked("scene="+js("return {webgl:document.querySelector('#nexo-app').dataset.webgl,compatibility:document.querySelector('#nexo-app').classList.contains('nx-compatible')};"));
             for(String page:new String[]{"mods","packs","shaders"}){
                 int index=page.equals("mods")?1:page.equals("packs")?2:3;
                 js("NexoScene.select("+index+");return true;");waitFor("NexoScene.getState().selected==="+index);
