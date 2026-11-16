@@ -1454,7 +1454,8 @@ impl Launcher {
             // The DOM owns scrolling/reflow. Capture all native rows, not just
             // the few that fit behind the visible WebView at the native DPI.
             ui.w = 960.;
-            ui.h = 4096.;
+            let rows = self.catalog.results.len() + self.catalog.local.len() + self.catalog.fm_entries.len();
+            ui.h = (1200. + rows as f32 * 110.).clamp(4096., 65000.);
             self.anim.intro_done = true;
         }
         // Keep ui.w and ui.h synchronized with Launcher::ui_density(). When the soft keyboard is

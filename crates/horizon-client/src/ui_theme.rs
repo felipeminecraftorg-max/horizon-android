@@ -1280,6 +1280,22 @@ impl<'a> Ui<'a> {
         if color >> 24 == 0 || size <= 0.0 {
             return;
         }
+        if crate::launcher_nexo::active() {
+            let name = match icon {
+                Icon::ConsolePlay | Icon::Play => "play",
+                Icon::ConsoleMods | Icon::Mods => "mods",
+                Icon::ConsolePacks | Icon::Packs => "packs",
+                Icon::ConsoleShaders | Icon::Shaders => "shaders",
+                Icon::ConsoleSkins | Icon::Person => "account",
+                Icon::ConsoleFiles | Icon::Installed | Icon::Folder => "files",
+                Icon::ConsoleSettings | Icon::Settings | Icon::Gear => "settings",
+                Icon::Search => "search", Icon::ArrowLeft => "back",
+                Icon::Close => "close", Icon::Plus => "plus", Icon::Check => "check",
+                Icon::Trash => "trash", _ => "",
+            };
+            if !name.is_empty() { crate::launcher_nexo::icon([x,y,size,size],name); }
+            return;
+        }
         let (x0, y0) = (self.px_x(x), self.px_y(y));
         let px = (size * self.density).round().clamp(8.0, 128.0) as u16;
         let atlas = self.atlas;

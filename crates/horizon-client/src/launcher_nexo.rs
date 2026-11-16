@@ -12,6 +12,7 @@ pub struct Frame {
     pub switches: Vec<([f32; 4], bool)>,
     pub ranges: Vec<([f32; 4], f32)>,
     pub images: Vec<Picture>,
+    pub icons: Vec<Glyph>,
 }
 #[derive(Clone, Serialize)]
 pub struct Text {
@@ -33,6 +34,9 @@ pub struct Button {
     pub label: String,
     pub selected: bool,
 }
+#[derive(Clone)]
+pub struct Glyph { pub rect: [f32; 4], pub name: &'static str }
+pub fn icon(rect: [f32;4], name: &'static str) { edit(|f|f.icons.push(Glyph{rect,name})); }
 #[derive(Clone, Serialize)]
 pub struct Picture {
     pub rect: [f32; 4],

@@ -73,7 +73,9 @@ impl Launcher {
             return;
         }
         for command in crate::nexo::take() {
+            let scope = self.nexo_scope();
             let result = self.nexo_operation(command.op, events);
+            if scope != self.nexo_scope() { self.nexo.bindings.clear(); }
             if let Err(error) = &result {
                 self.catalog.status = error.clone();
             }
@@ -124,15 +126,12 @@ impl Launcher {
                     .map_err(|e| e.to_string())?;
             }
             Operation::Press { control } => {
-                let action = self
-                    .nexo
-                    .bindings
-                    .iter()
-                    .find(|b| b.id == control)
-                    .map(|b| b.action)
+                let index=self.nexo.bindings.iter().position(|b| b.id==control)
                     .ok_or("This view changed. Please choose the item again.")?;
-                self.dispatch_action(events, Some(action))
-                    .map_err(|e| e.to_string())?;
+                // Consume a press before dispatch: repeated taps cannot delete
+                // the next row after a removal shifts native list indices.
+                let binding=self.nexo.bindings.remove(index);
+                self.dispatch_action(events, Some(binding.action)).map_err(|e|e.to_string())?;
             }
             Operation::Edit {
                 control,
@@ -231,6 +230,19 @@ impl Launcher {
         }
         Ok(())
     }
+    fn nexo_scope(&self) -> String {
+        let modal = self.login.visible || self.chooser.is_some() || self.catalog.project_modal.is_some()
+            || self.catalog.fm_modal.is_some() || self.status_details || self.diagnostics_modal_open || self.exit_confirmation;
+        format!(
+            "{}:{}:{}:{}:{}:{}",
+            self.catalog.page.name(),
+            self.catalog.settings_category.title(),
+            modal,
+            self.login.offline,
+            self.login.ely,
+            self.catalog.fm_current_dir
+        )
+    }
     fn nexo_field_value(&self, key: &str) -> &str {
         match key {
             "name" => &self.catalog.config.name,
@@ -261,15 +273,7 @@ impl Launcher {
             || self.status_details
             || self.diagnostics_modal_open
             || self.exit_confirmation;
-        let scope = format!(
-            "{}:{}:{}:{}:{}:{}",
-            self.catalog.page.name(),
-            self.catalog.settings_category.title(),
-            modal,
-            self.login.offline,
-            self.login.ely,
-            self.catalog.fm_current_dir
-        );
+        let scope = self.nexo_scope();
         let previous = std::mem::take(&mut self.nexo.bindings);
         let mut controls = Vec::new();
         let ranges = pages::nexo_slider_actions();
@@ -424,14 +428,13 @@ impl Launcher {
             if let Some(color)=&color { label=color.clone(); }
             controls.push(json!({"id":id,"kind":kind,"label":label,"lines":lines,"rect":rect,"group":group,
                 "value":if let Action::Field(key)=action{self.nexo_field_value(key).to_owned()}else{String::new()},
-                "field":if let Action::Field(key)=action{Some(key)}else{None},"color":color,"hint":field.map(|f|f.hint.clone()),"checked":checked,"selected":button.is_some_and(|b|b.selected),"fraction":fraction,"image":image}));
+                "field":if let Action::Field(key)=action{Some(key)}else{None},"icon":frame.icons.iter().find(|g|inside(rect,g.rect[0]+g.rect[2]*0.5,g.rect[1]+g.rect[3]*0.5)).map(|g|g.name),"color":color,"hint":field.map(|f|f.hint.clone()),"checked":checked,"selected":button.is_some_and(|b|b.selected),"fraction":fraction,"image":image}));
         }
         let texts: Vec<_> = frame
             .texts
             .iter()
             .filter(|t| {
                 (modal || t.y >= 120.)
-                    && t.y < 4096.
                     && !self.targets.iter().any(|(r, _)| inside(*r, t.x, t.y))
             })
             .collect();
