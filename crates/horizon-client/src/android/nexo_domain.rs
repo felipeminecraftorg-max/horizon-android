@@ -31,7 +31,7 @@ impl Launcher {
   let view=if let Some(editor)=&self.nexo.editor {self.nexo_layout_model(editor)}else{match self.catalog.page {
    Page::Mods|Page::Packs|Page::Shaders=>self.nexo_catalog_model(&mut r),
    Page::Installed=>self.nexo_files_model(&mut r),Page::Skins=>self.nexo_wardrobe_model(&mut r),
-   Page::Settings=>self.nexo_settings_model(&mut r),Page::Play=>json!({"type":"home"}),
+   Page::Settings=>self.nexo_settings_model(&mut r),Page::Play=>json!({"type":"home","installing":self.worker.is_some(),"paused":self.install_paused.load(std::sync::atomic::Ordering::Relaxed),"pause":r.bind("installPause",Action::PauseInstall),"cancel":r.bind("installCancel",Action::CancelInstall)}),
   }};
   let modal=self.nexo_modal_model(&mut r);
   let install=self.install.lock().unwrap_or_else(|e|e.into_inner());

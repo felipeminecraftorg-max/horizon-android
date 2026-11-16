@@ -159,6 +159,11 @@ function minecraftIcon(i,m,cool,warm,alpha){
  if(i===3){for(const [x,y,z,k]of[[-.28,-.10,0,.66],[.04,.05,0,1],[.31,-.18,.08,.55]])drawMesh(crystalMesh,mul(m,mul(trans(x,y,z),mul(rz(-x*.7),scale(k)))),x>0?warm:cool,alpha,0,.92);voxel(m,0,-.44,0,.72,.12,.48,edge,alpha,.8);}
  if(i===4){voxel(m,0,.18,0,.64,.64,.57,cool,alpha,.8);voxel(m,0,-.35,-.01,.9,.28,.43,warm,alpha,.65);voxel(m,0,.43,.30,.64,.14,.035,edge,alpha,.6);for(const x of[-.16,.16]){voxel(m,x,.18,.302,.11,.09,.025,dark,alpha,.7);voxel(m,x-.02,.19,.322,.035,.04,.012,light,alpha,.8);}voxel(m,0,-.02,.304,.18,.055,.03,edge,alpha,.6);}
 }
+function utilityIcon(kind,m,cool,warm,alpha){
+ const dark=[.12,.19,.22];
+ if(kind==='files'){voxel(m,-.2,.25,0,.40,.20,.32,cool,alpha,.7);voxel(m,0,-.03,-.1,.91,.65,.27,cool,alpha,.65);voxel(m,0,-.12,.14,.96,.47,.13,warm,alpha,.72);voxel(m,0,.14,.03,.74,.06,.30,dark,alpha,.6);}
+ if(kind==='settings'){for(let k=0;k<8;k++){const a=k*Math.PI/4,base=mul(m,mul(rz(a),trans(0,.41,0)));voxel(base,0,0,0,.22,.19,.27,cool,alpha,.85);}voxel(m,0,0,0,.64,.64,.24,cool,alpha,.83);voxel(m,0,0,.14,.31,.31,.06,dark,alpha,.55);voxel(m,0,0,.19,.13,.13,.07,warm,alpha,.8);}
+}
 function texture(i,internal){const c=document.createElement('canvas');c.width=1024;c.height=668;const x=c.getContext('2d');x.clearRect(0,0,c.width,c.height);
  if(!internal){x.fillStyle='#9ebbd4';x.font='500 30px system-ui';x.fillText(String(i+1).padStart(2,'0')+(NexoApp.productOnly?' / NEXO':' / HORIZON'),65,85);x.fillStyle='#e3ebf2';const textScale=NexoApp.store.get().preferences.textScale;x.font='400 '+(86*textScale)+'px Michroma, system-ui';x.fillText(names[i],65,462+86*textScale*.86);x.font='400 '+(35*textScale)+'px system-ui';x.fillStyle='#b7cbdc';const p=NexoApp.profile();x.fillText(i===0?p.name+' · '+p.version:sub[i],65,564+(textScale-1)*80+35*textScale*.82);}
  const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);return t;}
@@ -206,7 +211,7 @@ function paintScene(commands,selected,viewport,width,height){
  if(enabled){const size=NexoApp.store.get().preferences.renderScale>.8?768:384;shadowTarget=resizeTarget(shadowTarget,size,size,false);const ratio=Math.min(.42,512/width,512/height);reflectionTarget=resizeTarget(reflectionTarget,Math.max(64,Math.ceil(width*ratio/16)*16),Math.max(64,Math.ceil(height*ratio/16)*16),true);}
  const ready=!!enabled&&shadowTarget.ready&&reflectionTarget.ready;
  let hash=2166136261;for(const c of commands){for(const value of c.model)hash=Math.imul(hash^Math.round(value*100000),16777619);hash=Math.imul(hash^Math.round(c.alpha*10000),16777619);}
- const key=[hash,width,height,NexoApp.store.get().preferences.renderScale,NexoApp.store.get().preferences.warmth,NexoApp.profile().name].join('|'),updateShadow=ready&&key!==shadowKey,updateReflection=ready&&(key!==reflectionKey||Math.abs(ambientTime-reflectionTime)>1/12);
+ const key=[hash,width,height,NexoApp.store.get().preferences.renderScale,NexoApp.store.get().preferences.warmth,NexoApp.profile().name,JSON.stringify(NexoApp.themeColors?.()),NexoApp.material?.()].join('|'),updateShadow=ready&&key!==shadowKey,updateReflection=ready&&(key!==reflectionKey||Math.abs(ambientTime-reflectionTime)>1/12);
  lightingStats.shadowReused=ready&&!updateShadow;lightingStats.reflectionReused=ready&&!updateReflection;
  if(updateShadow){
   gl.bindFramebuffer(gl.FRAMEBUFFER,shadowTarget.buffer);gl.viewport(0,0,shadowTarget.width,shadowTarget.height);gl.clearColor(1,1,1,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.enable(gl.DEPTH_TEST);gl.disable(gl.BLEND);gl.enable(gl.CULL_FACE);gl.cullFace(gl.FRONT);gl.useProgram(shadowProgram);gl.uniformMatrix4fv(shadowU.uLightVP,false,lightVP);
@@ -240,7 +245,7 @@ function render(now){const w=canvas.clientWidth,fullH=canvas.clientHeight,style=
  const parent=mul(trans(x,y,z),mul(ry(yaw),rx(-.055*Math.sin(Math.PI*op))));
  const iconDepth=.36+pulse*.30+.30*Math.sin(Math.PI*op),iconDistance=eye-z-iconDepth,pixel=2*iconDistance/(h*f),headerX=((face.left+28)/w*2-1)*iconDistance*aspect/f-x,headerY=(1-(face.top+36-top)/h*2)*iconDistance/f+.08-y,headerScale=Math.min(32,face.width*.15)*pixel/.9;
  const iconM=mul(parent,mul(trans(mix(0,headerX,op),mix(.25,headerY,op),iconDepth),mul(ry(-.2+spin+.18*Math.sin(Math.PI*op)),mul(rx(.10),scale(mix(1,headerScale,op))))));const tint=NexoApp.themeColors?.(),cool=tint?.cool||[.62,.76,.80],warm=tint?.warm||[.64,.49,.29];gl.uniform1f(U.uTex,0);
- minecraftIcon(i,iconM,cool,warm,alpha);
+ const context=isFront?NexoApp.contextIcon?.():null,contextBlend=context?clamp((op-.35)/.45,0,1):0;if(contextBlend<.999)minecraftIcon(i,iconM,cool,warm,alpha*(1-contextBlend));if(contextBlend>0)utilityIcon(context,iconM,cool,warm,alpha*contextBlend);
  if(i===4){
  const skinFrame=op>.97?NexoApp.skinRect():null;if(skinFrame){const r=skinFrame,dist=eye-z-.48,unit=2*dist/(h*f),size=Math.max(.01,Math.min(r.height*.88,r.width*.8)*unit/1.8),cx=((r.x+r.width/2)/w*2-1)*dist*aspect/f-x,cy=(1-(r.y+r.height/2-top)/h*2)*dist/f+.08-y,figure=mul(parent,mul(trans(cx,cy,.48),mul(ry(NexoApp.store.get().skinTurn),scale(size))));
  object(head,mul(figure,trans(0,.57,0)),[.73,.61,.45],1,.05);object(torso,mul(figure,trans(0,-.01,0)),cool,1,.12);
