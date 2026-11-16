@@ -68,9 +68,9 @@ public final class NexoBootInstrumentation extends Instrumentation {
     }
     private void checked(String text) {checks.append(text).append('\n');Bundle b=new Bundle();b.putString("stream","NEXO_ANDROID_OK "+text+"\n");sendStatus(0,b);}
     private void openTab(int index) throws Exception {
-        waitFor("!NexoScene.getState().open&&NexoScene.getState().opening<.001");
+        waitFor("!NexoScene.getState().open&&NexoScene.getState().opening<.001&&document.querySelector('#module').hidden");
         js("NexoScene.select("+index+");return true;");
-        waitFor("NexoScene.getState().selected==="+index+"&&Math.abs(NexoScene.getState().position-NexoScene.getState().target)<.001");
+        waitFor("NexoScene.getState().selected==="+index+"&&Math.abs(NexoScene.getState().position-NexoScene.getState().target)<.001&&Math.abs(Number(document.querySelector('#nexo-app').dataset.position)-NexoScene.getState().target)<.001");
         int[] position=new int[2],size=new int[2];
         runOnMainSync(()->{try{WebView web=view();web.getLocationOnScreen(position);size[0]=web.getWidth();size[1]=web.getHeight();}catch(Exception e){throw new RuntimeException(e);}});
         long time=SystemClock.uptimeMillis();float x=position[0]+size[0]/2f,y=position[1]+size[1]/2f;
@@ -83,7 +83,7 @@ public final class NexoBootInstrumentation extends Instrumentation {
     private void close() throws Exception {
         js("if(document.querySelector('#nexo-modal').open)Nexo.back();return true;");
         waitFor("!document.querySelector('#nexo-modal').open");
-        js("NexoScene.close(true);return true;");waitFor("!NexoScene.getState().open&&NexoScene.getState().opening<.001");
+        js("NexoScene.close(true);return true;");waitFor("!NexoScene.getState().open&&NexoScene.getState().opening<.001&&document.querySelector('#module').hidden");
     }
     @Override public void onStart() {
         Bundle result=new Bundle();
