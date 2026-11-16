@@ -25,6 +25,16 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
+      - name: Format standalone Rust for the review branch
+        run: |
+          cargo fmt --all
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          paths=['crates/horizon-client/src/android/nexo_domain.rs','crates/horizon-client/src/android/launcher_nexo.rs','crates/horizon-client/src/android/nexo.rs','crates/horizon-client/src/android/launcher.rs','crates/horizon-client/src/android/login.rs','crates/horizon-client/src/android/wardrobe.rs','crates/horizon-client/src/android/chooser.rs','crates/horizon-client/src/launcher_nexo.rs']
+          for path in paths:
+              print('NEXO_FORMATTED_FILE '+json.dumps({'path':path,'content':Path(path).read_text()}))
+          PY
       - name: Verify local state and native transport
         run: |
           for file in experiments/nexo-preview/android/src/main/assets/*.js; do node --check "$file"; done
