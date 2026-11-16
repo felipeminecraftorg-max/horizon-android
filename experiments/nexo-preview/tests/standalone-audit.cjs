@@ -14,6 +14,7 @@ async function inspect(name){
    if(!font.includes('Nexo Read'))failures.push('Wrong font: '+n.outerHTML.slice(0,100));
    if(r.left<-1||r.top<-1||r.right>innerWidth+1||r.bottom>innerHeight+1)failures.push('Outside viewport: '+n.textContent);
    for(const icon of n.querySelectorAll('svg,.nx-switch')){const i=rect(icon);if(i.left<r.left+3||i.top<r.top+3||i.right>r.right-3||i.bottom>r.bottom-3)failures.push('Glyph touches edge: '+(n.getAttribute('aria-label')||n.textContent));}
+   const walker=document.createTreeWalker(n,NodeFilter.SHOW_TEXT);let textNode;while((textNode=walker.nextNode())){if(!textNode.textContent.trim()||!visible(textNode.parentElement))continue;const range=document.createRange();range.selectNodeContents(textNode);for(const line of range.getClientRects())if(line.top<r.top+2||line.bottom>r.bottom-2)failures.push('Text touches control border: '+textNode.textContent.trim());}
    controls.push({node:n,r,label:n.getAttribute('aria-label')||n.textContent.trim().slice(0,60)});
   }
   for(let a=0;a<controls.length;a++)for(let b=a+1;b<controls.length;b++){const x=controls[a],y=controls[b];if(x.node.contains(y.node)||y.node.contains(x.node))continue;const w=Math.min(x.r.right,y.r.right)-Math.max(x.r.left,y.r.left),h=Math.min(x.r.bottom,y.r.bottom)-Math.max(x.r.top,y.r.top);if(w>1&&h>1)failures.push('Overlapping controls: '+x.label+' / '+y.label);}

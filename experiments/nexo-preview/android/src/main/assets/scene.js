@@ -73,7 +73,9 @@ void main(){
     vec2 q=abs(vUV-.5)-vec2(.447,.419);
     float edge=length(max(q,0.))+min(max(q.x,q.y),0.)-.035;
     float etch=1.-smoothstep(.001,.0035,abs(edge));
-    color+=vec3(.14,.25,.28)*etch*.32;
+    // The ornamental home etching fades before content appears. Its UV radius
+    // must never become a line behind header controls on a tall open panel.
+    color+=vec3(.14,.25,.28)*etch*.32*(1.-smoothstep(.2,.6,uBlend));
     float sweep=exp(-pow((vUV.y-.75-.055*sin(vUV.x*4.+uTime*.17))/.18,2.));
     color+=vec3(.012,.035,.043)*sweep;
   }
@@ -165,7 +167,7 @@ function utilityIcon(kind,m,cool,warm,alpha){
  if(kind==='settings'){for(let k=0;k<8;k++){const a=k*Math.PI/4,base=mul(m,mul(rz(a),trans(0,.41,0)));voxel(base,0,0,0,.22,.19,.27,cool,alpha,.85);}voxel(m,0,0,0,.64,.64,.24,cool,alpha,.83);voxel(m,0,0,.14,.31,.31,.06,dark,alpha,.55);voxel(m,0,0,.19,.13,.13,.07,warm,alpha,.8);}
 }
 function texture(i,internal){const c=document.createElement('canvas');c.width=1024;c.height=668;const x=c.getContext('2d');x.clearRect(0,0,c.width,c.height);
- if(!internal){x.fillStyle='#9ebbd4';x.font='500 30px system-ui';x.fillText(String(i+1).padStart(2,'0')+(NexoApp.productOnly?' / NEXO':' / HORIZON'),65,85);x.fillStyle='#e3ebf2';const textScale=NexoApp.store.get().preferences.textScale;x.font='400 '+(86*textScale)+'px Michroma, system-ui';x.fillText(names[i],65,462+86*textScale*.86);x.font='400 '+(35*textScale)+'px system-ui';x.fillStyle='#b7cbdc';const p=NexoApp.profile();x.fillText(i===0?p.name+' · '+p.version:sub[i],65,564+(textScale-1)*80+35*textScale*.82);}
+ if(!internal){x.fillStyle='#9ebbd4';x.font='400 30px "Nexo Read", sans-serif';x.fillText(String(i+1).padStart(2,'0')+(NexoApp.productOnly?' / NEXO':' / HORIZON'),65,85);x.fillStyle='#e3ebf2';const textScale=NexoApp.store.get().preferences.textScale;x.font='400 '+(86*textScale)+'px Michroma, system-ui';x.fillText(names[i],65,462+86*textScale*.86);x.font='400 '+(35*textScale)+'px "Nexo Read", sans-serif';x.fillStyle='#b7cbdc';const p=NexoApp.profile();x.fillText(i===0?p.name+' · '+p.version:sub[i],65,564+(textScale-1)*80+35*textScale*.82);}
  const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,c);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);return t;}
 const torso=rounded(.56,.72,.30,.08,.025),limb=rounded(.18,.68,.24,.07,.025),leg=rounded(.23,.58,.25,.06,.02);
 const posters=names.map((_,i)=>texture(i,false)),internals=names.map((_,i)=>texture(i,true));
@@ -290,6 +292,6 @@ window.NexoScene={select:choose,activate,close:closeSection,openView(){openTarge
  setVisible(value){visible=!!value;if(!visible){motion.reset();if(raf)cancelAnimationFrame(raf);raf=0;clearTimeout(idleTimer);idleTimer=0;}if(visible){last=0;forcePaint=true;wake();}},
  inspectLayout,inspectLighting,inspectMotion:motion.inspect,sources:{vertex:vs,fragment:fs,backgroundVertex:bgvs,backgroundFragment:bgfs,shadowVertex:shadowVS,shadowFragment:shadowFS}};
 canvas.addEventListener('webglcontextrestored',()=>location.reload());
-document.fonts.load('86px Michroma').then(()=>{for(let i=0;i<N;i++){gl.deleteTexture(posters[i]);posters[i]=texture(i,false);}forcePaint=true;wake();});
+Promise.all([document.fonts.load('86px Michroma'),document.fonts.load('35px "Nexo Read"')]).then(()=>{for(let i=0;i<N;i++){gl.deleteTexture(posters[i]);posters[i]=texture(i,false);}forcePaint=true;wake();});
 updateUI();NexoApp.ready();NexoIntro.start();wake();
 })();

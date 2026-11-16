@@ -46,7 +46,7 @@ public final class HorizonActivity extends android.app.NativeActivity {
             w.getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,callback);
         }
     }
-    /** Only the selected Old School preset constructs this local visual view. */
+    /** The independent Nexo product and the integrated Old School host use this local view. */
     public void horizonNexo(final boolean show) {
         runOnUiThread(() -> {
             if (!show) { destroyNexo(); return; }
@@ -94,8 +94,8 @@ public final class HorizonActivity extends android.app.NativeActivity {
                         nexoReady = true;
                         nexoHandler.postDelayed(() -> {
                             if(v!=nexo)return;
-                            v.evaluateJavascript("!!(window.NexoScene&&NexoScene.getState().ready)",ready->{if(v==nexo&&!"true".equals(ready))failNexo();});
-                        },15000);
+                            v.evaluateJavascript("!!(window.NexoScene?.getState().ready&&window.Nexo?.state().native?.schema===2)",ready->{if(v==nexo&&!"true".equals(ready))failNexo();});
+                        },25000);
                         sendNexoState();
                     }
                     @Override public void onReceivedError(android.webkit.WebView v,android.webkit.WebResourceRequest request,android.webkit.WebResourceError error) {
@@ -144,11 +144,18 @@ public final class HorizonActivity extends android.app.NativeActivity {
     private void failNexo() {
         if(horizonNexoOnly()) {
             destroyNexo();
+            int unit=Math.max(1,Math.round(getResources().getDisplayMetrics().density));
+            android.widget.FrameLayout screen=new android.widget.FrameLayout(this);screen.setBackgroundColor(0xff090f19);
             android.widget.LinearLayout recovery=new android.widget.LinearLayout(this);
-            recovery.setOrientation(android.widget.LinearLayout.VERTICAL);recovery.setGravity(android.view.Gravity.CENTER);recovery.setPadding(32,32,32,32);recovery.setBackgroundColor(0xff090f19);
-            android.widget.TextView title=new android.widget.TextView(this);title.setText("NEXO");title.setTextSize(30);title.setTextColor(0xffdeedef);recovery.addView(title);
-            android.widget.TextView message=new android.widget.TextView(this);message.setText("Vamos reabrir sua interface. Seus arquivos continuam salvos.");message.setTextColor(0xffb2c3c8);message.setPadding(0,20,0,20);recovery.addView(message);
-            android.widget.Button retry=new android.widget.Button(this);retry.setText("Reabrir Nexo");retry.setOnClickListener(v->{if(nexoWindow!=null){nexoWindow.dismiss();nexoWindow=null;}horizonNexo(true);});recovery.addView(retry);attachNexoWindow(recovery);return;
+            recovery.setOrientation(android.widget.LinearLayout.VERTICAL);recovery.setGravity(android.view.Gravity.CENTER_HORIZONTAL);recovery.setPadding(24*unit,24*unit,24*unit,24*unit);
+            android.graphics.drawable.GradientDrawable frame=new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,new int[]{0xff1c303a,0xff101b24});frame.setCornerRadius(8*unit);frame.setStroke(unit,0xff617c85);recovery.setBackground(frame);
+            android.widget.FrameLayout.LayoutParams card=new android.widget.FrameLayout.LayoutParams(Math.min(480*unit,getResources().getDisplayMetrics().widthPixels-40*unit),android.view.ViewGroup.LayoutParams.WRAP_CONTENT,android.view.Gravity.CENTER);screen.addView(recovery,card);
+            android.graphics.Typeface body=null,display=null;try{body=android.graphics.Typeface.createFromAsset(getAssets(),"nexo/NexoRead-Medium.ttf");display=android.graphics.Typeface.createFromAsset(getAssets(),"nexo/Michroma-Regular.ttf");}catch(RuntimeException ignored){}
+            android.widget.TextView title=new android.widget.TextView(this);title.setText("NEXO");title.setTextSize(26);title.setTextColor(0xffdeedef);if(display!=null)title.setTypeface(display);recovery.addView(title);
+            android.widget.TextView message=new android.widget.TextView(this);message.setText("Não foi possível concluir a abertura. Toque abaixo para tentar novamente.");message.setTextSize(20);message.setGravity(android.view.Gravity.CENTER);message.setTextColor(0xffb2c3c8);message.setPadding(0,20*unit,0,20*unit);if(body!=null)message.setTypeface(body);recovery.addView(message);
+            android.widget.Button retry=new android.widget.Button(this);retry.setText("Reabrir Nexo");retry.setAllCaps(false);retry.setTextSize(20);retry.setTextColor(0xffdeedef);retry.setMinHeight(48*unit);retry.setPadding(20*unit,8*unit,20*unit,8*unit);if(body!=null)retry.setTypeface(body);
+            android.graphics.drawable.StateListDrawable button=new android.graphics.drawable.StateListDrawable();for(boolean pressed:new boolean[]{true,false}){android.graphics.drawable.GradientDrawable fill=new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,pressed?new int[]{0xff3b5b64,0xff253f48}:new int[]{0xff2c454f,0xff192b34});fill.setCornerRadius(6*unit);fill.setStroke(unit,0xff78969d);button.addState(pressed?new int[]{android.R.attr.state_pressed}:new int[]{},fill);}retry.setBackground(button);
+            retry.setOnClickListener(v->{if(nexoWindow!=null){nexoWindow.dismiss();nexoWindow=null;}horizonNexo(true);});recovery.addView(retry);attachNexoWindow(screen);return;
         }
 
         try { nativeNexoRequest("{\"id\":"+Math.max(1,System.nanoTime())+",\"op\":\"fallback\"}"); } catch(Throwable ignored) { }

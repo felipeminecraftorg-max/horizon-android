@@ -345,6 +345,7 @@ jobs:
           echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd --force -n nexo-qa -k 'system-images;android-34;google_apis;x86_64' --device pixel_2
           "$ANDROID_HOME/emulator/emulator" -avd nexo-qa -no-window -gpu swiftshader_indirect -no-audio -no-boot-anim -no-snapshot -memory 2048 -cores 2 >dist/nexo-android-boot/emulator.txt 2>&1 &
           adb="$ANDROID_HOME/platform-tools/adb"
+          trap '"$adb" logcat -d > dist/nexo-android-boot/logcat.txt 2>&1 || true; "$adb" shell dumpsys activity activities > dist/nexo-android-boot/activities.txt 2>&1 || true; "$adb" exec-out screencap -p > dist/nexo-android-boot/last-screen.png 2>/dev/null || true' EXIT
           "$adb" wait-for-device
           timeout 180 bash -c 'until [ "$("$ANDROID_HOME/platform-tools/adb" shell getprop sys.boot_completed | tr -d "\r")" = 1 ]; do sleep 2; done'
           "$adb" shell settings put global window_animation_scale 0
@@ -356,7 +357,7 @@ jobs:
           test -n "$test_apk"
           "$adb" install -r "$test_apk"
           "$adb" logcat -c
-          "$adb" shell am instrument -w dev.horizon.nexo.test/dev.horizon.android.NexoBootInstrumentation | tee dist/nexo-android-boot/instrumentation.txt
+          timeout 240 "$adb" shell am instrument -w dev.horizon.nexo.test/dev.horizon.android.NexoBootInstrumentation | tee dist/nexo-android-boot/instrumentation.txt
           "$adb" logcat -d > dist/nexo-android-boot/logcat.txt
           "$adb" pull /sdcard/Android/data/dev.horizon.nexo/files/nexo-android-proof dist/nexo-android-boot/
           python3 - <<'PYTEST'
