@@ -54,6 +54,9 @@ public final class NexoBootInstrumentation extends Instrumentation {
         js("const b=[...document.querySelectorAll('button')].find(b=>b.textContent.trim()==="+JSONObject.quote(text)+"&&!b.disabled);if(!b)throw Error('Missing button: '+"+JSONObject.quote(text)+");b.click();return true;");
     }
     private void capture(String name) throws Exception {
+        CountDownLatch painted=new CountDownLatch(1);
+        runOnMainSync(()->{try{view().postVisualStateCallback(0,new WebView.VisualStateCallback(){@Override public void onComplete(long id){painted.countDown();}});}catch(Exception ignored){painted.countDown();}});
+        if(!painted.await(12,TimeUnit.SECONDS))throw new AssertionError("WebView did not finish preparing its visible content");
         SystemClock.sleep(250);Bitmap shot=getUiAutomation().takeScreenshot();
         if(shot==null)throw new AssertionError("No Android screenshot");
         int varied=0;java.util.Set<Integer> colors=new java.util.HashSet<>();
@@ -64,10 +67,23 @@ public final class NexoBootInstrumentation extends Instrumentation {
         try(FileOutputStream stream=new FileOutputStream(new File(proof,name+".png"))){shot.compress(Bitmap.CompressFormat.PNG,100,stream);}shot.recycle();
     }
     private void checked(String text) {checks.append(text).append('\n');Bundle b=new Bundle();b.putString("stream","NEXO_ANDROID_OK "+text+"\n");sendStatus(0,b);}
+    private void openTab(int index) throws Exception {
+        waitFor("!NexoScene.getState().open&&NexoScene.getState().opening<.001");
+        js("NexoScene.select("+index+");return true;");
+        waitFor("NexoScene.getState().selected==="+index+"&&Math.abs(NexoScene.getState().position-NexoScene.getState().target)<.001");
+        int[] position=new int[2],size=new int[2];
+        runOnMainSync(()->{try{WebView web=view();web.getLocationOnScreen(position);size[0]=web.getWidth();size[1]=web.getHeight();}catch(Exception e){throw new RuntimeException(e);}});
+        long time=SystemClock.uptimeMillis();float x=position[0]+size[0]/2f,y=position[1]+size[1]/2f;
+        for(int action:new int[]{android.view.MotionEvent.ACTION_DOWN,android.view.MotionEvent.ACTION_UP}){
+            android.view.MotionEvent event=android.view.MotionEvent.obtain(time,SystemClock.uptimeMillis(),action,x,y,0);event.setSource(android.view.InputDevice.SOURCE_TOUCHSCREEN);
+            try{if(!getUiAutomation().injectInputEvent(event,true))throw new AssertionError("Android rejected the tab touch");}finally{event.recycle();}
+        }
+        waitFor("NexoScene.getState().open");
+    }
     private void close() throws Exception {
         js("if(document.querySelector('#nexo-modal').open)Nexo.back();return true;");
         waitFor("!document.querySelector('#nexo-modal').open");
-        js("NexoScene.close(true);return true;");waitFor("!NexoScene.getState().open");
+        js("NexoScene.close(true);return true;");waitFor("!NexoScene.getState().open&&NexoScene.getState().opening<.001");
     }
     @Override public void onStart() {
         Bundle result=new Bundle();
@@ -86,8 +102,7 @@ public final class NexoBootInstrumentation extends Instrumentation {
             checked("scene="+js("return {webgl:document.querySelector('#nexo-app').dataset.webgl,compatibility:document.querySelector('#nexo-app').classList.contains('nx-compatible')};"));
             for(String page:new String[]{"mods","packs","shaders"}){
                 int index=page.equals("mods")?1:page.equals("packs")?2:3;
-                js("NexoScene.select("+index+");return true;");waitFor("NexoScene.getState().selected==="+index);
-                js("NexoScene.activate("+index+");return true;");waitFor("Nexo.state().native.view.kind==='"+page+"'&&!document.querySelector('#module').inert");
+                openTab(index);waitFor("Nexo.state().native.view.kind==='"+page+"'&&!document.querySelector('#module').inert");
                 button("Minha coleção");capture("02-collection-"+page);checked("real "+page+" library and installed collection");close();
             }
             click("#settings-button");waitFor("Nexo.state().native.view.type==='settings'&&!document.querySelector('#module').inert");
@@ -103,8 +118,7 @@ public final class NexoBootInstrumentation extends Instrumentation {
             js("[...document.querySelectorAll('#portal-body button')].find(b=>b.textContent.includes('Perfil local')).click();return true;");
             waitFor("Nexo.state().native.modal.mode==='offline'");capture("05-local-profile");
             checked("actual account providers and local profile form without signing into a service");click("#portal-close");waitFor("!Nexo.state().native.modal");
-            js("NexoScene.select(4);return true;");waitFor("NexoScene.getState().selected===4");
-            js("NexoScene.activate(4);return true;");waitFor("Nexo.state().native.view.type==='wardrobe'&&!document.querySelector('#module').inert");
+            openTab(4);waitFor("Nexo.state().native.view.type==='wardrobe'&&!document.querySelector('#module').inert");
             button("Capas");waitFor("Nexo.state().native.view.capes");capture("06-real-wardrobe");checked("real wardrobe skin/cape state and native page navigation");close();
             runOnMainSync(()->activity.setRequestedOrientation(android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT));waitFor("innerHeight>innerWidth");capture("07-portrait");
             checked("Android window and scene resize to portrait");
