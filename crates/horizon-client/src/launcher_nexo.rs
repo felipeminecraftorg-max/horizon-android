@@ -271,7 +271,7 @@ mod tests {
     fn only_typed_actions_and_bounded_values_cross_the_bridge() {
         assert!(parse(r#"{"id":1,"op":"page","page":"mods"}"#).is_ok());
         assert!(parse(r#"{"id":2,"op":"press","control":19}"#).is_ok());
-        assert!(parse(r#"{"id":3,"op":"accent","color":"#7f50d0"}"#).is_ok());
+        assert!(parse(r##"{"id":3,"op":"accent","color":"#7f50d0"}"##).is_ok());
         assert!(parse(r#"{"id":3,"op":"accent","color":"javascript:script"}"#).is_err());
         for bad in [
             r#"{"id":0,"op":"play"}"#,
